@@ -260,13 +260,14 @@ int capture(SDL_GPUDevice* dev, Renderer& r, const Game& g, const UiCanvas& ui, 
 
 int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std::array<Sticks, 4>& sticks,
                  int bomb_step, const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h,
-                 bool exact_720p, const fs::path& trace_path) {
+                 bool exact_720p, const fs::path& trace_path, const fs::path& rng_path, int rng_step,
+                 const fs::path& dump_path, int dump_step) {
   // --trace: after each step, the clock and slot 0's object (x, y, vx,
   // vy) at full precision, as the oracle's memory reads give them.
   std::ofstream trace;
   if (!trace_path.empty()) {
     trace.open(trace_path, std::ios::trunc);
-    trace << "step,clock,x,y,vx,vy\n";
+    trace << "step,clock,x,y,vx,vy,rng_index,rng_word0\n";
   }
   // Type 16 (0x10) is a power-up item; the rest are enemies.
   for (const DevSpawn& d : spawns)
@@ -282,11 +283,32 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
     if (i == bomb_step) s[0].right_trigger = 255;
     tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
     SDL_SubmitGPUCommandBuffer(cmd);
+    // --rng-state: the generator's state read from the oracle (the index,
+    // then 624 words, in hex), loaded after that step.
+    if (!rng_path.empty() && i + 1 == rng_step) {
+      std::ifstream f(rng_path);
+      uint32_t words[GameRng::kWords] = {};
+      int index = 0;
+      f >> std::hex >> index;
+      for (auto& wd : words) f >> std::hex >> wd;
+      if (f) g.rng.load(words, index);
+      else SDL_Log("cannot read the generator state %s", rng_path.string().c_str());
+    }
+    // --dump: every unit (creation order) after that step: type, x, y.
+    if (!dump_path.empty() && i + 1 == dump_step) {
+      std::ofstream f(dump_path, std::ios::trunc);
+      for (const auto& e : g.world->entities) {
+        if (!e->unit_based || (e->flags & kEntityRemoved)) continue;
+        char line[128];
+        std::snprintf(line, sizeof(line), "%d %.9g %.9g\n", e->type, double(e->x), double(e->y));
+        f << line;
+      }
+    }
     if (trace.is_open()) {
       const PlayerMotion& m = g.ships[0].motion;
       char line[256];
-      std::snprintf(line, sizeof(line), "%d,%.9g,%.9g,%.9g,%.9g,%.9g\n", i + 1, double(g.elapsed), double(m.x),
-                    double(m.y), double(m.vx), double(m.vy));
+      std::snprintf(line, sizeof(line), "%d,%.9g,%.9g,%.9g,%.9g,%.9g,%d,%08x\n", i + 1, double(g.elapsed),
+                    double(m.x), double(m.y), double(m.vx), double(m.vy), g.rng.index(), g.rng.word(0));
       trace << line;
     }
   }
@@ -581,7 +603,8 @@ int main(int argc, char** argv) {
   std::array<LobbyPad, 4> lobby{};
   bool versus = false, multiplayer = false;
   fs::path screenshot;
-  fs::path trace_path;
+  fs::path trace_path, rng_path, dump_path;
+  int rng_step = -1, dump_step = -1;
   uint32_t shot_w = 1280, shot_h = 720;
   int64_t seed = -1;
   int bomb_step = -1;
@@ -603,6 +626,13 @@ int main(int argc, char** argv) {
     else if (a == "--level" && i + 1 < argc) start_level = std::clamp(std::atoi(argv[++i]), 0, 19);
     else if (a == "--frontend") frontend = true;
     else if (a == "--trace" && i + 1 < argc) trace_path = argv[++i];
+    else if (a == "--rng-state" && i + 2 < argc) {
+      rng_path = argv[++i];
+      rng_step = std::atoi(argv[++i]);
+    } else if (a == "--dump" && i + 2 < argc) {
+      dump_step = std::atoi(argv[++i]);
+      dump_path = argv[++i];
+    }
     else if (a == "--language" && i + 1 < argc) language = language_code(argv[++i]);
     else if (a == "--fullscreen" || a == "--windowed") fullscreen = a == "--fullscreen";
     else if (a == "--720p" || a == "--native") exact_720p = a == "--720p";
@@ -706,7 +736,7 @@ int main(int argc, char** argv) {
     std::array<Sticks, 4> per_pad{};
     for (size_t p = 0; p < 4; ++p) per_pad[p] = pad_sticks[p] ? *pad_sticks[p] : sticks;
     rc = run_headless(dev, renderer, game, frames, per_pad, bomb_step, spawns, screenshot, shot_w, shot_h,
-                      exact_720p == 1, trace_path);
+                      exact_720p == 1, trace_path, rng_path, rng_step, dump_path, dump_step);
   } else {
     Display d = load_display(profile_dir);
     if (fullscreen >= 0) d.fullscreen = fullscreen != 0;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 #include "game/game_math.h"
 #include "game/particles.h"
 #include "game/rng.h"
