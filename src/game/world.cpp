@@ -357,19 +357,20 @@ Vec2 World::random_position() {
 void World::separate(Entity& e, float radius, float strength) {
   for_each_near(e.x, e.y, radius, [&](Entity& o) {
     if (o.type != e.type || &o == &e) return;
-    const double rsum = double(o.radius + e.radius);
+    // All single precision (0x82046388..0x82046498): fsqrts, fdivs.
+    const float rsum = o.radius + e.radius;
     const float dx = o.x - e.x, dy = o.y - e.y;
-    const double d2 = double(dy * dy + dx * dx);
-    if (!(d2 < double(float(rsum * rsum)))) return;
-    if (0.1 <= d2) {  // dat_82000714
-      const double d = std::sqrt(d2);
-      const float inv = float(1.0 / d);
-      const float f = float(double(float(rsum - d)) * strength);
-      const double px = double((inv * dx) * f), py = double((inv * dy) * f);
-      e.vx = e.vx - float(px * 0.5);
-      e.vy = e.vy - float(py * 0.5);
-      o.vx = o.vx + float(px * 0.5);
-      o.vy = o.vy + float(py * 0.5);
+    const float d2 = dy * dy + dx * dx;
+    if (!(d2 < rsum * rsum)) return;
+    if (0.1f <= d2) {  // dat_82000714
+      const float d = std::sqrt(d2);
+      const float inv = 1.0f / d;
+      const float f = (rsum - d) * strength;
+      const float px = (inv * dx) * f, py = (inv * dy) * f;
+      e.vx = e.vx - px * 0.5f;  // dat_82000724
+      e.vy = e.vy - py * 0.5f;
+      o.vx = o.vx + px * 0.5f;
+      o.vy = o.vy + py * 0.5f;
     } else {
       const Vec2 a = random_vector(1.0f);
       e.vx = e.vx + a.x;

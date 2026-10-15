@@ -3,7 +3,7 @@
 //   geow2 [--data <cache-dir>] [--profile <dir>] [--fullscreen | --windowed] [--720p | --native]
 //         [--vsync | --no-vsync] [--language en|de|fr|es|it]
 //   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> [--size <w> <h>] [--mode <n>] [--level <n>]
-//         [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--spawn <type> <x> <y>]...
+//         [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--trigger <0-255>] [--spawn <type> <x> <y>]...
 //         [--player <pad> <team> <role>]... [--versus] [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>]
 //   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
 //
@@ -657,6 +657,9 @@ int main(int argc, char** argv) {
       spawns.push_back({type, x, y});
     } else if (a == "--bomb" && i + 1 < argc) {
       bomb_step = std::atoi(argv[++i]);
+    } else if (a == "--trigger" && i + 1 < argc) {
+      // The right trigger held at this raw value (0-255) on every step.
+      sticks.right_trigger = uint8_t(std::clamp(std::atoi(argv[++i]), 0, 255));
     } else if (a == "--fire" && i + 2 < argc) {
       sticks.fire_x = clamp16(std::atoi(argv[++i]));
       sticks.fire_y = clamp16(std::atoi(argv[++i]));

@@ -208,7 +208,8 @@ class World {
   Vec2 random_position();
   // sub_82046248: push apart entities of the same type.
   void separate(Entity& e, float radius, float strength);
-  // sub_82035A40: flag for removal (deleted at the end of the step).
+  // sub_82035A40: flag for removal (deleted at the start of the next
+  // step, by the game's step after its spawner).
   void remove(Entity& e);
   // The debris part of sub_82046010: the unit's model (part 0, through
   // `m`) shatters from where the killer `k` struck the circle of `radius`
