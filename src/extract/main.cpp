@@ -9,6 +9,7 @@
 #include <map>
 #include <string>
 
+#include "data/flask.h"
 #include "data/xtlo.h"
 #include "extract/known_files.h"
 #include "extract/sha1.h"
@@ -121,10 +122,30 @@ int check_text(const fs::path& files) {
   return bad;
 }
 
+// Decodes every record of Data.bin the way the game's merge does.
+int check_database(const fs::path& files) {
+  try {
+    Flask db(read_file(files / "Data.bin"));
+    std::map<std::string, int> by_type;
+    for (uint32_t r = 0; r < db.records().size(); ++r) {
+      if (db.decode(r).is_null()) throw FormatError("record " + std::to_string(r) + " has no object");
+      ++by_type[db.types()[db.records()[r].type].name];
+    }
+    std::printf("Data.bin: %zu types, %zu records:", db.types().size(), db.records().size());
+    for (const auto& [t, n] : by_type) std::printf(" %s %d", t.c_str(), n);
+    std::printf("\n");
+    return 0;
+  } catch (const std::exception& e) {
+    std::printf("Data.bin: %s\n", e.what());
+    return 1;
+  }
+}
+
 int verify(const std::string& cache) {
   const fs::path files = fs::path(cache) / "files";
   int bad = check(collect(files));
   if (!bad) bad += check_text(files);
+  if (!bad) bad += check_database(files);
   std::printf(bad ? "%d problem(s)\n" : "all files good\n", bad);
   return bad ? 1 : 0;
 }
