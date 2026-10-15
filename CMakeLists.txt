@@ -60,6 +60,7 @@ add_library(geow2_game STATIC
   src/game/player.cpp
   src/game/popups.cpp
   src/game/player_motion.cpp
+  src/game/profile.cpp
   src/game/repulsar.cpp
   src/game/rotation.cpp
   src/game/sequence.cpp
@@ -69,6 +70,8 @@ add_library(geow2_game STATIC
   src/game/spawn.cpp
   src/game/wave_spawner.cpp
   src/game/stars.cpp
+  src/game/ui.cpp
+  src/game/ui_text.cpp
   src/game/units.cpp
   src/game/wanderer.cpp
   src/game/world.cpp
@@ -109,7 +112,7 @@ if(GEOW2_BUILD_GAME)
   endforeach()
   add_custom_target(geow2_shaders DEPENDS ${SPIRV})
 
-  add_executable(geow2 src/app/audio.cpp src/app/game.cpp src/app/main.cpp src/app/png.cpp src/app/renderer.cpp)
+  add_executable(geow2 src/app/audio.cpp src/app/frontend.cpp src/app/game.cpp src/app/main.cpp src/app/png.cpp src/app/renderer.cpp)
   target_link_libraries(geow2 PRIVATE geow2_game SDL3::SDL3-static)
   add_dependencies(geow2 geow2_shaders)
 endif()
@@ -124,3 +127,28 @@ add_test(NAME data_tests COMMAND data_tests)
 add_executable(game_tests tests/game_tests.cpp)
 target_link_libraries(game_tests PRIVATE geow2_game)
 add_test(NAME game_tests COMMAND game_tests)
+
+# Audio engine: the AOBJ component graphs (sounds, mixers, filters,
+# scripts), the waves and the 5.1 mix; the SDL3 output when the game is
+# built.
+if(GEOW2_AUDIO OR EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/.complete)
+add_library(geow2_audio STATIC
+  src/audio/aobj.cpp
+  src/audio/components_control.cpp
+  src/audio/components_mix.cpp
+  src/audio/components_source.cpp
+  src/audio/components_effect.cpp
+  src/audio/engine.cpp
+  src/audio/game_audio.cpp
+  src/audio/graph.cpp
+  src/audio/waves.cpp
+)
+target_link_libraries(geow2_audio PUBLIC geow2_extract)
+if(TARGET SDL3::SDL3-static)
+  target_sources(geow2_audio PRIVATE src/audio/device.cpp)
+  target_link_libraries(geow2_audio PUBLIC SDL3::SDL3-static)
+endif()
+add_executable(audio_tests tests/audio_tests.cpp)
+target_link_libraries(audio_tests PRIVATE geow2_audio)
+add_test(NAME audio_tests COMMAND audio_tests)
+endif()

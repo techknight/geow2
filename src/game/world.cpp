@@ -140,6 +140,25 @@ Entity* World::add(std::unique_ptr<Entity> e) {
 
 void World::remove(Entity& e) { e.flags |= kEntityRemoved; }
 
+void World::new_game() {
+  entities.clear();
+  for (auto& c : cells) c.clear();
+  enemy_count = 0;
+  frozen = false;
+  bomb_kills = 0;
+  clock = 0.0f;
+  spawn_kills = spawn_geoms = 0;
+  scoring_open = true;
+  gate_chain = 0;
+  gate_chain_time = 0.0f;
+  death_markers.clear();
+  score = 0;
+  multiplier = 1;
+  multiplier_milestone = 10;
+  kills = 0;
+  zones_captured = 0;
+}
+
 void World::shatter(const UnitInfo* u, const Mat4& m, float px, float py, float radius, const Killer& k,
                     const float colour[4]) {
   if (!u || !u->has_model || u->model.parts.empty()) return;

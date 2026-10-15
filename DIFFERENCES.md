@@ -17,13 +17,46 @@ Format for each entry:
 ### Xbox Live leaderboards and achievements
 
 - **What**: online leaderboards, friend scores and achievements.
-- **Original**: Xbox Live leaderboards per mode, friend scores shown in
-  game, 12 achievements (icons `ach_*.png` in the package). Exact call
-  sites to be cited once traced.
-- **Port**: local per-mode high-score tables laid out like the original
-  ones; achievements are unlocked and listed locally with the original
-  icons. There is no online service.
-- **Decided**: 2026-10-14.
+- **Original**: Xbox Live leaderboards per mode (stats views 0..5, one
+  "Score" column, written at each game over by `sub_8207E490`), the
+  friends board on the mode-select tiles and the results screen
+  (`sub_82088AE0`), the leaderboard viewer with its Friends / My score /
+  Overall filters (`sub_8208AAB8`), and 12 achievements awarded by
+  `sub_82034CA0` (icons `ach_*.png` in the package). The session's own
+  score tables (`sub_82034B48`, last game, best this session, previous
+  games) are never saved.
+- **Port**: a local board per mode keeps the best 100 scores played on
+  this machine (saved with the profile). It is shown wherever the
+  original shows a Live board: the results screen's right-hand list (the
+  rows around the last game's, which is highlighted), the mode-select
+  tiles' best score, and the leaderboard screens (one "Overall" view; up
+  and down scroll, no gamer cards). The session tables behave as in the
+  original. Achievements are unlocked and listed locally with the
+  original icons. There is no online service.
+- **Decided**: 2026-10-14; local boards' shape 2026-10-15.
+
+### Profiles, sign-in and player names
+
+- **What**: who is playing and where their settings are kept.
+- **Original**: each pad's signed-in gamer profile; the settings and
+  unlock progress are a 48-byte block saved as profile setting
+  0x63E83FFF (`sub_82081848`); names shown are gamertags; menus ask for a
+  sign-in when a pad has none (`XamShowSigninUI`); a profile change in
+  game ends it (`sub_8207DD78`).
+- **Port**: one local profile, the same 48-byte block saved as
+  `profile.bin` in the user's preferences folder (or `--profile`); the
+  local score boards beside it as `scores.txt`. Every pad counts as
+  signed in; the player's name is the original's default for a player
+  without a gamertag, text 0x82 with the pad number ("Player 1").
+- **Decided**: 2026-10-15.
+
+### Leaving the game
+
+- **What**: "Return to arcade".
+- **Original**: after its confirmation, `XamLoaderLaunchTitle(NULL,
+  0x100)` returns to the dashboard's arcade (`sub_8208F240`).
+- **Port**: the program quits.
+- **Decided**: 2026-10-15.
 
 ### Input devices
 
@@ -31,14 +64,16 @@ Format for each entry:
 - **Original**: Xbox 360 pads only, read through `XamInputGetState`; the
   left stick's raw value is mapped as (raw - 0.5) / 32767.5 with Y
   inverted (`sub_82037EA0`), then a 0.25 dead zone (`sub_8204EE28`).
-- **Port**: any pad SDL supports, with SDL's Y axes turned into the
-  XInput convention so the same mapping applies (left stick moves, right
-  stick fires, the original's default). Keyboard: WASD give full
-  deflection on the move stick, the arrow keys on the fire stick, Space
-  a fully pulled trigger (the bomb). SDL's triggers (0 to 32767) are
-  scaled to the XInput byte the original reads (axes 8 and 9, times
-  1/255).
-- **Decided**: 2026-10-15.
+- **Port**: any pad SDL supports (up to four), with SDL's Y axes turned
+  into the XInput convention so the same mapping applies, and the
+  profile's stick and bomb choices as in the original. Keyboard, as the
+  first pad: WASD give full deflection on the left stick, the arrow keys
+  on the right stick and the D-pad (so they also move through menus),
+  Space a fully pulled right trigger (the bomb), Enter is A, X and Y are
+  X and Y, and Escape is START while playing (pause) and B in the menus.
+  SDL's triggers (0 to 32767) are scaled to the XInput byte the original
+  reads (axes 8 and 9, times 1/255).
+- **Decided**: 2026-10-15; menus 2026-10-15.
 
 ### Resolution
 

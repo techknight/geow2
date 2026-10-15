@@ -156,6 +156,10 @@ class World {
       : gm(gm), rng(rng), units(units), effects(gm, rng, particles) {}
 
   Entity* add(std::unique_ptr<Entity> e);
+  // A new game (sub_82036250 and the game block's reset): every object
+  // gone, the counters and the player's score record reset. Particles,
+  // debris and pop-ups carry on.
+  void new_game();
   // One step of every entity (sub_820366A0 step 4, sub_820453E0 each).
   void update_entities();
   // The pre-render pass over the entities (sub_82065E38 / sub_82045740):

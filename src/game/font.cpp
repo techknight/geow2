@@ -112,6 +112,27 @@ void emit_ui_body(LineBatch& out, float x0, float y0, float x1, float y1, const 
   out.body.push_back(vertex((u.X1 - u.A) + u.zx, (u.Y1 - u.B) + u.zy, -1.0f, c1, colour1[3]));
 }
 
+void emit_ui_caps(LineBatch& out, float x0, float y0, float x1, float y1, const float colour0[4],
+                  const float colour1[4], float factor) {
+  const UiLine u = ui_line(x0, y0, x1, y1, factor);
+  const float c0[3] = {colour0[0] * 8.0f, colour0[1] * 8.0f, colour0[2] * 8.0f};
+  const float c1[3] = {colour1[0] * 8.0f, colour1[1] * 8.0f, colour1[2] * 8.0f};
+  out.caps.push_back(vertex(u.X0 - u.A, u.Y0 - u.B, -1.0f, c0, 1.0f));
+  out.caps.push_back(vertex(u.X0 + u.A, u.Y0 + u.B, 1.0f, c0, 1.0f));
+  out.caps.push_back(vertex((u.X0 + u.A) - u.Dx, (u.Y0 + u.B) - u.A, 1.0f, c0, 0.0f));
+  out.caps.push_back(vertex((u.X0 - u.A) - u.Dx, (u.Y0 - u.B) - u.A, -1.0f, c0, 0.0f));
+  out.caps.push_back(vertex(u.X1 - u.A, u.Y1 - u.B, -1.0f, c1, 1.0f));
+  out.caps.push_back(vertex(u.X1 + u.A, u.Y1 + u.B, 1.0f, c1, 1.0f));
+  out.caps.push_back(vertex(std::fma(u.uy + u.ux, u.hw, u.X1), std::fma(-u.ux + u.uy, u.hw, u.Y1), 1.0f, c1, 0.0f));
+  out.caps.push_back(vertex(std::fma(u.hw, u.ux, u.X1 - u.A), (u.Y1 - u.B) + u.A, -1.0f, c1, 0.0f));
+}
+
+void emit_ui_line2(LineBatch& out, float x0, float y0, float x1, float y1, const float colour0[4],
+                   const float colour1[4], float factor) {
+  emit_ui_body(out, x0, y0, x1, y1, colour0, colour1, factor);
+  emit_ui_caps(out, x0, y0, x1, y1, colour0, colour1, factor);
+}
+
 Font Font::from_image(std::span<const uint8_t> image) {
   Font f;
   f.full_size_.fill(1);
@@ -253,6 +274,13 @@ void Font::centre_fit(LineBatch& out, float x, float y, float w, float h, float 
   const float m = measure(s);
   if (m * w > max_w) w = (w / (m * w)) * max_w;
   run(out, std::fmaf(-(m * w), 0.5f, x), y, w, h, colour, s);
+}
+
+void Font::left_fit(LineBatch& out, float x, float y, float w, float h, float max_w, const float colour[4],
+                    const std::string& s) const {
+  const float m = measure(s);
+  if (m * w > max_w) w = (w / (m * w)) * max_w;
+  run(out, x, y, w, h, colour, s);
 }
 
 std::string format_number(int64_t v) {

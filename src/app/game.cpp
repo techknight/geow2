@@ -331,6 +331,25 @@ void foreground(const Game& g, LineBatch& out) {
   out.caps.insert(out.caps.end(), g.debris_lines.caps.begin(), g.debris_lines.caps.end());
 }
 
+// sub_82034408(reason): the end countdown, 1.5 seconds (dat_82000C90), a
+// second more when an achievement hint is on screen (single player: King
+// with no bomb or shield hit and 10 or more zones; Waves likewise with
+// more than 3 rocket walls; Deadline's and Pacifism's hints need counters
+// not ported yet).
+void arm_end(Game& g, int reason) {
+  if (!in_game(g) || 0.0f < g.end_timer) return;
+  g.end_timer = 1.5f;
+  g.end_reason = reason;
+  const PlayerLife& p = g.life;
+  bool hint = false;
+  if (g.rules.mode == 5)
+    hint = !p.bomb_used && !p.shield_hit && g.world->zones_captured >= 10;
+  else if (g.rules.mode == 3)
+    hint = !p.bomb_used && !p.shield_hit && g.waves.walls >= 4;
+  g.hint_pending = hint;
+  if (hint) g.end_timer = g.end_timer + 1.0f;
+}
+
 }  // namespace
 
 bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
@@ -385,12 +404,6 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
   // wait, spawn point at the centre), so it spawns at the end of the first
   // step. Lives and bombs come from the mode (sub_82032FF8).
   g.player_unit = g.units->find("player");
-  g.life.lives = g.rules.start_lives;
-  g.life.bombs = g.rules.start_bombs;
-  g.world->players[0].removed = true;
-  // The spawners' reset (sub_8203E538): the shared spawner's state, then
-  // Sequence's (every mode). Sequence holds the game's end back until its
-  // own (dat_8219CE72, cleared by its setup).
   for (uint32_t r = 0; r < g.db->records().size(); ++r) {
     if (g.db->types()[g.db->records()[r].type].name != "ProgressionLevel") continue;
     const FlaskValue v = g.db->decode(r);
@@ -404,9 +417,6 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
     else if (auto* d = std::get_if<double>(&level->v)) index = int(*d);
     g.sequence.scripts.emplace_back(index, std::get<std::string>(script->v));
   }
-  g.waves.reset(*g.world);
-  g.sequence.reset(*g.world);
-  g.sequence.allow_end = g.rules.mode != 2;
   g.world->scored = [&g]() { score_awards(g); };
   const FlaskValue* model_ref = unit->s->find("model");
   const auto* ref = model_ref ? std::get_if<FlaskRef>(&model_ref->v) : nullptr;
@@ -425,6 +435,21 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
     SDL_Log("cannot read the shot and geom shapes: %s", e.what());
     return false;
   }
+  // The credits: 12-byte entries (type, text pointer, y) up to type 5.
+  try {
+    const auto image = read_file(cache / "xex" / "image.bin");
+    auto be32 = [&](size_t o) {
+      return uint32_t(image[o]) << 24 | uint32_t(image[o + 1]) << 16 | uint32_t(image[o + 2]) << 8 | uint32_t(image[o + 3]);
+    };
+    for (size_t o = 0x8218D9E0 - 0x82000000; o + 12 <= image.size(); o += 12) {
+      const uint32_t type = be32(o), p = be32(o + 4);
+      if (type == 5 || p < 0x82000000 || p - 0x82000000 >= image.size()) break;
+      std::string s;
+      for (size_t k = p - 0x82000000; k < image.size() && image[k]; ++k) s.push_back(char(image[k]));
+      g.credits.emplace_back(int(type), s);
+    }
+  } catch (const std::exception&) {
+  }
   g.world->geom_shapes = &g.geom_shapes;
   g.world->shots = &g.bullets;
   g.ui = ui_transform(*g.gm);
@@ -441,12 +466,63 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
     if (auto t = text.find("ID_X_BONUS_MULTIPLIER")) g.world->bonus_multiplier_text = narrow(*t);
     if (auto t = text.find("ID_X_PLUS_ONE_LIFE")) g.plus_life_text = narrow(*t);
     if (auto t = text.find("ID_X_PLUS_ONE_BOMB")) g.plus_bomb_text = narrow(*t);
+    g.text = UiText::load(read_file(cache / "xex" / "image.bin"), text);
   } catch (const std::exception& e) {
     SDL_Log("cannot read the text (%s): the HUD uses its built-in labels", e.what());
   }
-  g.world->mode = g.rules.mode;
-  g.world->king_mode = g.rules.mode == 5;
+  // The score tables start empty (sub_82034640: score 0, multiplier 1).
+  start_game(g, mode);
   return true;
+}
+
+void start_game(Game& g, int mode) {
+  World& w = *g.world;
+  // The game block's reset (sub_820348E8) and the mode's setup.
+  g.rules = mode_rules(mode);
+  g.elapsed = 0.0f;
+  g.over = false;
+  g.first_spawn = true;
+  g.after_death = 0;
+  g.field_live = false;
+  g.was_fading = false;
+  g.end_timer = 0.0f;
+  g.end_reason = 0;
+  g.hint_pending = false;
+  g.life = PlayerLife{};
+  // sub_82032FF8: lives and bombs into the player record.
+  g.life.lives = g.rules.start_lives;
+  g.life.bombs = g.rules.start_bombs;
+  g.player = PlayerMotion{};
+  g.weapon = PlayerWeapon{};
+  g.bullets.clear();
+  // sub_82036250: the object lists emptied, the arena and the grid reset,
+  // the spawners reset (sub_8203E538: Deadline's, the shared one, then
+  // Sequence's), Pacifism's edges cleared.
+  w.new_game();
+  w.players.assign(1, PlayerTarget{});
+  w.players[0].radius = 5.0f;
+  w.players[0].removed = true;
+  w.mode = g.rules.mode;
+  w.king_mode = g.rules.mode == 5;
+  g.grid.reset(kArenaHalfX, kArenaHalfY);
+  g.spawner = DeadlineSpawner{};
+  g.waves.reset(w);
+  g.sequence.reset(w);
+  // Sequence holds the game's end back until its own (dat_8219CE72,
+  // cleared by its setup).
+  g.sequence.force_over = false;
+  g.sequence.allow_end = g.rules.mode != 2;
+  g.sequence.level_timer = 0.0f;
+  g.flow = 2;
+}
+
+void ScoreTable::insert(int64_t score, int multiplier, const std::string& name) {
+  entry[0] = {score, multiplier, name};
+  if (entry[1].score < score) entry[1] = entry[0];
+  if (score > 0) {
+    for (size_t i = 9; i > 2; --i) entry[i] = entry[i - 1];
+    entry[2] = entry[0];
+  }
 }
 
 void step(Game& g, const Sticks& s) {
@@ -455,7 +531,10 @@ void step(Game& g, const Sticks& s) {
   // The spawner (sub_8203E7E8) runs while a player is in the game:
   // Deadline's own, the others' shared one (Sequence's is not ported);
   // then the clock (sub_820366A0).
-  if (g.rules.mode == 2) {
+  if (frozen(g)) return;
+  if (ending(g)) {
+    // (No spawner while the game ends.)
+  } else if (g.rules.mode == 2) {
     Sequence::Inputs in;
     in.alive = g.life.alive();
     in.over = g.over;
@@ -512,14 +591,15 @@ void step(Game& g, const Sticks& s) {
     clear_field(g);
     g.field_live = false;
   }
-  respawn(g);
-  update_scoring(g);
-  // Game over (sub_820366A0): with lives, when no player is left and none
-  // can come back; with the time limit, when time is up; or when Sequence
-  // says so (dat_8219CE71). Sounds 1 and 0x25; unless Sequence holds the
-  // end back (dat_8219CE72) the field is cleared and the results follow
-  // (sub_820364D0, sub_82034408(2): with the front end).
-  if (!g.ended) {
+  // Respawns and the game over, while a game runs and is not ending.
+  if (in_game(g) && !ending(g)) {
+    respawn(g);
+    update_scoring(g);
+    // Game over: with lives, when no player is left and none can come
+    // back; with the time limit, when time is up; or when Sequence says so
+    // (dat_8219CE71). Sounds 1 and 0x25; unless Sequence holds the end back
+    // (dat_8219CE72) the field is cleared and the end counts down
+    // (sub_820364D0, sub_82034408(2)).
     const PlayerLife& p = g.life;
     bool end = g.sequence.force_over;
     if (g.rules.lives_mode == 0)
@@ -530,7 +610,7 @@ void step(Game& g, const Sticks& s) {
       g.over = true;
       if (g.sequence.allow_end) {
         clear_field(g);
-        g.ended = true;
+        arm_end(g, 2);
       }
     }
   }
@@ -605,15 +685,11 @@ void step(Game& g, const Sticks& s) {
   if (g.life.removed) g.life.present = false;
 }
 
-void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format,
-            uint32_t w, uint32_t h, const Game& g) {
-  static LineBatch front, ui;
-  foreground(g, front);
-  // The HUD (sub_8207CA48, from the UI layer). No local score table yet:
-  // the high score shown is this game's. The bombs' pulse (dat_8219D0C4)
-  // only rises when a bomb is earned, which Deadline never does.
-  ui.clear();
+void draw_game_hud(const Game& g, LineBatch& ui) {
+  // The high score: the session's best for the mode, or this game's score
+  // when higher.
   HudState hud;
+  if (g.rules.mode >= 0 && g.rules.mode < 6) hud.high_score = g.tables[size_t(g.rules.mode)].entry[1].score;
   hud.score = g.world->score;
   hud.multiplier = g.world->multiplier;
   hud.bombs = g.life.bombs;
@@ -628,8 +704,14 @@ void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_
   hud.length = g.rules.length;
   hud.lives_mode = g.rules.lives_mode;
   draw_hud(g.font, g.hud_text, hud, ui);
+}
+
+void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format,
+            uint32_t w, uint32_t h, const Game& g, const UiCanvas& ui) {
+  static LineBatch front;
+  foreground(g, front);
   r.draw(cmd, target, format, w, h, camera_view_projection(g.camera, *g.gm), g.star_vertices,
-         g.grid_visible ? &g.grid_lines : nullptr, g.walls, g.particle_quads, g.linger_lines, front, ui, g.ui);
+         g.grid_visible ? &g.grid_lines : nullptr, g.walls, g.particle_quads, g.linger_lines, front, ui.lines, g.ui);
 }
 
 // One simulation step and its light map update (one per step, as the

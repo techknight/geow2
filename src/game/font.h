@@ -19,6 +19,15 @@ void emit_ui_line(LineBatch& out, float x0, float y0, float x1, float y1, const 
 void emit_ui_body(LineBatch& out, float x0, float y0, float x1, float y1, const float colour0[4],
                   const float colour1[4], float factor = 1.0f);
 
+// sub_82060600: the two end caps only, colour0 at (x0, y0), colour1 at
+// (x1, y1).
+void emit_ui_caps(LineBatch& out, float x0, float y0, float x1, float y1, const float colour0[4],
+                  const float colour1[4], float factor = 1.0f);
+// sub_8205FFB8: body and caps, colour0 at the first end, colour1 at the
+// second.
+void emit_ui_line2(LineBatch& out, float x0, float y0, float x1, float y1, const float colour0[4],
+                   const float colour1[4], float factor = 1.0f);
+
 // The vector font (123 glyphs at 0x821826A0 in the user's image, 0x16C
 // bytes each: code, width, up to 22 segments in a 1 x 1 box), with the
 // map sub_82075818 builds: lower-case letters (and the accented ones) use
@@ -45,6 +54,12 @@ class Font {
                  const std::string& s) const;
   void centre_fit(LineBatch& out, float x, float y, float w, float h, float max_w, const float colour[4],
                   const std::string& s) const;
+  // sub_82076200: left-aligned, fitted.
+  void left_fit(LineBatch& out, float x, float y, float w, float h, float max_w, const float colour[4],
+                const std::string& s) const;
+  // sub_82075DC8: one glyph; returns its advance.
+  float glyph(LineBatch& out, float x, float y, float w, float h, int c, const float colour[4], int next,
+              int& state) const;
 
  private:
   struct Glyph {
@@ -52,9 +67,6 @@ class Font {
     float width = 0.0f;
     std::vector<std::array<float, 4>> segments;
   };
-  // sub_82075DC8: one glyph; returns its advance.
-  float glyph(LineBatch& out, float x, float y, float w, float h, int c, const float colour[4], int next,
-              int& state) const;
   void run(LineBatch& out, float x, float y, float w, float h, const float colour[4], const std::string& s) const;
 
   std::vector<Glyph> glyphs_;

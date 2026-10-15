@@ -1,29 +1,33 @@
 // geow2: the game.
 //
-//   geow2 [--data <cache-dir>] [--mode <n>]
-//   geow2 --data <cache-dir> [--mode <n>] --frames <n> --screenshot <out.png> [--size <w> <h>] [--stick <x> <y>]
-//         [--fire <x> <y>] [--bomb <step>] [--spawn <type> <x> <y>]...
+//   geow2 [--data <cache-dir>] [--profile <dir>]
+//   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> [--size <w> <h>] [--mode <n>] [--level <n>]
+//         [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--spawn <type> <x> <y>]...
+//   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
 //
-// The second form runs n simulation steps without a window (input: a fixed
-// raw stick value, XInput convention; --bomb pulls the trigger on one
-// step; --spawn adds an enemy of a spawn type at the start, for
-// development captures) and saves the final frame. --mode picks the game
-// mode until the front end is ported: 0 Deadline (the default), 1 Evolved,
-// 2 Sequence, 3 Waves, 4 Pacifism, 5 King.
-//
-// Early development build: Deadline's arena with the player (shots,
-// shield, bombs, death and respawn) and its wanderers, drawn as the
-// original's glowing line quads with its bloom.
+// The first form opens the window at the front end; the profile and the
+// local score boards are kept in --profile (default: the user's
+// preferences folder). The second runs n simulation steps of a game of
+// --mode (0 Deadline, 1 Evolved, 2 Sequence, 3 Waves, 4 Pacifism, 5 King)
+// without a window, with a fixed raw stick value (XInput convention),
+// --bomb pulling the trigger on one step and --spawn adding enemies at the
+// start, and saves the final frame. The third runs the front end instead,
+// pressing a button (a, b, x, y, start, back, up, down, left, right) on
+// the given frames; it never saves.
 
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
+#include "app/frontend.h"
 #include "app/game.h"
 #include "app/png.h"
 #include "app/renderer.h"
@@ -39,16 +43,126 @@ struct DevSpawn {
   float x, y;
 };
 
-int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sticks& sticks, int bomb_step,
-                 const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h) {
-  for (const DevSpawn& d : spawns) spawn_enemy(*g.world, d.type, 0.0f, d.x, d.y);
-  for (int i = 0; i < frames; ++i) {
-    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
-    Sticks s = sticks;
-    if (i == bomb_step) s.right_trigger = 255;
-    tick(g, s, r, cmd);
-    SDL_SubmitGPUCommandBuffer(cmd);
+struct Press {
+  int frame;
+  int axis;
+};
+
+int16_t clamp16(int v) { return int16_t(std::clamp(v, -32768, 32767)); }
+
+// The profile block and the local boards on disk.
+Profile load_profile(const fs::path& dir) {
+  std::array<uint8_t, 0x30> b{};
+  std::ifstream f(dir / "profile.bin", std::ios::binary);
+  if (!f || !f.read(reinterpret_cast<char*>(b.data()), std::streamsize(b.size()))) return Profile{};
+  return Profile::from_bytes(b);
+}
+
+void save_profile(const fs::path& dir, const Profile& p) {
+  std::error_code ec;
+  fs::create_directories(dir, ec);
+  const auto b = p.to_bytes();
+  std::ofstream f(dir / "profile.bin", std::ios::binary | std::ios::trunc);
+  f.write(reinterpret_cast<const char*>(b.data()), std::streamsize(b.size()));
+}
+
+// One row per line: mode, score, name (tab-separated).
+void load_boards(const fs::path& dir, std::array<LocalBoard, 6>& boards) {
+  std::ifstream f(dir / "scores.txt");
+  std::string line;
+  while (std::getline(f, line)) {
+    std::istringstream s(line);
+    std::string mode, score, name;
+    if (!std::getline(s, mode, '\t') || !std::getline(s, score, '\t')) continue;
+    std::getline(s, name);
+    const int m = std::atoi(mode.c_str());
+    if (m < 0 || m > 5) continue;
+    auto& rows = boards[size_t(m)].rows;
+    if (rows.size() < LocalBoard::kRows) rows.push_back({std::atoll(score.c_str()), name});
   }
+  for (auto& b : boards)
+    std::stable_sort(b.rows.begin(), b.rows.end(), [](const auto& a, const auto& c) { return a.score > c.score; });
+}
+
+void save_boards(const fs::path& dir, const std::array<LocalBoard, 6>& boards) {
+  std::error_code ec;
+  fs::create_directories(dir, ec);
+  std::ofstream f(dir / "scores.txt", std::ios::trunc);
+  for (int m = 0; m < 6; ++m)
+    for (const auto& r : boards[size_t(m)].rows) f << m << '\t' << r.score << '\t' << r.name << '\n';
+}
+
+// The game's sticks from the player's pad, as the player update reads them
+// (sub_8204FF00): movement on axes (bit 0 << 1) and +1, firing on bit 1
+// and +1, the bomb on the triggers or (bit 2) the bumpers; XInput
+// convention (y up positive).
+Sticks sticks_from(const PadState& p, const Profile& profile) {
+  const size_t mv = (profile.controls & 1) << 1, fr = profile.controls & 2;
+  const size_t bomb = (profile.controls & 4) ? 10 : 8;
+  auto raw = [](float v) { return clamp16(int(v * 32767.0f)); };
+  Sticks s;
+  s.move_x = raw(p.axis[mv]);
+  s.move_y = raw(-p.axis[mv + 1]);
+  s.fire_x = raw(p.axis[fr]);
+  s.fire_y = raw(-p.axis[fr + 1]);
+  s.left_trigger = uint8_t(std::clamp(int(p.axis[bomb] * 255.0f), 0, 255));
+  s.right_trigger = uint8_t(std::clamp(int(p.axis[bomb + 1] * 255.0f), 0, 255));
+  return s;
+}
+
+// A connected SDL gamepad as the original's axes.
+PadState pad_state(SDL_Gamepad* pad) {
+  PadState p;
+  if (!pad) return p;
+  p.connected = true;
+  auto axis = [&](SDL_GamepadAxis a) { return std::clamp(float(SDL_GetGamepadAxis(pad, a)) / 32767.0f, -1.0f, 1.0f); };
+  auto button = [&](SDL_GamepadButton b) { return SDL_GetGamepadButton(pad, b) ? 1.0f : 0.0f; };
+  // SDL's Y axes point down, as the original's axes 1 and 3.
+  p.axis[0] = axis(SDL_GAMEPAD_AXIS_LEFTX);
+  p.axis[1] = axis(SDL_GAMEPAD_AXIS_LEFTY);
+  p.axis[2] = axis(SDL_GAMEPAD_AXIS_RIGHTX);
+  p.axis[3] = axis(SDL_GAMEPAD_AXIS_RIGHTY);
+  p.axis[4] = button(SDL_GAMEPAD_BUTTON_DPAD_RIGHT) - button(SDL_GAMEPAD_BUTTON_DPAD_LEFT);
+  p.axis[5] = button(SDL_GAMEPAD_BUTTON_DPAD_DOWN) - button(SDL_GAMEPAD_BUTTON_DPAD_UP);
+  p.axis[8] = axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER);
+  p.axis[9] = axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+  p.axis[10] = button(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
+  p.axis[11] = button(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
+  p.axis[0xC] = button(SDL_GAMEPAD_BUTTON_SOUTH);
+  p.axis[0xD] = button(SDL_GAMEPAD_BUTTON_EAST);
+  p.axis[0xE] = button(SDL_GAMEPAD_BUTTON_WEST);
+  p.axis[0xF] = button(SDL_GAMEPAD_BUTTON_NORTH);
+  p.axis[0x10] = button(SDL_GAMEPAD_BUTTON_START);
+  p.axis[0x11] = button(SDL_GAMEPAD_BUTTON_BACK);
+  return p;
+}
+
+// The keyboard as a pad (DIFFERENCES.md "Input devices"): WASD the left
+// stick, the arrows the right stick and the D-pad, Space the right
+// trigger, Enter A, Escape START while playing and B otherwise, X and Y.
+void keyboard_pad(PadState& p, bool playing) {
+  const bool* k = SDL_GetKeyboardState(nullptr);
+  auto set = [&](size_t a, float v) {
+    if (v != 0.0f) p.axis[a] = v;
+  };
+  set(0, float(k[SDL_SCANCODE_D]) - float(k[SDL_SCANCODE_A]));
+  set(1, float(k[SDL_SCANCODE_S]) - float(k[SDL_SCANCODE_W]));
+  const float rx = float(k[SDL_SCANCODE_RIGHT]) - float(k[SDL_SCANCODE_LEFT]);
+  const float ry = float(k[SDL_SCANCODE_DOWN]) - float(k[SDL_SCANCODE_UP]);
+  set(2, rx);
+  set(3, ry);
+  set(4, rx);
+  set(5, ry);
+  if (k[SDL_SCANCODE_SPACE]) p.axis[9] = 1.0f;
+  if (k[SDL_SCANCODE_RETURN]) p.axis[0xC] = 1.0f;
+  if (k[SDL_SCANCODE_ESCAPE]) p.axis[playing ? 0x10 : 0xD] = 1.0f;
+  if (k[SDL_SCANCODE_X]) p.axis[0xE] = 1.0f;
+  if (k[SDL_SCANCODE_Y]) p.axis[0xF] = 1.0f;
+  p.connected = true;
+}
+
+int capture(SDL_GPUDevice* dev, Renderer& r, const Game& g, const UiCanvas& ui, const fs::path& out, uint32_t w,
+            uint32_t h) {
   SDL_GPUTextureCreateInfo tci{};
   tci.type = SDL_GPU_TEXTURETYPE_2D;
   tci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
@@ -65,7 +179,7 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sti
     return 1;
   }
   SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
-  render(r, cmd, tex, tci.format, w, h, g);
+  render(r, cmd, tex, tci.format, w, h, g, ui);
   SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
   SDL_GPUTextureRegion src{};
   src.texture = tex;
@@ -81,87 +195,156 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sti
   const auto* px = static_cast<const uint8_t*>(SDL_MapGPUTransferBuffer(dev, down, false));
   write_png(out, w, h, {px, size_t(w) * h * 4});
   SDL_UnmapGPUTransferBuffer(dev, down);
-  SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets, "
-          "%zu entities, score %lld x%d, %zu particles, %zu debris, %zu linger quads, %d deaths, %d bombs left, "
-          "%d bomb kills, %d lives%s; sequence phase %d level %d",
-          out.string().c_str(), frames, g.player.x, g.player.y, g.player.heading, g.camera.x, g.camera.y,
-          g.camera.zoom, g.bullets.size(), g.world->entities.size(), (long long)g.world->score, g.world->multiplier, g.world->particles.size(),
-          g.world->debris.size(), g.linger_lines.body.size() / 4, g.life.deaths, g.life.bombs, g.world->bomb_kills, g.life.lives,
-          g.over ? ", game over" : "", g.sequence.phase, g.sequence.level);
   SDL_ReleaseGPUTransferBuffer(dev, down);
   SDL_ReleaseGPUTexture(dev, tex);
   return 0;
 }
 
-int16_t clamp16(int v) { return int16_t(std::clamp(v, -32768, 32767)); }
+int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sticks& sticks, int bomb_step,
+                 const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h) {
+  for (const DevSpawn& d : spawns) spawn_enemy(*g.world, d.type, 0.0f, d.x, d.y);
+  for (int i = 0; i < frames; ++i) {
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
+    Sticks s = sticks;
+    if (i == bomb_step) s.right_trigger = 255;
+    tick(g, s, r, cmd);
+    SDL_SubmitGPUCommandBuffer(cmd);
+  }
+  UiCanvas ui;
+  draw_game_hud(g, ui.lines);
+  if (capture(dev, r, g, ui, out, w, h)) return 1;
+  SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets, "
+          "%zu entities, score %lld x%d, %zu particles, %zu debris, %zu linger quads, %d deaths, %d bombs left, "
+          "%d bomb kills, %d lives%s; sequence phase %d level %d",
+          out.string().c_str(), frames, g.player.x, g.player.y, g.player.heading, g.camera.x, g.camera.y,
+          g.camera.zoom, g.bullets.size(), g.world->entities.size(), (long long)g.world->score, g.world->multiplier,
+          g.world->particles.size(), g.world->debris.size(), g.linger_lines.body.size() / 4, g.life.deaths, g.life.bombs,
+          g.world->bomb_kills, g.life.lives, g.over ? ", game over" : "", g.sequence.phase, g.sequence.level);
+  return 0;
+}
 
-int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g) {
+int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std::vector<Press>& presses,
+                          const fs::path& out, uint32_t w, uint32_t h) {
+  Profile profile;
+  std::array<LocalBoard, 6> boards;
+  Frontend fe(g, g.text, profile, boards, {});
+  fe.boot();
+  for (int i = 0; i < frames; ++i) {
+    std::array<PadState, 4> pads{};
+    pads[0].connected = true;
+    for (const Press& p : presses) {
+      if (p.frame != i) continue;
+      switch (p.axis) {
+        case -1: pads[0].axis[5] = -1.0f; break;
+        case -2: pads[0].axis[5] = 1.0f; break;
+        case -3: pads[0].axis[4] = -1.0f; break;
+        case -4: pads[0].axis[4] = 1.0f; break;
+        default: pads[0].axis[size_t(p.axis)] = 1.0f; break;
+      }
+    }
+    fe.frame(pads);
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
+    tick(g, Sticks{}, r, cmd);
+    SDL_SubmitGPUCommandBuffer(cmd);
+  }
+  UiCanvas ui;
+  fe.draw(ui);
+  if (capture(dev, r, g, ui, out, w, h)) return 1;
+  SDL_Log("wrote %s after %d frames: flow state %d, %zu UI quads", out.string().c_str(), frames, g.flow,
+          ui.lines.body.size() / 4);
+  return 0;
+}
+
+int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& profile_dir) {
   SDL_Window* window = SDL_CreateWindow("geow2", 1280, 720, SDL_WINDOW_RESIZABLE);
   if (!window || !SDL_ClaimWindowForGPUDevice(dev, window)) {
     SDL_Log("cannot open the window: %s", SDL_GetError());
     return 1;
   }
+  Profile profile = load_profile(profile_dir);
+  std::array<LocalBoard, 6> boards;
+  load_boards(profile_dir, boards);
+  bool running = true;
+  Frontend::Hooks hooks;
+  hooks.save_profile = [&]() { save_profile(profile_dir, profile); };
+  hooks.save_boards = [&]() { save_boards(profile_dir, boards); };
+  hooks.quit = [&]() { running = false; };
+  Frontend fe(g, g.text, profile, boards, hooks);
+  fe.boot();
   const SDL_GPUTextureFormat format = SDL_GetGPUSwapchainTextureFormat(dev, window);
-  SDL_Gamepad* pad = nullptr;
+  std::array<SDL_Gamepad*, 4> pads{};
+  UiCanvas ui;
   uint64_t last = SDL_GetTicksNS();
   double pending = 0.0;
-  for (bool running = true; running;) {
+  while (running) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
       if (e.type == SDL_EVENT_QUIT) running = false;
-      if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad = SDL_OpenGamepad(e.gdevice.which);
-      if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) running = false;
+      if (e.type == SDL_EVENT_GAMEPAD_ADDED) {
+        for (auto& p : pads)
+          if (!p) {
+            p = SDL_OpenGamepad(e.gdevice.which);
+            break;
+          }
+      }
+      if (e.type == SDL_EVENT_GAMEPAD_REMOVED) {
+        for (auto& p : pads)
+          if (p && SDL_GetGamepadID(p) == e.gdevice.which) {
+            SDL_CloseGamepad(p);
+            p = nullptr;
+          }
+      }
     }
-    // Sticks in the XInput convention (SDL's Y axes point down): left
-    // moves, right fires (the original's default, as its rules screens show).
-    int mx = 0, my = 0, fx = 0, fy = 0, lt = 0, rt = 0;
-    if (pad) {
-      mx = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
-      my = -int(SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY));
-      fx = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHTX);
-      fy = -int(SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHTY));
-      // SDL's triggers run 0..32767; XInput's are bytes.
-      lt = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) * 255 / 32767;
-      rt = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) * 255 / 32767;
-    }
-    const bool* keys = SDL_GetKeyboardState(nullptr);
-    if (keys[SDL_SCANCODE_A]) mx = -32768;
-    if (keys[SDL_SCANCODE_D]) mx = 32767;
-    if (keys[SDL_SCANCODE_W]) my = 32767;
-    if (keys[SDL_SCANCODE_S]) my = -32768;
-    if (keys[SDL_SCANCODE_LEFT]) fx = -32768;
-    if (keys[SDL_SCANCODE_RIGHT]) fx = 32767;
-    if (keys[SDL_SCANCODE_UP]) fy = 32767;
-    if (keys[SDL_SCANCODE_DOWN]) fy = -32768;
-    if (keys[SDL_SCANCODE_SPACE]) rt = 255;
-    const Sticks sticks{clamp16(mx), clamp16(my), clamp16(fx), clamp16(fy), uint8_t(std::clamp(lt, 0, 255)),
-                        uint8_t(std::clamp(rt, 0, 255))};
-
-    // Fixed 1/60 s steps from real time; the picture shows the latest step.
+    // Fixed 1/60 s frames from real time: the front end, then the
+    // simulation step (the main loop's order, sub_82037E00).
     const uint64_t now = SDL_GetTicksNS();
     pending += double(now - last) / 1e9;
     last = now;
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     for (int n = 0; pending >= kStep && n < 8; ++n) {
-      tick(g, sticks, r, cmd);
+      std::array<PadState, 4> state{};
+      for (size_t i = 0; i < 4; ++i) state[i] = pad_state(pads[i]);
+      keyboard_pad(state[0], g.flow == 2);
+      fe.frame(state);
+      const Sticks s = (g.flow == 2) ? sticks_from(state[0], profile) : Sticks{};
+      tick(g, s, r, cmd);
       pending -= kStep;
     }
     if (pending > kStep) pending = 0.0;
-
+    ui.clear();
+    fe.draw(ui);
     SDL_GPUTexture* swap = nullptr;
     uint32_t w = 0, h = 0;
-    if (SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window, &swap, &w, &h) && swap) render(r, cmd, swap, format, w, h, g);
+    if (SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window, &swap, &w, &h) && swap)
+      render(r, cmd, swap, format, w, h, g, ui);
     SDL_SubmitGPUCommandBuffer(cmd);
   }
+  for (auto& p : pads)
+    if (p) SDL_CloseGamepad(p);
   SDL_ReleaseWindowFromGPUDevice(dev, window);
   SDL_DestroyWindow(window);
   return 0;
+}
+
+int button_axis(const std::string& b) {
+  if (b == "a") return 0xC;
+  if (b == "b") return 0xD;
+  if (b == "x") return 0xE;
+  if (b == "y") return 0xF;
+  if (b == "start") return 0x10;
+  if (b == "back") return 0x11;
+  if (b == "up") return -1;
+  if (b == "down") return -2;
+  if (b == "left") return -3;
+  if (b == "right") return -4;
+  return 0xC;
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
   fs::path cache = fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "cache";
+  fs::path profile_dir;
   int frames = -1;
   Sticks sticks;
   fs::path screenshot;
@@ -170,16 +353,23 @@ int main(int argc, char** argv) {
   int bomb_step = -1;
   int mode = 0;
   int start_level = -1;
+  bool frontend = false;
   std::vector<DevSpawn> spawns;
+  std::vector<Press> presses;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--data" && i + 1 < argc) cache = argv[++i];
+    else if (a == "--profile" && i + 1 < argc) profile_dir = argv[++i];
     else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
     else if (a == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
     else if (a == "--seed" && i + 1 < argc) seed = std::atoll(argv[++i]);
     else if (a == "--mode" && i + 1 < argc) mode = std::clamp(std::atoi(argv[++i]), 0, 5);
     else if (a == "--level" && i + 1 < argc) start_level = std::clamp(std::atoi(argv[++i]), 0, 19);
-    else if (a == "--size" && i + 2 < argc) {
+    else if (a == "--frontend") frontend = true;
+    else if (a == "--press" && i + 2 < argc) {
+      const int f = std::atoi(argv[++i]);
+      presses.push_back({f, button_axis(argv[++i])});
+    } else if (a == "--size" && i + 2 < argc) {
       shot_w = uint32_t(std::atoi(argv[++i]));
       shot_h = uint32_t(std::atoi(argv[++i]));
     } else if (a == "--stick" && i + 2 < argc) {
@@ -197,8 +387,9 @@ int main(int argc, char** argv) {
       sticks.fire_y = clamp16(std::atoi(argv[++i]));
     } else {
       std::fprintf(stderr,
-                   "usage: geow2 [--data <cache>] [--seed <n>] [--mode <0-5>] [--level <0-19>] [--frames <n> --screenshot <png> [--size <w> <h>]"
-                   " [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--spawn <type> <x> <y>]...]\n");
+                   "usage: geow2 [--data <cache>] [--profile <dir>] [--seed <n>] [--frames <n> --screenshot <png>"
+                   " [--size <w> <h>] [--mode <0-5>] [--level <0-19>] [--stick <x> <y>] [--fire <x> <y>]"
+                   " [--bomb <step>] [--spawn <type> <x> <y>]... | --frontend [--press <frame> <button>]...]\n");
       return 2;
     }
   }
@@ -207,6 +398,11 @@ int main(int argc, char** argv) {
   if (!SDL_Init(headless ? SDL_INIT_VIDEO : (SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))) {
     SDL_Log("SDL_Init: %s", SDL_GetError());
     return 1;
+  }
+  if (profile_dir.empty()) {
+    char* pref = SDL_GetPrefPath("geow2", "geow2");
+    profile_dir = pref ? fs::path(pref) : fs::path("profile");
+    SDL_free(pref);
   }
   Game game;
   if (!load(game, cache, seed, mode)) return 1;
@@ -220,8 +416,13 @@ int main(int argc, char** argv) {
   }
   Renderer renderer;
   if (!renderer.init(dev, fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "shaders")) return 1;
-  const int rc =
-      headless ? run_headless(dev, renderer, game, frames, sticks, bomb_step, spawns, screenshot, shot_w, shot_h) : run_window(dev, renderer, game);
+  int rc;
+  if (headless && frontend)
+    rc = run_frontend_headless(dev, renderer, game, frames, presses, screenshot, shot_w, shot_h);
+  else if (headless)
+    rc = run_headless(dev, renderer, game, frames, sticks, bomb_step, spawns, screenshot, shot_w, shot_h);
+  else
+    rc = run_window(dev, renderer, game, profile_dir);
   renderer.release();
   SDL_DestroyGPUDevice(dev);
   SDL_Quit();

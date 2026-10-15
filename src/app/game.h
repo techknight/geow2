@@ -41,6 +41,8 @@
 #include "game/stars.h"
 #include "game/units.h"
 #include "game/wave_spawner.h"
+#include "game/ui.h"
+#include "game/ui_text.h"
 #include "game/world.h"
 #include "game/rotation.h"
 #include "game/sequence.h"
@@ -54,6 +56,20 @@ constexpr float kStep = 1.0f / 60.0f;          // dat_8219D280 = 1.0 / 60.0 (sub
 constexpr float kArenaHalfX = 300.0f;          // dat_82000CF4 (sub_82036250)
 constexpr float kArenaHalfY = 200.0f;          // dat_82000CF0
 constexpr float kShapeCapSize = 1.0f;          // dat_820006C4 (sub_82061908)
+
+// A score table (0x370 bytes in the game block 0x82199470, one per mode;
+// session only): entry 0 the last game, 1 the best this session, 2..9 the
+// previous games, newest first.
+struct ScoreEntry {
+  int64_t score = 0;
+  int multiplier = 1;
+  std::string name;
+};
+struct ScoreTable {
+  std::array<ScoreEntry, 10> entry{};
+  // sub_82034B48.
+  void insert(int64_t score, int multiplier, const std::string& name);
+};
 
 // One step's pad input, raw (XInput convention).
 struct Sticks {
@@ -106,7 +122,18 @@ struct Game {
   Sequence sequence;     // Sequence's levels (0x8219D3E0)
   float elapsed = 0.0f;  // dat_8219CE68
   bool over = false;     // dat_8219CE73: the game-over rule was met
-  bool ended = false;    // the end handled (field cleared, results next)
+  // The game's flow (dat_821993F0): 0 front end, 1 starting, 2 playing,
+  // 3 paused, 4 ending; the end countdown (dat_821993D4) and its reason
+  // (dat_821993D8: 1 quit, 2 game over, 3 profile change).
+  int flow = 2;
+  float end_timer = 0.0f;
+  int end_reason = 0;
+  bool hint_pending = false;  // sub_82034408's achievement-hint test (+1 s)
+  // The text slots by id, and the credits (table 0x8218D9E0: type, text).
+  UiText text;
+  std::vector<std::pair<int, std::string>> credits;
+  // The single-player score tables, by mode (sub_82034C50).
+  std::array<ScoreTable, 6> tables{};
   bool first_spawn = true;  // dat_8219CE70
   int after_death = 0;      // dat_8219D288: the last player died (sub_8204E7D8)
   // The player's life and the mode's rules.
@@ -121,11 +148,20 @@ struct Game {
 
 // Loads the user's data from the cache and sets up a game of `mode`.
 bool load(Game& g, const std::filesystem::path& cache, int64_t seed, int mode);
+// sub_82033148: a new game of `mode` (the game block reset, the mode's
+// setup, the playfield and spawners reset); the flow goes to playing.
+void start_game(Game& g, int mode);
+// sub_82033610 / sub_82033638 / sub_82034588.
+inline bool in_game(const Game& g) { return g.flow == 2 || g.flow == 3; }
+inline bool ending(const Game& g) { return g.flow == 4 || 0.0f < g.end_timer; }
+inline bool frozen(const Game& g) { return g.flow == 3; }
+// sub_8207CA48: the single-player HUD into `out`.
+void draw_game_hud(const Game& g, LineBatch& out);
 // One simulation step (sub_820366A0) with this step's input.
 void step(Game& g, const Sticks& s);
 // The frame's picture into `target` (w x h).
 void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format,
-            uint32_t w, uint32_t h, const Game& g);
+            uint32_t w, uint32_t h, const Game& g, const UiCanvas& ui);
 // One simulation step and its light map update (one per step, as the
 // original renders one frame per step).
 void tick(Game& g, const Sticks& s, Renderer& r, SDL_GPUCommandBuffer* cmd);
