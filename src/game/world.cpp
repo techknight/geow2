@@ -129,6 +129,7 @@ Mat4 Entity::placement(World& w) {
 }
 
 Entity* World::add(std::unique_ptr<Entity> e) {
+  e->order = next_order++;
   entities.push_back(std::move(e));
   Entity* p = entities.back().get();
   // Unit-based entities join the spatial hash (sub_82047030 places them
@@ -206,9 +207,19 @@ void World::award(const Entity& victim, const Killer& k) {
 int World::cell_of(float x, float y) { return (int(y) & 0x3E0) | (int(x) >> 5 & 0x1F); }
 
 void World::update_entities() {
-  // Entities created during the walk are visited too (list order).
-  for (size_t i = 0; i < entities.size(); ++i) {
-    Entity& e = *entities[i];
+  // The object list in creation order: the entities and the player shots
+  // interleaved (a shot is an object like any other, sub_82052DB8);
+  // entities created during the walk are visited too, after everything
+  // else. A shot that hit a wall last step goes now (sub_82052418).
+  size_t j = 0;
+  for (size_t i = 0;;) {
+    if (shots && j < shots->size() && (i >= entities.size() || (*shots)[j].order < entities[i]->order)) {
+      Bullet& b = (*shots)[j++];
+      if (!b.removed && !bullet_step(b, step, half_x, half_y, effects)) b.removed = true;
+      continue;
+    }
+    if (i >= entities.size()) break;
+    Entity& e = *entities[i++];
     if (e.flags & 3) continue;
     // sub_820453E0.
     const uint32_t entry = e.flags;

@@ -24,6 +24,7 @@ struct Bullet {
   bool hit = false;             // +0x9C
   int bounces = 0;              // +0xA0: times it bounced off a gate's beam
   float gravity = 1.0f;         // +0x88: how much wells bend it (1.25 for centre shots)
+  uint64_t order = 0;           // its place in the object list (creation order)
   bool removed = false;         // flag 1: hit something, gone
 };
 

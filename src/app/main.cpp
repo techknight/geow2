@@ -412,7 +412,9 @@ void update_player(Game& g, const Sticks& s) {
     const Vec2 move = stick_vector(stick_axis(s.move_x, false), stick_axis(s.move_y, true));
     const Vec2 fire = stick_vector(stick_axis(s.fire_x, false), stick_axis(s.fire_y, true));
     player_thrust(g.player, move, *g.gm);
+    const size_t fired = g.bullets.size();
     player_fire_step(g.player, g.weapon, fire, kStep, *g.gm, g.bullets);
+    for (size_t i = fired; i < g.bullets.size(); ++i) w.enlist(g.bullets[i]);
     // The larger trigger (axes 8 and 9) sets off a bomb: a blast from the
     // player's position, and the spawner backs off (sub_8203E4B0).
     const float lt = trigger_axis(s.left_trigger), rt = trigger_axis(s.right_trigger);
@@ -446,9 +448,8 @@ void step(Game& g, const Sticks& s) {
   target.vy = g.player.vy;
   target.fading = g.life.fading;
   target.push_vx = target.push_vy = 0.0f;
-  // Then the other entities, bullets included (the player list is updated
-  // first, so bullets fired this step already move: to verify in the oracle).
-  std::erase_if(g.bullets, [&w](Bullet& b) { return !bullet_step(b, kStep, kArenaHalfX, kArenaHalfY, w.effects); });
+  // Then the other objects, shots included, in creation order (the player
+  // list is walked first, so shots fired this step move this step).
   w.update_entities();
   // Shots against enemies (sub_820523B0).
   shot_collisions(w, g.bullets);

@@ -125,6 +125,7 @@ class Entity {
   // and the spatial hash. Blasts and ghosts are not.
   bool unit_based = true;
   int cell = -1;               // +0x74
+  uint64_t order = 0;          // its place in the object list (creation order)
 };
 
 // A player as the entities see it (list 0x821813AC).
@@ -225,6 +226,10 @@ class World {
   std::vector<ParticleRepulsor> repulsors;
   // The player shots (their hash dat_8219F9AC is read by weavers).
   std::vector<Bullet>* shots = nullptr;
+  // Creation order of everything in the object list (0x82181390): the
+  // entities and the shots, walked together.
+  uint64_t next_order = 1;
+  void enlist(Bullet& b) { b.order = next_order++; }
   // Line debris (Render.Layer.Smash).
   Debris debris;
   SmashTuning smash;
