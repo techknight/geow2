@@ -34,8 +34,10 @@ Format for each entry:
 - **Port**: any pad SDL supports, with SDL's Y axes turned into the
   XInput convention so the same mapping applies (left stick moves, right
   stick fires, the original's default). Keyboard: WASD give full
-  deflection on the move stick, the arrow keys on the fire stick (bomb
-  binding to come with that feature).
+  deflection on the move stick, the arrow keys on the fire stick, Space
+  a fully pulled trigger (the bomb). SDL's triggers (0 to 32767) are
+  scaled to the XInput byte the original reads (axes 8 and 9, times
+  1/255).
 - **Decided**: 2026-10-15.
 
 ### Resolution

@@ -23,6 +23,7 @@ Wanderer::Wanderer(World& w, float px, float py) {
   radius = 7.0f;  // dat_820017B0
   flags |= 0x14;  // fading in, touches players
   sx = sy = 2.5f;  // dat_82001158
+  shape_points = 0x18;  // the 24-point table at dat_82182468
   for (int i = 0; i < 4; ++i) colour[i] = kColour[i];
   // Spin: fmadds(r * 2^-32, 0.05, 0.1), reversed (and mirrored) on a
   // second draw above 0.5.

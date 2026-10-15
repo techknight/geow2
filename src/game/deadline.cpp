@@ -120,6 +120,28 @@ void DeadlineSpawner::step(World& w, float elapsed) {
   budget = n;
 }
 
+void DeadlineSpawner::player_died(float time_left) {
+  db50 = 0;
+  wave_timer = 0.0f;
+  db54 = 0;
+  start_delay = 3.0f;  // dat_820006F8
+  // dat_82000D50 (120), dat_82000CE0 (60), dat_82000CDC (30): shares
+  // dat_82000FF4, dat_82001160, dat_82000724, dat_820010F0.
+  float share;
+  if (time_left > 120.0f)
+    share = 0.666666687f;
+  else if (time_left > 60.0f)
+    share = 0.6f;
+  else if (time_left > 30.0f)
+    share = 0.5f;
+  else
+    share = 0.333333343f;
+  int cut = int(float(budget) * share);
+  if (cut > 30) cut = 30;
+  budget = budget - cut;
+  if (budget < 0) budget = 0;
+}
+
 void DeadlineSpawner::bombed() {
   // sub_8203E4B0: the wave comes at once, the budget drops by 30% (at
   // most 10).

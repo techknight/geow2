@@ -54,13 +54,14 @@ void Entity::draw(World& w, LineBatch& out) {
     draw_model_part(out, unit->model, 0, m, white);
     return;
   }
-  // Fading in: two ghosts, alpha and size from fmod(fade * 3, 1) + i,
-  // folded back above 1 (sub_82046D88).
+  // Fading in: two ghosts from g = fmod(fade * 3, 1) + i: alpha g folded
+  // back above 1 (2 - g), size g * 1.4 + 0.1 unfolded (sub_82046D88).
   for (int i = 0; i < 2; ++i) {
-    float f = frac_of(fade * 3.0f) + float(i);
+    const float g = frac_of(fade * 3.0f) + float(i);
+    float f = g;
     if (f >= 1.0f) f = float(2.0 - double(f));
     if (f < 0.025f) continue;  // dat_82000D64
-    const float s = std::fmaf(f, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
+    const float s = std::fmaf(g, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
     Mat4 scaled = m;
     for (int r = 0; r < 3; ++r)
       for (int c = 0; c < 4; ++c) scaled.m[r * 4 + c] = m.m[r * 4 + c] * s;  // sub_82040F28 then A * B
@@ -119,7 +120,9 @@ Mat4 Entity::placement(World& w) {
 Entity* World::add(std::unique_ptr<Entity> e) {
   entities.push_back(std::move(e));
   Entity* p = entities.back().get();
-  p->post_move(*this);
+  // Unit-based entities join the spatial hash (sub_82047030 places them
+  // in their cell); the others stay out of it.
+  if (p->unit_based) p->post_move(*this);
   return p;
 }
 
@@ -201,11 +204,12 @@ void World::update_entities() {
     if (!skip_edge && arena_contact(e.radius, half_x, half_y, e.x, e.y, n)) e.wall(*this, n);
     // Touching a player (player vtable slot 12).
     if (!(entry & kEntityFadingIn) && (e.flags & 0x144) == 0x104) {
-      for (const PlayerTarget& p : players) {
+      for (size_t k = 0; k < players.size(); ++k) {
+        const PlayerTarget& p = players[k];
         if (p.removed) continue;
         const float r = p.radius + e.radius;
         const float dx = p.x - e.x, dy = p.y - e.y;
-        if (dy * dy + dx * dx <= r * r) ++player_hits;
+        if (dy * dy + dx * dx <= r * r && touch) touch({k, &e});
       }
     }
   }

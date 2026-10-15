@@ -15,7 +15,7 @@ namespace geow2 {
 struct Bullet {
   float x = 0, y = 0, vx = 0, vy = 0, heading = 0;
   float radius = 2.0f;          // +0x20 (dat_820006FC)
-  float sx = 0.65f, sy = 0.65f;  // +0x18 / +0x1C (0x3F266666)
+  float sx = 0.9f, sy = 0.9f;  // +0x18 / +0x1C (0x3F666666 at 0x82000D70)
   float colour[4] = {1.0f, 0.75f, 0.1f, 1.0f};  // types 0 and 2 in single player
   float grid_radius = 6.0f;     // +0x8C (dat_82001414): its push on the grid
   float prev_x = 0, prev_y = 0;  // +0x90 / +0x94: position at the start of the step

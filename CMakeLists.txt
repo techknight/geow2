@@ -42,12 +42,15 @@ add_library(geow2_game STATIC
   src/game/effects.cpp
   src/game/game_math.cpp
   src/game/grid.cpp
+  src/game/killer_ghost.cpp
   src/game/light_map.cpp
   src/game/line_quads.cpp
   src/game/model_geometry.cpp
   src/game/particles.cpp
+  src/game/player.cpp
   src/game/player_motion.cpp
   src/game/rotation.cpp
+  src/game/shockwave.cpp
   src/game/shots.cpp
   src/game/spawn.cpp
   src/game/stars.cpp

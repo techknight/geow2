@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -81,9 +82,13 @@ class Entity {
   uint32_t flags = 0;          // +0x24
   float colour[4] = {1, 1, 1, 1};  // +0x28
   float fade = 0;              // +0x38
+  int shape_points = 0;        // +0x3C: points of the shape table at +0x40
   int type = 0;                // +0x44
   const Entity* owner = nullptr;  // +0x48
   const UnitInfo* unit = nullptr;  // +0x78
+  // Built on the unit base (sub_82047030): in the units list (0x8218139C)
+  // and the spatial hash. Blasts and ghosts are not.
+  bool unit_based = true;
   int cell = -1;               // +0x74
 };
 
@@ -93,6 +98,13 @@ struct PlayerTarget {
   float radius = 0;
   bool removed = false;    // flag 1
   float hidden = 0;        // +0xE0: targeted only while <= 0
+};
+
+// The record a touch hands the player (vtable slot 12, sub_8204E8A0):
+// the enemy as both killer and its owner, kind 2.
+struct Touch {
+  size_t player = 0;
+  Entity* enemy = nullptr;
 };
 
 // The playfield: entities in creation order (list 0x82181390), the 32 x 32
@@ -145,7 +157,10 @@ class World {
   std::array<std::vector<Entity*>, 1024> cells;
   int enemy_count = 0;                  // dat_8219E828
   bool frozen = false;                  // dat_8219E7BC
-  int player_hits = 0;                  // touches reported this step (player slot 12)
+  // A unit touching a player calls the player's slot 12 at once, inside
+  // the walk (sub_820453E0): the game handles it here.
+  std::function<void(const Touch&)> touch;
+  int bomb_kills = 0;                   // dat_8219D284: shockwave kills this step
   // Kill markers (sub_82043418, type 0x19, list 0x82181420): they live one
   // step and push the grid (radius 32, strength 6).
   std::vector<Vec2> death_markers;
