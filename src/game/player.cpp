@@ -84,7 +84,7 @@ int player_bomb(PlayerLife& p, LifeRecord& r, float trigger, const ModeRules& ru
   return 1;
 }
 
-void player_exhaust(World& w, const PlayerMotion& p) {
+void player_exhaust(World& w, const PlayerMotion& p, int colour) {
   constexpr float kParticleThrust = 0.5f;  // Unit.Player.ParticleThrust (0x8219F5C8)
   constexpr float kTwoPow32 = 2.32830644e-10f;  // dat_820006E4
   const float dt = w.step;
@@ -100,8 +100,28 @@ void player_exhaust(World& w, const PlayerMotion& p) {
   // 1.1 times it (dat_82000710).
   const float at[4] = {p.x, p.y, 0.0f, 1.0f};
   float b[4];
-  w.effects.wheel(3.14159274f, at, b);
-  const float a[4] = {b[0] * 1.1f, b[1] * 1.1f, b[2] * 1.1f, b[3] * 1.1f};
+  float a[4];
+  if (colour < 1) {
+    w.effects.wheel(3.14159274f, at, b);
+    for (int i = 0; i < 4; ++i) a[i] = b[i] * 1.1f;
+  } else {
+    // Multiplayer, by colour id (dat_82000720 0.25, dat_82000C90 1.5,
+    // dat_820006F4 4.0, dat_82001158 2.5, 3.0, 0.1, 1.0): the high end a
+    // and the low end b.
+    static constexpr float kHi[4][4] = {{3.0f, 1.5f, 0.1f, 1.0f},
+                                        {0.1f, 1.5f, 3.0f, 1.0f},
+                                        {2.5f, 1.5f, 0.1f, 1.0f},
+                                        {0.1f, 3.0f, 1.5f, 1.0f}};
+    static constexpr float kLo[4][4] = {{4.0f, 0.25f, 0.25f, 1.0f},
+                                        {0.25f, 0.25f, 4.0f, 1.0f},
+                                        {3.0f, 4.0f, 0.25f, 1.0f},
+                                        {0.25f, 4.0f, 0.25f, 1.0f}};
+    const int team = colour >= 2 && colour <= 4 ? colour - 1 : 0;
+    for (int i = 0; i < 4; ++i) {
+      a[i] = kHi[team][i];
+      b[i] = kLo[team][i];
+    }
+  }
   const float cube = speed_dt * 0.1f;  // dat_82000714
   // One particle: colour lo + (hi - lo) * u, spread along the trail by i,
   // velocity (back + kick) * v.

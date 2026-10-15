@@ -122,6 +122,9 @@ void ui_bar(UiCanvas& c, const UiPalette& p, float y0, float y1) { ui_panel(c, 0
 
 TextLayout::Field* TextLayout::add_empty() {
   if (fields_.size() >= 24) return nullptr;
+  // The original's 24 fields are a fixed array: reserved, so the fields
+  // handed out stay put.
+  fields_.reserve(24);
   fields_.emplace_back();
   return &fields_.back();
 }

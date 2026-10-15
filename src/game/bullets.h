@@ -29,6 +29,10 @@ struct Bullet {
   size_t owner = 0;             // +0x48: the ship that fired it (World::players)
 };
 
+// sub_82052DB8: a player bullet's colour by its ship's colour id (+0xA0):
+// 1 red, 2 blue, 3 yellow, 4 green; any other the type colour.
+void bullet_colour(int colour, float out[4]);
+
 // The line shape player bullets draw with (+0x40 / +0x3C when +0x7C != 1):
 // six points (three segments) read from the user's image at 0x82181D4C.
 struct BulletShape {

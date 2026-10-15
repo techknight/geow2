@@ -6,6 +6,7 @@ namespace geow2 {
 namespace {
 
 void draw_edges(const Game& g, LineBatch& out);
+void draw_labels(const Game& g, LineBatch& out);
 
 const FlaskStruct* as_struct(const FlaskValue* v) {
   auto* p = v ? std::get_if<std::shared_ptr<FlaskStruct>>(&v->v) : nullptr;
@@ -137,6 +138,8 @@ void kill_player(Game& g, size_t ki, Entity& killer) {
   // with the HUD.)
   p.removed = true;
   w.players[ki].removed = true;
+  // With two or more records the next object shows its rank (CEEC).
+  if (g.multiplayer && g.record_count > 1) s.rank_request = true;
   // Deadline: the Rebound hint comes back for 4 s after a death between
   // 11 and 74 bounced-shot kills.
   if (g.rules.mode == 0 && 10 < w.bounce_kills && w.bounce_kills < 75) w.bounce_hint = 4.0f;  // dat_820006F4
@@ -157,7 +160,7 @@ void player_touched(Game& g, const Touch& t) {
   if (!(p.bomb_wait <= 0.0f)) return;
   if (p.shield <= 0.0f) {
     kill_player(g, t.player, *t.enemy);
-    if (g.rules.mode == 0) g.spawner.player_died(w, g.rules.length - g.elapsed);
+    if (g.rules.mode == 0) g.spawner.player_died(w, g.rules.length - g.elapsed, g.multiplayer && any_alive(g));
     return;
   }
   // The shield destroys what touches it (sound event 9): a kind 2 kill by
@@ -194,6 +197,8 @@ void spawn_player(Game& g, size_t k) {
   s.motion.radius = 5.0f;
   s.motion.heading = -1.57079637f;
   s.weapon = PlayerWeapon{};
+  s.shield_time = s.magnet_time = s.freeze_time = 0.0f;
+  s.label = s.label_time = 0.0f;
   player_spawned(s.life);
   PlayerTarget& t = g.world->players[k];
   const int chain = t.gate_chain;
@@ -216,8 +221,8 @@ void spawn_player(Game& g, size_t k) {
 
 // sub_82036358, when no player is left after one spawned (sound event
 // 0x50): every unit but the players is destroyed (kind 0: no score or
-// geoms) and the shots, geoms and blasts go. (List 0x821813D0 comes with
-// its objects.)
+// geoms) and the shots, geoms, blasts and power-up items (list 0x821813CC)
+// go.
 void clear_field(Game& g) {
   World& w = *g.world;
   for (size_t i = 0; i < w.entities.size(); ++i) {
@@ -233,7 +238,7 @@ void clear_field(Game& g) {
   }
   g.bullets.clear();
   for (auto& e : w.entities)
-    if ((e->type == 0x22 || e->type == 0xF) && !(e->flags & kEntityRemoved)) w.remove(*e);
+    if ((e->type == 0x22 || e->type == 0xF || e->type == 0x10) && !(e->flags & kEntityRemoved)) w.remove(*e);
 }
 
 // The spawn block of sub_820366A0 (0x82037504..0x82037750).
@@ -275,21 +280,21 @@ void respawn(Game& g) {
     spawn_player(g, size_t(k));
     if (numbered) w.play(audio::Event(uint8_t(audio::Event::kMultiPlayerSpawn0) + uint8_t(s.number & 3)));
     spawned = true;
-    g.field_live = true;
-    // King's first three zones come with the game's first spawn
-    // (dat_8219CE70): at the centre, then two placed clear of the rest.
-    if (g.first_spawn) {
-      g.first_spawn = false;
-      if (g.rules.mode == 5) {
-        w.add(std::make_unique<Hill>(w, 0.0f, 0.0f));
-        for (int i = 0; i < 2; ++i) {
-          const Vec2 at = hill_position(w);
-          w.add(std::make_unique<Hill>(w, at.x, at.y));
-        }
+  }
+  if (spawned) g.field_live = true;
+  if (spawned && !numbered) w.play(audio::Event::kPlayerSpawn);
+  // King's first three zones come with the game's first spawn
+  // (dat_8219CE70): at the centre, then two placed clear of the rest.
+  if (spawned && g.first_spawn) {
+    if (g.rules.mode == 5) {
+      w.add(std::make_unique<Hill>(w, 0.0f, 0.0f));
+      for (int i = 0; i < 2; ++i) {
+        const Vec2 at = hill_position(w);
+        w.add(std::make_unique<Hill>(w, at.x, at.y));
       }
     }
+    g.first_spawn = false;
   }
-  if (spawned && !numbered) w.play(audio::Event::kPlayerSpawn);
 }
 
 // A player starting to fade in, single player (sub_820366A0): 40 rounds of
@@ -339,37 +344,95 @@ void update_player(Game& g, size_t k, std::span<const Sticks> pads) {
   if (!p.fading) {
     const Sticks& mp = pad(pads, sh.pilot);
     const Sticks& fp = pad(pads, sh.copilot);
-    const Vec2 move = stick_vector(stick_axis(mp.move_x, false), stick_axis(mp.move_y, true));
+    Vec2 move = stick_vector(stick_axis(mp.move_x, false), stick_axis(mp.move_y, true));
     const Vec2 fire = stick_vector(stick_axis(fp.fire_x, false), stick_axis(fp.fire_y, true));
-    if (player_thrust(m, move, *g.gm)) player_exhaust(w, m);
-    const size_t before = g.bullets.size();
-    // sub_8204EFD0: never in Pacifism; in King only inside a zone. A volley
-    // sounds, then marks the record as having fired (byte +0x60).
-    const bool may_fire = g.rules.mode == 5 ? in_hill(w, m.radius, m.x, m.y) : g.rules.mode != 4;
-    const bool upgraded = 0.0f < sh.weapon.upgrade_time;
-    player_fire_step(m, sh.weapon, fire, kStep, *g.gm, may_fire, g.bullets);
-    for (size_t i = before; i < g.bullets.size(); ++i) {
-      g.bullets[i].owner = k;
-      w.enlist(g.bullets[i]);
+    // The power-up timers in order speed, weapon, slow, magnet, freeze:
+    // each counts down and at 0 sounds its end (one 35 ms gate for all).
+    auto count_down = [&](float& t, audio::Event end) {
+      if (0.0f < t) {
+        t = t - kStep;
+        if (t <= 0.0f) {
+          t = 0.0f;
+          w.play(end);
+        }
+      }
+    };
+    count_down(m.boost_time, audio::Event::kPowerUpEndSpeed);
+    count_down(sh.weapon.upgrade_time, audio::Event::kPowerUpEndWeapon);
+    count_down(m.slow_time, audio::Event::kPowerUpEndSlow);
+    count_down(sh.magnet_time, audio::Event::kPowerUpEndMagnet);
+    count_down(sh.freeze_time, audio::Event::kPowerUpEndFreeze);
+    // The shield power-up holds the shield at 2 while above 2 (fsel, no
+    // sound).
+    {
+      const float t = sh.shield_time - kStep;
+      sh.shield_time = t < 0.0f ? 0.0f : t;
+      if (2.0f < sh.shield_time) p.shield = 2.0f;  // dat_820006FC
     }
-    if (g.bullets.size() > before) {
-      w.play(upgraded ? audio::Event::kFireSpecial : audio::Event::kFireNormal);
-      g.recs[size_t(sh.record)].fired = true;
+    // Frozen: shielded, no thrust or turn; when every player is frozen the
+    // freeze is cut to two steps (times 3.0 / 2.0, dat_820006F8).
+    if (0.0f < sh.freeze_time) {
+      p.shield = 2.0f;
+      bool all = true;
+      for (const size_t o : g.player_list)
+        if (g.ships[o].freeze_time <= 0.0f) all = false;
+      if (all && kStep * 3.0f < sh.freeze_time) sh.freeze_time = kStep * 2.0f;
+      move = Vec2{0.0f, 0.0f};
     }
-    // The larger trigger (axes 8 and 9) sets off a bomb: a blast from the
-    // player's position, and the spawner backs off (sub_8203E4B0).
-    const float lt = std::max(trigger_axis(mp.left_trigger), trigger_axis(fp.left_trigger));
-    const float rt = std::max(trigger_axis(mp.right_trigger), trigger_axis(fp.right_trigger));
-    const int bomb = player_bomb(p, g.recs[size_t(sh.record)], lt - rt < 0.0f ? rt : lt, g.rules);
-    if (bomb == 1) {
-      w.play(audio::Event::kFireSmartbomb);
-      static_cast<Shockwave*>(w.add(std::make_unique<Shockwave>(w, 400.0f, 533.2f, m.x, m.y, 0)))->player =
-          k;  // dat_82000F88, dat_82001C68
-      g.spawner.bombed(w);
-    } else if (bomb == 2) {
-      w.play(audio::Event::kBombDryFire);
+    if (player_thrust(m, move, *g.gm)) player_exhaust(w, m, sh.colour);
+    if (sh.freeze_time <= 0.0f) {
+      const size_t before = g.bullets.size();
+      // sub_8204EFD0: never in Pacifism; in King only inside a zone. A
+      // volley sounds (0x6C with the weapon power-up; in single player 5,
+      // else by player number 0x5B..0x5E), then marks the record as having
+      // fired (byte +0x60). Shots take the ship's colour.
+      const bool may_fire = g.rules.mode == 5 ? in_hill(w, m.radius, m.x, m.y) : g.rules.mode != 4;
+      const bool upgraded = 0.0f < sh.weapon.upgrade_time;
+      player_fire_step(m, sh.weapon, fire, kStep, *g.gm, may_fire, g.bullets);
+      for (size_t i = before; i < g.bullets.size(); ++i) {
+        g.bullets[i].owner = k;
+        bullet_colour(sh.colour, g.bullets[i].colour);
+        w.enlist(g.bullets[i]);
+      }
+      if (g.bullets.size() > before) {
+        if (upgraded)
+          w.play(audio::Event::kFireSpecial);
+        else if (sh.colour < 1)
+          w.play(audio::Event::kFireNormal);
+        else if (sh.number >= 0 && sh.number <= 3)
+          w.play(audio::Event(uint8_t(audio::Event::kMultiFire0) + uint8_t(sh.number)));
+        g.recs[size_t(sh.record)].fired = true;
+      }
+      // Each trigger is the larger of the two pads' (ties to the pilot's);
+      // the larger trigger sets off a bomb: a blast from the player's
+      // position, and the spawner backs off (sub_8203E4B0).
+      const float lt = std::max(trigger_axis(mp.left_trigger), trigger_axis(fp.left_trigger));
+      const float rt = std::max(trigger_axis(mp.right_trigger), trigger_axis(fp.right_trigger));
+      const int bomb = player_bomb(p, g.recs[size_t(sh.record)], lt - rt < 0.0f ? rt : lt, g.rules);
+      if (bomb == 1) {
+        w.play(audio::Event::kFireSmartbomb);
+        static_cast<Shockwave*>(w.add(std::make_unique<Shockwave>(w, 400.0f, 533.2f, m.x, m.y, 0)))->player =
+            k;  // dat_82000F88, dat_82001C68
+        g.spawner.bombed(w);
+      } else if (bomb == 2) {
+        w.play(audio::Event::kBombDryFire);
+      }
     }
     if (player_timers(p, kStep)) w.play(audio::Event::kShieldOff);
+    // The rank label (0x82050C88): a request shows it for 3 s, fading in
+    // and out at 2 a second.
+    if (sh.rank_request) {
+      sh.rank_request = false;
+      sh.label_time = 3.0f;  // dat_820006F8
+    }
+    float v;
+    if (sh.label_time <= 0.0f) {
+      v = -(kStep * 2.0f - sh.label);
+    } else {
+      sh.label_time = sh.label_time - kStep;
+      v = std::fmaf(kStep, 2.0f, sh.label);
+    }
+    sh.label = std::clamp(v, 0.0f, 1.0f);
     integrate(m, kStep);
   }
   Vec2 n;
@@ -389,7 +452,9 @@ void draw_player(const Game& g, const Ship& sh, LineBatch& out) {
   if (!p.alive()) return;
   const PlayerMotion& pm = sh.motion;
   const ModelGeometry& model = g.looks[size_t(sh.model_look)].model;
-  const float* tint = g.looks[size_t(sh.colour_look)].tint;
+  // Frozen, grey (0.5, 0.5, 0.5, 1; the glow keeps its colour).
+  static constexpr float kFrozen[4] = {0.5f, 0.5f, 0.5f, 1.0f};
+  const float* tint = 0.0f < sh.freeze_time ? kFrozen : g.looks[size_t(sh.colour_look)].tint;
   const Mat4 m = placement_style_none(*g.gm, pm.x, pm.y, pm.heading);
   if (!p.fading) {
     draw_model_part(out, model, 0, m, tint);
@@ -424,6 +489,7 @@ void foreground(const Game& g, LineBatch& out) {
     for (const Segment& s : bullet_segments(b, g.bullet_shape, *g.gm))
       emit_line(out, kLineWidthUnit, kShapeCapSize, s.a, s.b, b.colour);
   for (size_t k : g.player_list) draw_player(g, g.ships[k], out);
+  draw_labels(g, out);
   // Pacifism's edge marks (sub_8204FBA8, after the player's list).
   draw_edges(g, out);
   // The debris batches (drawn with the same presets, before the objects).
@@ -513,6 +579,436 @@ void arm_end(Game& g, int reason) {
     hint = (!(g.achieved & 0x400) && g.edge_count >= 25) || (!(g.achieved & 0x800) && g.edge_count >= 25);
   g.hint_pending = hint;
   if (hint) g.end_timer = g.end_timer + 1.0f;
+}
+
+// The slots of record r in slot order (its slot list, sub_82032FF8).
+std::vector<size_t> record_slots(const Game& g, int r) {
+  std::vector<size_t> out;
+  for (int k = 0; k < g.ship_count; ++k)
+    if (g.ships[size_t(k)].record == r) out.push_back(size_t(k));
+  return out;
+}
+
+// sub_8204B4F0: the records still in the game (lives left, a ship in the
+// game or a free spawn to come) by rank, each with a place flag: 0 the
+// sole leader, 2 the sole last, 1 the rest (a lone record is 1).
+struct Places {
+  int count = 0;
+  std::array<int, 4> id{-1, -1, -1, -1};
+  std::array<int, 4> rank{-1, -1, -1, -1};
+  std::array<int, 4> flag{};
+};
+
+Places places(const Game& g) {
+  Places s;
+  for (int r = 0; r < g.record_count; ++r) {
+    bool in = 0 < g.recs[size_t(r)].lives;
+    if (!in)
+      for (const size_t k : record_slots(g, r))
+        if (g.ships[k].life.present || g.ships[k].life.free_spawn) {
+          in = true;
+          break;
+        }
+    if (in) s.id[size_t(s.count++)] = r;
+  }
+  // qsort by rank (sub_8204B4C0); records of equal rank end up with equal
+  // flags whatever their order.
+  std::stable_sort(s.id.begin(), s.id.begin() + s.count,
+                   [&g](int a, int b) { return g.recs[size_t(a)].rank < g.recs[size_t(b)].rank; });
+  for (int j = 0; j < s.count; ++j) s.rank[size_t(j)] = g.recs[size_t(s.id[size_t(j)])].rank;
+  if (s.count < 2) {
+    if (s.count > 0) s.flag[0] = 1;
+  } else {
+    for (int j = 0; j < s.count - 1; ++j) {
+      if (s.rank[size_t(j)] == s.rank[size_t(j + 1)]) {
+        s.flag[size_t(j)] = 1;
+        s.flag[size_t(j + 1)] = 1;
+      } else {
+        s.flag[size_t(j)] = j != 0 ? 1 : 0;
+        if (j + 1 == s.count - 1) s.flag[size_t(j + 1)] = 2;
+      }
+    }
+  }
+  return s;
+}
+
+// sub_8204B6C0: the place flag of a record (1 when it is out).
+int place_flag(const Game& g, int record) {
+  const Places s = places(g);
+  for (int j = 0; j < s.count; ++j)
+    if (s.id[size_t(j)] == record) return s.flag[size_t(j)];
+  return 1;
+}
+
+// sub_8204B908: the power-up the player in slot k gets, drawn from the
+// table of its record's place (0x82181928 leader {2, 5, 1}, 0x82181934
+// middle {1, 2, 3, 4, 6}, 0x82181948 last {1, 2, 4, 3, 3, 6, 6, 7}; no
+// weapon in Pacifism), for 8 s (dat_82000D18), with its name over the
+// player for 2 s in its colour and its sound.
+void pick_power_up(Game& g, size_t k, int flag) {
+  static constexpr int kLeader[3] = {2, 5, 1};
+  static constexpr int kMiddle[5] = {1, 2, 3, 4, 6};
+  static constexpr int kLast[8] = {1, 2, 4, 3, 3, 6, 6, 7};
+  const int* table = nullptr;
+  uint32_t n = 0;
+  if (flag == 0) {
+    table = kLeader;
+    n = 3;
+  } else if (flag == 1) {
+    table = kMiddle;
+    n = 5;
+  } else if (flag == 2) {
+    table = kLast;
+    n = 8;
+  } else {
+    return;
+  }
+  World& w = *g.world;
+  uint32_t u;
+  do {
+    u = w.rng.next();
+    if (g.rules.mode != 4) break;
+  } while (table[u % n] == 6);
+  Ship& sh = g.ships[k];
+  const float x = sh.motion.x, y = sh.motion.y;
+  constexpr float kTime = 8.0f;
+  auto popup = [&](int text) { w.popups.add_big(x, y, 2.0f, sh.colour, g.text(text)); };  // dat_820006FC
+  switch (table[u % n]) {
+    case 1:
+      sh.motion.boost_time = kTime;
+      popup(0xAA);
+      w.play(audio::Event::kPowerUpSpeed);
+      break;
+    case 2:
+      sh.shield_time = kTime;
+      popup(0xAB);
+      w.play(audio::Event::kPowerUpShield);
+      break;
+    case 3:
+      // Every player of another record is slowed.
+      for (const size_t o : g.player_list)
+        if (g.ships[o].record != sh.record) g.ships[o].motion.slow_time = kTime;
+      popup(0xAC);
+      w.play(audio::Event::kPowerUpSlow);
+      break;
+    case 4:
+      sh.magnet_time = kTime;
+      popup(0xAD);
+      w.play(audio::Event::kPowerUpMagnet);
+      break;
+    case 5:
+      // A bomb's blast from the player (no bomb used, nothing marked
+      // fired), and the spawner backs off.
+      static_cast<Shockwave*>(w.add(std::make_unique<Shockwave>(w, 400.0f, 533.2f, x, y, 0)))->player = k;
+      w.play(audio::Event::kFireSmartbomb);
+      popup(0xAE);
+      g.spawner.bombed(w);
+      break;
+    case 6:
+      sh.weapon.upgrade_time = kTime;
+      popup(0xAF);
+      w.play(audio::Event::kPowerUpWeapon);
+      break;
+    case 7:
+      // Every player of another record is frozen.
+      for (const size_t o : g.player_list)
+        if (g.ships[o].record != sh.record) g.ships[o].freeze_time = kTime;
+      popup(0xB0);
+      w.play(audio::Event::kPowerUpFreeze);
+      break;
+    default:
+      break;
+  }
+}
+
+// sub_8203E5C8: a new power-up (sound 0x60) at a random point at least 50
+// from the players (sub_8203BC08); one time in five (a draw above 0.8),
+// when one record is alone in last place, 75 from one of its ships at a
+// random angle instead (up to 5 draws for a ship in the game, then up to
+// 10 for a point within 300 of the centre on both axes).
+void spawn_power_up(Game& g) {
+  World& w = *g.world;
+  Vec2 at = spawn_position(w, 50.0f);  // dat_82001040
+  const float u = float(w.rng.next()) * 2.32830644e-10f;  // dat_820006E4
+  if (0.8f < u) {  // dat_82000754
+    const Places p = places(g);
+    if (p.count > 1 && p.flag[size_t(p.count - 1)] == 2) {
+      const std::vector<size_t> slots = record_slots(g, p.id[size_t(p.count - 1)]);
+      if (!slots.empty()) {
+        for (int i = 0; i < 5; ++i) {
+          const uint32_t r = w.rng.next();
+          const Ship& sh = g.ships[slots[r % uint32_t(slots.size())]];
+          if (!sh.life.present) continue;
+          for (int t = 0; t < 10; ++t) {
+            const float a = std::fmaf(float(w.rng.next()), 4.65661287e-10f, -1.0f) * 3.14159274f;  // dat_820006C8, dat_820010DC
+            const float sn = float(g.gm->sin(double(a))), cs = float(g.gm->cos(double(a)));
+            const float ny = sh.motion.y + sn * 75.0f;  // dat_82000F74
+            const float nx = sh.motion.x + cs * 75.0f;
+            if (std::fabs(nx) <= 300.0f && std::fabs(ny) <= 300.0f) {  // dat_821825B4
+              at = {nx, ny};
+              break;
+            }
+          }
+          break;
+        }
+      }
+    }
+  }
+  w.play(audio::Event::kSpawnPowerUp);
+  w.add(std::make_unique<PowerUp>(w, at.x, at.y, 3));
+}
+
+// sub_8203E7E8's first part: in versus with two or more records and a
+// player in the game, a power-up every 15 s (dat_82000D24), the first
+// after 5.
+void power_up_timer(Game& g) {
+  if (!g.multiplayer || g.record_count < 2 || !any_alive(g)) return;
+  g.power_up_timer = g.power_up_timer - kStep;
+  if (g.power_up_timer <= 0.0f) {
+    g.power_up_timer = 15.0f;
+    spawn_power_up(g);
+  }
+}
+
+// sub_8204B770: each power-up goes to the nearest player not frozen
+// (sub_8204F458) on contact (Unit.Item.MagnetRange is 0, so it is never
+// pulled first); sub_8204C2A8 gives the pick for its record's place.
+void pick_up_items(Game& g) {
+  World& w = *g.world;
+  for (size_t i = 0; i < w.entities.size(); ++i) {
+    Entity& e = *w.entities[i];
+    if (e.type != 0x10 || (e.flags & kEntityRemoved)) continue;
+    const PlayerTarget* p = w.nearest_player(e);
+    if (!p) continue;
+    const float r = p->radius + e.radius;
+    const float dy = p->y - e.y, dx = p->x - e.x;
+    const float d2 = dy * dy + dx * dx;
+    if (!(d2 < r * r)) continue;
+    const size_t k = size_t(p - w.players.data());
+    auto& item = static_cast<PowerUp&>(e);
+    if (item.kind == 3) pick_power_up(g, k, place_flag(g, g.ships[k].record));
+    item.collected(w, *p);
+  }
+}
+
+// sub_8204EBE8 (two or more records): the records ranked by score (ties
+// share the higher rank and are marked tied); a record whose rank or tie
+// changes asks its ships to show their rank labels, as do all ships every
+// 20 s (dat_82000CE8).
+void update_ranks(Game& g) {
+  if (g.record_count < 2) return;
+  const World& w = *g.world;
+  const int n = g.record_count;
+  std::array<int, 4> order{0, 1, 2, 3};
+  // sub_820362B0: score descending, then record ascending.
+  std::stable_sort(order.begin(), order.begin() + n, [&w](int a, int b) {
+    return w.records[size_t(a)].score > w.records[size_t(b)].score;
+  });
+  std::array<bool, 4> tie{};
+  for (int i = 1; i < n; ++i)
+    if (w.records[size_t(order[size_t(i - 1)])].score == w.records[size_t(order[size_t(i)])].score)
+      tie[size_t(i)] = tie[size_t(i - 1)] = true;
+  int rank = 0;
+  int64_t last = w.records[size_t(order[0])].score;
+  for (int j = 0; j < n; ++j) {
+    const int r = order[size_t(j)];
+    if (w.records[size_t(r)].score < last) {
+      last = w.records[size_t(r)].score;
+      rank = j;
+    }
+    LifeRecord& rec = g.recs[size_t(r)];
+    if (rec.rank != rank || rec.tie != tie[size_t(j)]) {
+      rec.rank = rank;
+      rec.tie = tie[size_t(j)];
+      for (const size_t k : record_slots(g, r)) g.ships[k].rank_request = true;
+    }
+  }
+  g.rank_timer = g.rank_timer + kStep;
+  if (20.0f < g.rank_timer) {
+    g.rank_timer = 0.0f;
+    for (int k = 0; k < g.ship_count; ++k) g.ships[size_t(k)].rank_request = true;
+  }
+}
+
+// The frame step's leader announcement (0x820373C8..0x820374D8, two or
+// more records): a record scoring above the best so far becomes leader,
+// one equal to it makes none; and once a tie is seen a later higher score
+// is passed over (as written). A new leader is announced with sound
+// 0x52 + n, n the player number of its first ship, then any later ship
+// whose slot index is at most n (a slot compared with a number, as
+// written). Then the ranks.
+void announce_leader(Game& g) {
+  World& w = *g.world;
+  if (g.record_count > 1) {
+    int leader = 0;
+    int64_t best = w.records[0].score;
+    for (int k = 1; k < g.record_count; ++k) {
+      const int64_t v = w.records[size_t(k)].score;
+      if (best < v) {
+        if (leader >= 0) {
+          best = v;
+          leader = k;
+        }
+      } else if (v == best) {
+        leader = -1;
+      }
+    }
+    if (leader != g.leader) {
+      g.leader = leader;
+      int n = -1;
+      for (int k = 0; k < g.ship_count; ++k) {
+        if (g.ships[size_t(k)].record != leader) continue;
+        if (n < 0)
+          n = g.ships[size_t(k)].number;
+        else if (k <= n)
+          n = k;
+      }
+      if (n >= 0 && n <= 3) w.play(audio::Event(uint8_t(audio::Event::kMultiLeaderChanged0) + uint8_t(n)));
+    }
+  }
+  update_ranks(g);
+}
+
+// sub_820364D0 (at the game's end): each record's place by score (ties
+// share the higher) gives match points from table 0x82181468 by the
+// record count ({0}, {10, 5}, {10, 7, 4}, {10, 7, 4, 1}), written to the
+// lobby records of its ships' pilot and copilot pads.
+void match_points(Game& g) {
+  static constexpr int kPoints[4][4] = {{0, 0, 0, 0}, {10, 5, 0, 0}, {10, 7, 4, 0}, {10, 7, 4, 1}};
+  const World& w = *g.world;
+  const int n = g.record_count;
+  std::array<int, 4> order{0, 1, 2, 3};
+  std::stable_sort(order.begin(), order.begin() + n, [&w](int a, int b) {
+    return w.records[size_t(a)].score > w.records[size_t(b)].score;
+  });
+  const int table = std::clamp(n - 1, 0, 3);
+  int rank = 0, at = 0;
+  int64_t last = w.records[size_t(order[0])].score;
+  for (int j = 0; j < n; ++j) {
+    const int r = order[size_t(j)];
+    if (w.records[size_t(r)].score < last) {
+      last = w.records[size_t(r)].score;
+      rank = j;
+      at = j;
+    }
+    const int points = kPoints[table][at];
+    auto give = [&](int joined) {
+      if (joined < 0 || joined >= g.joined_count) return;
+      const int pad = g.joined_pad[size_t(joined)];
+      if (pad < 0 || pad >= 4) return;
+      LobbyPad& l = g.lobby[size_t(pad)];
+      l.last_rank = rank;
+      l.last_points = points;
+      l.total = l.total + points;
+    };
+    for (const size_t k : record_slots(g, r)) {
+      const Ship& sh = g.ships[k];
+      give(sh.pilot);
+      if (sh.copilot != sh.pilot) give(sh.copilot);
+    }
+  }
+}
+
+// sub_8204F4F8 (every frame): for the game's first 10 s, "POWER UP" (text
+// 0x8D) beside each power-up, fading out over the last second; and each
+// ship's rank (texts 0x9F..0xA2, else "???") beside it while its label
+// shows, both in world text 6 x 6 in the object's colour times the fade.
+void draw_labels(const Game& g, LineBatch& out) {
+  const World& w = *g.world;
+  if (g.elapsed < 10.0f) {  // dat_8200070C
+    for (const auto& e : w.entities) {
+      if (e->type != 0x10 || (e->flags & kEntityRemoved)) continue;
+      const float d = 10.0f - g.elapsed;
+      const float a = std::clamp(d, 0.0f, 1.0f);
+      const float c[4] = {e->colour[0] * a, e->colour[1] * a, e->colour[2] * a, e->colour[3] * a};
+      g.font.world_left(out, e->x + 16.0f, e->y - 3.0f, 6.0f, 6.0f, c, g.text(0x8D));  // dat_82001104, dat_820006F8, dat_82001414
+    }
+  }
+  for (int r = 0; r < g.record_count; ++r) {
+    for (const size_t k : record_slots(g, r)) {
+      const Ship& sh = g.ships[k];
+      if (!sh.life.present || !(0.0f < sh.label)) continue;
+      const int rank = g.recs[size_t(r)].rank;
+      const std::string text = rank >= 0 && rank <= 3 ? g.text(0x9F + rank) : std::string("???");  // 0x82001E88
+      const float* tint = g.looks[size_t(sh.colour_look)].tint;
+      const float a = sh.label;
+      const float c[4] = {tint[0] * a, tint[1] * a, tint[2] * a, tint[3] * a};
+      const float dx = 0.0f < sh.life.shield ? 14.0f : 11.0f;  // dat_82001E8C, dat_820011F4
+      g.font.world_left(out, sh.motion.x + dx, sh.motion.y - 3.0f, 6.0f, 6.0f, c, text);
+    }
+  }
+}
+
+// sub_820353E0: the multiplayer setup after the mode's own. The joined
+// pads in pad order get joined indices; each team (records numbered as
+// teams first appear) is one ship flown by a pilot and a copilot when its
+// two members took those roles, else one ship per member; ships follow
+// team order. A ship's number is its lower pad, its colour its team + 1,
+// its record its team's in versus (else the one co-op record). Spawn
+// points: (0, 0) alone, (-20, 0) / (20, 0) for two, the corners of a 40
+// square for three or four. No bombs (none to start, none from score);
+// a death waits 60 s in Sequence (dat_82000CE0), else 4 (dat_820006F4).
+void setup_multiplayer(Game& g, bool versus) {
+  g.multiplayer = true;
+  g.versus = versus;
+  std::array<int, 4> team_record{-1, -1, -1, -1};
+  std::array<int, 4> joined_of{-1, -1, -1, -1};
+  std::array<std::vector<int>, 4> members;
+  std::array<int, 4> roles{};
+  int joined = 0, teams = 0;
+  for (int pad = 0; pad < 4; ++pad) {
+    const LobbyPad& l = g.lobby[size_t(pad)];
+    if (!l.joined) continue;
+    joined_of[size_t(pad)] = joined;
+    g.joined_pad[size_t(joined++)] = pad;
+    const int t = std::clamp(l.team, 0, 3);
+    if (team_record[size_t(t)] < 0) team_record[size_t(t)] = teams++;
+    members[size_t(t)].push_back(pad);
+    if (l.role == 1) roles[size_t(t)] |= 1;
+    if (l.role == 2) roles[size_t(t)] |= 2;
+  }
+  g.joined_count = joined;
+  g.ship_count = 0;
+  for (int t = 0; t < 4; ++t) {
+    const std::vector<int>& m = members[size_t(t)];
+    if (roles[size_t(t)] == 3 && m.size() == 2) {
+      Ship& sh = g.ships[size_t(g.ship_count++)];
+      sh = Ship{};
+      for (const int pad : m) {
+        if (g.lobby[size_t(pad)].role == 1) sh.pilot = joined_of[size_t(pad)];
+        if (g.lobby[size_t(pad)].role == 2) sh.copilot = joined_of[size_t(pad)];
+      }
+    } else {
+      for (const int pad : m) {
+        Ship& sh = g.ships[size_t(g.ship_count++)];
+        sh = Ship{};
+        sh.pilot = sh.copilot = joined_of[size_t(pad)];
+      }
+    }
+  }
+  for (int k = 0; k < g.ship_count; ++k) {
+    Ship& sh = g.ships[size_t(k)];
+    const int a = g.joined_pad[size_t(sh.pilot)], b = g.joined_pad[size_t(sh.copilot)];
+    sh.number = a < b ? a : b;
+    const int team = std::clamp(g.lobby[size_t(sh.number)].team, 0, 3);
+    sh.record = versus ? team_record[size_t(team)] : 0;
+    sh.colour = team + 1;
+    sh.model_look = sh.number + 1;
+    sh.colour_look = sh.colour;
+    float x = 0.0f, y = 0.0f;
+    if (g.ship_count == 2) {
+      x = k == 0 ? -20.0f : 20.0f;  // dat_82000CE4, dat_82000CE8
+    } else if (g.ship_count >= 3) {
+      x = (k & 1) ? 20.0f : -20.0f;
+      y = (k & 2) ? 20.0f : -20.0f;
+    }
+    sh.life.spawn_x = x;
+    sh.life.spawn_y = y;
+  }
+  g.record_count = versus ? teams : 1;
+  g.rules.start_bombs = 0;
+  g.rules.flags |= 2;
+  g.rules.respawn_delay = g.rules.mode == 2 ? 60.0f : 4.0f;
 }
 
 }  // namespace
@@ -707,10 +1203,21 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
   return true;
 }
 
-void start_game(Game& g, int mode) {
+// sub_82033148 with the single-player setup or the multiplayer one.
+static void begin_game(Game& g, int mode, bool multiplayer, bool versus);
+
+void start_game(Game& g, int mode) { begin_game(g, mode, false, false); }
+
+void start_multiplayer(Game& g, int mode, bool versus) { begin_game(g, mode, true, versus); }
+
+static void begin_game(Game& g, int mode, bool multiplayer, bool versus) {
   World& w = *g.world;
   // The game block's reset (sub_820348E8) and the mode's setup.
   g.rules = mode_rules(mode);
+  g.leader = -1;
+  g.last_one_sounded = false;
+  g.rank_timer = 0.0f;
+  g.power_up_timer = 5.0f;
   g.elapsed = 0.0f;
   g.over = false;
   g.first_spawn = true;
@@ -736,6 +1243,9 @@ void start_game(Game& g, int mode) {
   g.ships.fill(Ship{});
   g.player_list.clear();
   w.player_order.clear();
+  g.joined_count = 1;
+  g.joined_pad.fill(0);
+  if (multiplayer) setup_multiplayer(g, versus);
   // sub_82032FF8: lives and bombs into the records.
   g.recs.fill(LifeRecord{});
   for (int r = 0; r < g.record_count; ++r) {
@@ -776,25 +1286,42 @@ GameAudioState audio_state(const Game& g) {
   GameAudioState s;
   const World& w = *g.world;
   s.paused = frozen(g);
-  const Ship& sh = g.ships[0];
-  const PlayerMotion& m = sh.motion;
-  const bool alive = sh.life.alive();
-  // The smallest distance from a live player to a zone's edge (King).
-  for (const auto& e : w.entities) {
-    if (e->type != 0x1C || (e->flags & kEntityRemoved) || !alive) continue;
-    const float dx = e->x - m.x, dy = e->y - m.y;
-    const float d = std::sqrt(dx * dx + dy * dy) - e->radius;
-    const float m = d > 0.0f ? d : 0.0f;
-    if (m < s.distance_from_hill) s.distance_from_hill = m;
+  // The smallest distance from a live player to a zone's edge (King); the
+  // mean stick magnitude of the live players; the first live player's
+  // position; whether a live player has the magnet.
+  int live = 0;
+  float thrust = 0.0f;
+  bool first = true;
+  for (const size_t k : g.player_list) {
+    const Ship& sh = g.ships[k];
+    if (!sh.life.alive()) continue;
+    const PlayerMotion& m = sh.motion;
+    for (const auto& e : w.entities) {
+      if (e->type != 0x1C || (e->flags & kEntityRemoved)) continue;
+      const float dx = e->x - m.x, dy = e->y - m.y;
+      const float d = std::sqrt(dx * dx + dy * dy) - e->radius;
+      const float v = d > 0.0f ? d : 0.0f;
+      if (v < s.distance_from_hill) s.distance_from_hill = v;
+    }
+    ++live;
+    thrust = thrust + m.thrust_level;
+    if (first) {
+      s.player_x = m.x;
+      s.player_y = m.y;
+      first = false;
+    }
+    if (0.0f < sh.magnet_time) s.magnet_active = true;
   }
-  if (alive) {
-    s.thrust = m.thrust_level;
-    s.player_x = m.x;
-    s.player_y = m.y;
-  }
+  if (live > 0) s.thrust = thrust / float(live);
   s.progression_level = g.sequence.shown_level;
+  // The largest multiplier and score of the records.
   s.multiplier = w.records[0].multiplier;
-  s.score = double(w.records[0].score);
+  int64_t score = w.records[0].score;
+  for (int r = 1; r < g.record_count; ++r) {
+    s.multiplier = std::max(s.multiplier, w.records[size_t(r)].multiplier);
+    score = std::max(score, w.records[size_t(r)].score);
+  }
+  s.score = double(score);
   s.no_enemies = w.enemy_count;
   auto remaining = [](int limit, int elapsed) { return std::clamp(limit - elapsed, 0, limit); };
   s.time_left = remaining(int(g.rules.length), int(g.elapsed));
@@ -842,6 +1369,7 @@ void step(Game& g, std::span<const Sticks> pads) {
   // Deadline's own, the others' shared one (Sequence's is not ported);
   // then the clock (sub_820366A0).
   if (frozen(g)) return;
+  if (!ending(g)) power_up_timer(g);
   if (ending(g)) {
     // (No spawner while the game ends.)
   } else if (g.rules.mode == 2) {
@@ -849,7 +1377,9 @@ void step(Game& g, std::span<const Sticks> pads) {
     in.alive = any_alive(g);
     in.over = g.over;
     in.after_death = &g.after_death;
-    in.respawn_wait = &g.ships[0].life.respawn_wait;
+    in.clear_waits = [&g]() {
+      for (int k = 0; k < g.ship_count; ++k) g.ships[size_t(k)].life.respawn_wait = 0.0f;
+    };
     in.level_time = g.rules.level_time;
     in.transition = g.transition_switch;
     g.sequence.step(w, in);
@@ -878,6 +1408,8 @@ void step(Game& g, std::span<const Sticks> pads) {
     target.vx = sh.motion.vx;
     target.vy = sh.motion.vy;
     target.fading = sh.life.fading;
+    target.hidden = sh.freeze_time;
+    target.magnet = 0.0f < sh.magnet_time;
     target.push_vx = target.push_vy = 0.0f;
   }
   // Then the other objects, shots included, in creation order (the player
@@ -890,6 +1422,8 @@ void step(Game& g, std::span<const Sticks> pads) {
   gate_crossings(w);
   // Geoms are pulled in and picked up (sub_8204D410).
   collect_geoms(w);
+  // Power-ups are picked up (sub_8204B770).
+  pick_up_items(g);
   // The HUD rows' pulses fade (0.9 a step, 0x82000D70).
   for (int r = 0; r < g.record_count; ++r) {
     LifeRecord& rec = g.recs[size_t(r)];
@@ -910,11 +1444,24 @@ void step(Game& g, std::span<const Sticks> pads) {
   if (!in_game(g)) {
     camera_front_end(g.camera, g.camera_idle, kStep);
   } else {
-    Ship& sh = g.ships[0];
-    if (sh.life.present)
-      camera_follow_single(g.camera, &sh.motion.x, &sh.motion.y, 1, kArenaHalfX, kArenaHalfY);
-    else
-      camera_follow_single(g.camera, &sh.life.spawn_x, &sh.life.spawn_y, 1, kArenaHalfX, kArenaHalfY);
+    if (g.multiplayer) {
+      float xs[4], ys[4];
+      CameraTrack tracks[4];
+      for (int k = 0; k < g.ship_count; ++k) {
+        const Ship& sh = g.ships[size_t(k)];
+        xs[k] = sh.life.present ? sh.motion.x : sh.life.spawn_x;
+        ys[k] = sh.life.present ? sh.motion.y : sh.life.spawn_y;
+        tracks[k] = sh.track;
+      }
+      camera_follow_multi(g.camera, tracks, xs, ys, g.ship_count, kArenaHalfX, kArenaHalfY);
+      for (int k = 0; k < g.ship_count; ++k) g.ships[size_t(k)].track = tracks[k];
+    } else {
+      Ship& sh = g.ships[0];
+      if (sh.life.present)
+        camera_follow_single(g.camera, &sh.motion.x, &sh.motion.y, 1, kArenaHalfX, kArenaHalfY);
+      else
+        camera_follow_single(g.camera, &sh.life.spawn_x, &sh.life.spawn_y, 1, kArenaHalfX, kArenaHalfY);
+    }
     g.camera_idle = 0.0f;
   }
   // No player left since one spawned: the field is cleared; then a slot
@@ -924,6 +1471,8 @@ void step(Game& g, std::span<const Sticks> pads) {
     clear_field(g);
     g.field_live = false;
   }
+  // The leader and the ranks (multiplayer).
+  if (g.multiplayer) announce_leader(g);
   // Respawns and the game over, while a game runs and is not ending.
   if (in_game(g) && !ending(g)) {
     respawn(g);
@@ -942,17 +1491,51 @@ void step(Game& g, std::span<const Sticks> pads) {
       for (int r = 0; r < g.record_count; ++r) left += g.recs[size_t(r)].lives;
       end = end || left < 1;
     }
+    // Versus with lives: when one record alone is still in, it wins once
+    // its score is above every other's (sound 0x51 with the end);
+    // otherwise sound 0x5A once and play goes on.
+    bool won = false;
+    if (g.multiplayer && g.record_count > 1 && g.rules.lives_mode == 0) {
+      int in = 0, last = 0;
+      for (int r = 0; r < g.record_count; ++r) {
+        bool still = 1 <= g.recs[size_t(r)].lives;
+        if (!still)
+          for (const size_t k : g.player_list)
+            if (g.ships[k].life.alive() && g.ships[k].record == r) still = true;
+        if (!still)
+          for (int k = 0; k < g.ship_count; ++k)
+            if (g.ships[size_t(k)].record == r && g.ships[size_t(k)].life.free_spawn) still = true;
+        if (still) {
+          ++in;
+          last = r;
+        }
+      }
+      if (in == 1) {
+        bool ahead = true;
+        for (int r = 0; r < g.record_count; ++r)
+          if (r != last && w.records[size_t(last)].score <= w.records[size_t(r)].score) ahead = false;
+        if (ahead) {
+          won = true;
+          end = true;
+        } else if (!g.last_one_sounded) {
+          w.play(audio::Event::kMultiLastManStanding);
+          g.last_one_sounded = true;
+        }
+      }
+    }
     else if (g.rules.lives_mode == 2)
       end = end || g.rules.length <= w.clock;
     if (end) {
       g.over = true;
       if (!g.end_sounded) {
         g.end_sounded = true;
+        if (won) w.play(audio::Event::kMultiGameWon);
         w.play(audio::Event::kGameOver);
         w.play(audio::Event::kStopInGameMusic);
       }
       if (g.sequence.allow_end) {
         clear_field(g);
+        match_points(g);
         arm_end(g, 2);
       }
     }
@@ -1022,8 +1605,8 @@ void step(Game& g, std::span<const Sticks> pads) {
     // dat_82000724).
     float glow[3] = {look.glow[0], look.glow[1], look.glow[2]};
     if (sh.life.fading) {
-      const float k = float(double(float(std::fmod(double(sh.life.fade * 3.0f), 1.0))) * 0.5 + 1.0);
-      for (float& c : glow) c = c * k;
+      const float fade_k = float(double(float(std::fmod(double(sh.life.fade * 3.0f), 1.0))) * 0.5 + 1.0);
+      for (float& c : glow) c = c * fade_k;
     }
     emit_light(g.lights, look.glow_size, sh.motion.x, sh.motion.y, glow);
   }
@@ -1082,7 +1665,33 @@ void step(Game& g, std::span<const Sticks> pads) {
   }
 }
 
+void draw_multiplayer_hud(const Game& g, LineBatch& out) {
+  MultiHudState s;
+  for (int r = 0; r < g.record_count; ++r) {
+    MultiHudRecord rec;
+    const std::vector<size_t> slots = record_slots(g, r);
+    rec.colour = slots.empty() ? 0 : g.ships[slots[0]].colour;
+    for (const size_t k : slots) rec.numbers.push_back(g.ships[k].number);
+    rec.lives = g.recs[size_t(r)].lives;
+    rec.multiplier = g.world->records[size_t(r)].multiplier;
+    rec.score = g.world->records[size_t(r)].score;
+    s.records.push_back(rec);
+  }
+  s.show_lives = 0 < g.rules.start_lives || (g.rules.flags & 1) == 0;
+  s.lives_mode = g.rules.lives_mode;
+  s.length = g.rules.length;
+  s.clock = g.elapsed;
+  s.mode = g.rules.mode;
+  s.level_time = g.rules.level_time;
+  s.level_timer = g.sequence.level_timer;
+  draw_multiplayer_hud(g.font, s, out);
+}
+
 void draw_game_hud(const Game& g, LineBatch& ui) {
+  if (g.record_count > 1) {
+    draw_multiplayer_hud(g, ui);
+    return;
+  }
   // The high score: the session's best for the mode, or this game's score
   // when higher.
   HudState hud;

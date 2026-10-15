@@ -181,15 +181,15 @@ void Geom::collect(World& w, size_t p) {
   // sounds 0x47 / 0x48 alternate.
   // The collecting player's record (sub_8204D118).
   ScoreRecord& rec = w.record_of(p);
-  const int colour = w.players[p].colour;
+  const int tint = w.players[p].colour;
   rec.multiplier += value;
   w.spawn_geoms += value;  // sub_8203BBB8
   w.play(audio::Event::kPickupGeom1);  // the pair alternates behind its gate
   if (w.geom_collected) w.geom_collected(value);  // sub_820390F0
   if (rec.multiplier < rec.milestone) {
-    w.popups.add_small(x, y, 0.75f, colour, "x" + format_number(rec.multiplier));  // dat_82000718
+    w.popups.add_small(x, y, 0.75f, tint, "x" + format_number(rec.multiplier));  // dat_82000718
   } else {
-    w.popups.add_big(x, y + 4.0f, 1.25f, colour, w.bonus_multiplier_text + " x" + format_number(rec.milestone));
+    w.popups.add_big(x, y + 4.0f, 1.25f, tint, w.bonus_multiplier_text + " x" + format_number(rec.milestone));
     const int m = rec.milestone;
     rec.milestone = m < 100 ? m + 10 : m < 1000 ? m + 50 : m + 100;
   }

@@ -122,7 +122,14 @@ void DeadlineSpawner::step(World& w, float elapsed) {
   w.play(audio::Event::kNewSpawnGroup);
 }
 
-void DeadlineSpawner::player_died(World& w, float time_left) {
+void DeadlineSpawner::player_died(World& w, float time_left, bool others_alive) {
+  if (others_alive) {
+    int cut = int(float(budget) * 0.5f);  // dat_82000724
+    if (cut < 20) cut = 20;
+    budget = budget - cut;
+    if (budget < 0) budget = 0;
+    return;
+  }
   w.spawn_kills = 0;
   wave_timer = 0.0f;
   w.spawn_geoms = 0;

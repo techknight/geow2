@@ -444,7 +444,7 @@ void Sequence::step(World& w, const Inputs& in) {
         w.play(audio::Event::kResultDied);
         clear(w, true);
         phase = 4;
-        *in.respawn_wait = 0.0f;
+        if (in.clear_waits) in.clear_waits();
       } else if (0.0f < wait || cursor < commands.size() || 0 < w.enemy_count) {
         // The level clock, ticking each whole second.
         const int second = int(level_timer);
@@ -456,11 +456,11 @@ void Sequence::step(World& w, const Inputs& in) {
           w.play(audio::Event::kResultOutOfTime);
           clear(w, false);
           phase = 4;
-          *in.respawn_wait = 0.0f;
+          if (in.clear_waits) in.clear_waits();
         }
       } else {
         end_level(w, 1);
-        *in.respawn_wait = 0.0f;
+        if (in.clear_waits) in.clear_waits();
       }
       break;
     case 4: {

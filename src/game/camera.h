@@ -19,6 +19,21 @@ struct CameraState {
 // toward 1.0 at 0.075 per step.
 void camera_follow_single(CameraState& c, const float* xs, const float* ys, int players, float half_x, float half_y);
 
+// A slot's three smoothing stages of the camera follow (slot +0x14..+0x28).
+struct CameraTrack {
+  float s1x = 0, s1y = 0, s2x = 0, s2y = 0, s3x = 0, s3y = 0;
+};
+
+// The in-game follow with the multiplayer flag set (0x82036A50..
+// 0x82036F44): each slot's stages ease after its position (its player, or
+// its spawn point while it has none) at 0.2, 0.05 and 0.025 of the gap; the
+// stages span a box; the centre eases toward half the box centre at 0.065
+// and the zoom toward 1 + 0.4285714 times the box's fill of the arena (the
+// larger of its width over 360 and its height over 240, less a margin) at
+// 0.075.
+void camera_follow_multi(CameraState& c, CameraTrack* tracks, const float* xs, const float* ys, int slots,
+                         float half_x, float half_y);
+
 // The view-projection the render pass builds (sub_82067A20): eye above the
 // centre at height 512 looking down with up (0, -1, 0), fov 36 degrees
 // times zoom over Render.Zoom (1.0), aspect 16:9, near 1, far 10000.

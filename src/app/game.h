@@ -41,6 +41,7 @@
 #include "game/model_geometry.h"
 #include "game/player.h"
 #include "game/player_motion.h"
+#include "game/power_up.h"
 #include "game/rng.h"
 #include "game/shockwave.h"
 #include "game/stars.h"
@@ -93,12 +94,35 @@ struct ShipLook {
   const UnitInfo* unit = nullptr;
 };
 
+// A front-end pad's lobby record (0x821E9FF0 + pad * 0x28): joined (+0),
+// team (+4: 0..3), role (+8: 0 alone, 1 pilot, 2 copilot) and its match
+// points (+0x14 the total, +0x18 the last rank, +0x1C the last points).
+struct LobbyPad {
+  bool joined = false;
+  int team = 0;
+  int role = 0;
+  int total = 0;
+  int last_rank = 0;
+  int last_points = 0;
+};
+
 // A ship: its slot (0x8219CEB4 + 0x6C k) and its player object
 // (sub_82051448).
 struct Ship {
-  PlayerMotion motion;
-  PlayerWeapon weapon;
+  PlayerMotion motion;  // boost_time +0xCC (speed), slow_time +0xD8 (slow)
+  PlayerWeapon weapon;  // upgrade_time +0xD0 (weapon)
   PlayerLife life;
+  // The object's other power-up timers: shield +0xD4, magnet +0xDC,
+  // freeze +0xE0; and its rank label's fade (+0xB4) and hold (+0xB8).
+  float shield_time = 0.0f;
+  float magnet_time = 0.0f;
+  float freeze_time = 0.0f;
+  float label = 0.0f;
+  float label_time = 0.0f;
+  // The slot's camera stages (+0x14..+0x28) and its "show the rank label"
+  // request (+0x38, dat_8219CEEC).
+  CameraTrack track;
+  bool rank_request = false;
   int pilot = 0;    // +0x58 (dat_8219CF0C): the joined index that moves it
   int copilot = 0;  // +0x5C (dat_8219CF10): the joined index that fires
   int record = 0;   // +0x60 (dat_8219CF14)
@@ -129,6 +153,18 @@ struct Game {
   std::vector<size_t> player_list;
   bool multiplayer = false;  // dat_8219D275
   bool versus = false;       // dat_8218E7C0
+  // The lobby (pads 0..3) and the game's pad list: the pad of each joined
+  // index (dat_8219CE90) and their count (dat_8219CE8C).
+  std::array<LobbyPad, 4> lobby{};
+  std::array<int, 4> joined_pad{};
+  int joined_count = 1;
+  // Multiplayer: the announced leader (dat_8219CE78, -1 none), the "last
+  // one standing" sound played (dat_8219CE7C), the rank labels' 20 s
+  // timer (dat_8219CE84) and the power-up timer (dat_8219CE88).
+  int leader = -1;
+  bool last_one_sounded = false;
+  float rank_timer = 0.0f;
+  float power_up_timer = 5.0f;
   CameraState camera;
   float camera_idle = 0.0f;  // dat_8219D3CC: time out of a game
   std::vector<Bullet> bullets;
@@ -219,6 +255,15 @@ bool load(Game& g, const std::filesystem::path& cache, int64_t seed, int mode);
 // sub_82033148: a new game of `mode` (the game block reset, the mode's
 // setup, the playfield and spawners reset); the flow goes to playing.
 void start_game(Game& g, int mode);
+// sub_82033148 with the multiplayer setup sub_820353E0 as the mode's
+// setup: the joined pads of g.lobby become ships (a team of a pilot and a
+// copilot shares one), score records (one in co-op, one per team in
+// versus) and spawn points; no bombs.
+void start_multiplayer(Game& g, int mode, bool versus);
+// sub_8207CA48's multiplayer block (two or more records): each record's
+// ships, lives, multiplier and score in its corner, the leader's crown,
+// and the time limit's clock or Sequence's level clock.
+void draw_multiplayer_hud(const Game& g, LineBatch& out);
 // sub_82035A70: every object deleted, the ship and the shots with them.
 void delete_objects(Game& g);
 // sub_82033610 / sub_82033638 / sub_82034588.
@@ -235,6 +280,7 @@ struct GameAudioState {
   float distance_from_hill = 1000.0f;
   float thrust = 0.0f;
   float player_x = 0.0f, player_y = 0.0f;
+  bool magnet_active = false;
   int progression_level = 0, multiplier = 0, no_enemies = 0, time_left = 0, level_time_left = 0, bomb_kills = 0;
   double score = 0.0;
 };

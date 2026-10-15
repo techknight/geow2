@@ -211,6 +211,21 @@ float Font::measure(const std::string& s) const {
 
 float Font::glyph(LineBatch& out, float x, float y, float w, float h, int c, const float colour[4], int next,
                   int& state) const {
+  return glyph_at(out, x, y, w, h, c, colour, next, state, false);
+}
+
+void Font::world_left(LineBatch& out, float x, float y, float w, float h, const float colour[4],
+                      const std::string& s) const {
+  int state = 0;
+  for (size_t i = 0; i < s.size(); ++i) {
+    const int c = int(int8_t(s[i]));
+    const int next = i + 1 < s.size() ? int(int8_t(s[i + 1])) : 0;
+    x = glyph_at(out, x, y, w, h, c, colour, next, state, true) + x;
+  }
+}
+
+float Font::glyph_at(LineBatch& out, float x, float y, float w, float h, int c, const float colour[4], int next,
+                     int& state, bool world) const {
   const Glyph& g = glyphs_[map_[size_t(c & 0xFF)]];
   float W = g.width * w;
   const float adv = advance(c, next, state) * w;
@@ -232,7 +247,9 @@ float Font::glyph(LineBatch& out, float x, float y, float w, float h, int c, con
     const auto& s = g.segments[k];
     const float x0 = std::fmaf(s[0], W, x), y0 = std::fmaf(s[1], H, Y);
     const float x1 = std::fmaf(s[2], W, x), y1 = std::fmaf(s[3], H, Y);
-    if (k < capped)
+    if (world)
+      emit_line(out, kLineWidthUnit, 0.3f, {x0, y0, 0.0f, 1.0f}, {x1, y1, 0.0f, 1.0f}, colour);  // dat_82000708
+    else if (k < capped)
       emit_ui_line(out, x0, y0, x1, y1, colour, line_factor_);
     else
       emit_ui_body(out, x0, y0, x1, y1, colour, colour, line_factor_);

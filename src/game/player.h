@@ -89,7 +89,8 @@ class World;
 // flung backward with its speed (Unit.Player.ParticleThrust) plus a random
 // kick, coloured between the colour wheel at the ship's position (turned
 // by pi) and 1.1 times it; more and whiter while boosted (+0xCC), paler
-// while slowed (+0xD8).
-void player_exhaust(World& w, const PlayerMotion& p);
+// while slowed (+0xD8). In multiplayer (colour id +0xA0 above 0) the two
+// colours are the team's fixed pair instead of the wheel's.
+void player_exhaust(World& w, const PlayerMotion& p, int colour = 0);
 
 }  // namespace geow2

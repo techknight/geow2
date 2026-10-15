@@ -53,6 +53,16 @@ std::vector<Vec2> read_shape(std::span<const uint8_t> image, uint32_t address, i
   return points;
 }
 
+void bullet_colour(int colour, float out[4]) {
+  static constexpr float kColours[5][4] = {{1.0f, 0.75f, 0.1f, 1.0f},
+                                           {1.0f, 0.25f, 0.1f, 1.0f},
+                                           {0.1f, 0.25f, 1.0f, 1.0f},
+                                           {1.0f, 1.0f, 0.1f, 1.0f},
+                                           {0.1f, 1.0f, 0.25f, 1.0f}};
+  const int k = colour >= 1 && colour <= 4 ? colour : 0;
+  for (int i = 0; i < 4; ++i) out[i] = kColours[k][i];
+}
+
 BulletShape BulletShape::from_image(std::span<const uint8_t> image) { return {read_shape(image, 0x82181D4C, 6)}; }
 
 void player_fire_step(const PlayerMotion& p, PlayerWeapon& w, Vec2 fire, float step, const GameMath& gm,

@@ -63,6 +63,11 @@ class Font {
   // sub_82075DC8: one glyph; returns its advance.
   float glyph(LineBatch& out, float x, float y, float w, float h, int c, const float colour[4], int next,
               int& state) const;
+  // sub_820766A8: left-aligned text in the world, each glyph
+  // (sub_82075FA8) through the world line emitter (sub_8205EB58, cap size
+  // 0.3) with no special case for codes 3 and 5.
+  void world_left(LineBatch& out, float x, float y, float w, float h, const float colour[4],
+                  const std::string& s) const;
 
  private:
   struct Glyph {
@@ -71,6 +76,8 @@ class Font {
     std::vector<std::array<float, 4>> segments;
   };
   void run(LineBatch& out, float x, float y, float w, float h, const float colour[4], const std::string& s) const;
+  float glyph_at(LineBatch& out, float x, float y, float w, float h, int c, const float colour[4], int next,
+                 int& state, bool world) const;
 
   std::vector<Glyph> glyphs_;
   std::array<uint8_t, 256> map_{};

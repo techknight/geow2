@@ -3,6 +3,7 @@
 //   geow2 [--data <cache-dir>] [--profile <dir>]
 //   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> [--size <w> <h>] [--mode <n>] [--level <n>]
 //         [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--spawn <type> <x> <y>]...
+//         [--player <pad> <team> <role>]... [--versus] [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>]
 //   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
 //
 // The first form opens the window at the front end; the profile and the
@@ -11,7 +12,10 @@
 // --mode (0 Deadline, 1 Evolved, 2 Sequence, 3 Waves, 4 Pacifism, 5 King)
 // without a window, with a fixed raw stick value (XInput convention),
 // --bomb pulling the trigger on one step and --spawn adding enemies at the
-// start, and saves the final frame. The third runs the front end instead,
+// start, and saves the final frame. --player joins a pad to a multiplayer
+// game (team 0-3, role 0 alone, 1 pilot, 2 copilot; --versus for teams
+// against each other), every pad holding the --stick and --fire values
+// unless --pad-stick / --pad-fire set its own. The third runs the front end instead,
 // pressing a button (a, b, x, y, start, back, up, down, left, right) on
 // the given frames; it never saves.
 
@@ -23,6 +27,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -204,14 +209,16 @@ int capture(SDL_GPUDevice* dev, Renderer& r, const Game& g, const UiCanvas& ui, 
   return 0;
 }
 
-int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sticks& sticks, int bomb_step,
-                 const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h) {
+int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std::array<Sticks, 4>& sticks,
+                 int bomb_step, const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h) {
   for (const DevSpawn& d : spawns) spawn_enemy(*g.world, d.type, 0.0f, d.x, d.y);
   for (int i = 0; i < frames; ++i) {
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
-    Sticks s = sticks;
-    if (i == bomb_step) s.right_trigger = 255;
-    tick(g, std::span<const Sticks>(&s, 1), r, cmd);
+    // By joined index, from each joined pad.
+    std::array<Sticks, 4> s{};
+    for (int j = 0; j < g.joined_count && j < 4; ++j) s[size_t(j)] = sticks[size_t(g.joined_pad[size_t(j)] & 3)];
+    if (i == bomb_step) s[0].right_trigger = 255;
+    tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
     SDL_SubmitGPUCommandBuffer(cmd);
   }
   Profile profile;
@@ -229,6 +236,22 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sti
           (long long)g.world->records[0].score, g.world->records[0].multiplier, g.world->particles.size(),
           g.world->debris.size(), g.linger_lines.body.size() / 4, g.recs[0].deaths, g.recs[0].bombs,
           g.world->bomb_kills, g.recs[0].lives, g.over ? ", game over" : "", g.sequence.phase, g.sequence.level);
+  if (g.multiplayer) {
+    for (int k = 0; k < g.ship_count; ++k) {
+      const Ship& s = g.ships[size_t(k)];
+      SDL_Log("ship %d: pads %d/%d, number %d, record %d, colour %d, at (%.3f, %.3f)%s", k,
+              g.joined_pad[size_t(s.pilot)], g.joined_pad[size_t(s.copilot)], s.number, s.record, s.colour,
+              s.motion.x, s.motion.y, s.life.alive() ? "" : ", out");
+    }
+    for (int rec = 0; rec < g.record_count; ++rec)
+      SDL_Log("record %d: score %lld x%d, %d lives, rank %d%s", rec, (long long)g.world->records[size_t(rec)].score,
+              g.world->records[size_t(rec)].multiplier, g.recs[size_t(rec)].lives, g.recs[size_t(rec)].rank,
+              g.recs[size_t(rec)].tie ? " (tie)" : "");
+    for (int pad = 0; pad < 4; ++pad)
+      if (g.lobby[size_t(pad)].joined)
+        SDL_Log("pad %d: rank %d, +%d, total %d", pad, g.lobby[size_t(pad)].last_rank, g.lobby[size_t(pad)].last_points,
+                g.lobby[size_t(pad)].total);
+  }
   return 0;
 }
 
@@ -297,6 +320,11 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& cache, 
         case audio::Event::kPickupGeom1: glue.pickup_geom(now); break;
         case audio::Event::kGateBounceBullet1: glue.gate_bounce_bullet(now); break;
         case audio::Event::kPinRicochet1: glue.pin_ricochet(now); break;
+        case audio::Event::kPowerUpEndSpeed:
+        case audio::Event::kPowerUpEndSlow:
+        case audio::Event::kPowerUpEndMagnet:
+        case audio::Event::kPowerUpEndWeapon:
+        case audio::Event::kPowerUpEndFreeze: glue.power_up_end(e, now); break;
         default: glue.fire(e); break;
       }
     };
@@ -365,6 +393,7 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& cache, 
         f.music_option = profile.music_volume;
         f.distance_from_hill = a.distance_from_hill;
         f.thrust = a.thrust;
+        f.magnet_active = a.magnet_active;
         f.player_x = a.player_x;
         f.player_y = a.player_y;
         f.progression_level = a.progression_level;
@@ -417,6 +446,9 @@ int main(int argc, char** argv) {
   fs::path profile_dir;
   int frames = -1;
   Sticks sticks;
+  std::array<std::optional<Sticks>, 4> pad_sticks{};
+  std::array<LobbyPad, 4> lobby{};
+  bool versus = false, multiplayer = false;
   fs::path screenshot;
   uint32_t shot_w = 1280, shot_h = 720;
   int64_t seed = -1;
@@ -455,11 +487,31 @@ int main(int argc, char** argv) {
     } else if (a == "--fire" && i + 2 < argc) {
       sticks.fire_x = clamp16(std::atoi(argv[++i]));
       sticks.fire_y = clamp16(std::atoi(argv[++i]));
+    } else if (a == "--player" && i + 3 < argc) {
+      const int pad = std::clamp(std::atoi(argv[++i]), 0, 3);
+      lobby[size_t(pad)].joined = true;
+      lobby[size_t(pad)].team = std::clamp(std::atoi(argv[++i]), 0, 3);
+      lobby[size_t(pad)].role = std::clamp(std::atoi(argv[++i]), 0, 2);
+      multiplayer = true;
+    } else if (a == "--versus") {
+      versus = true;
+    } else if ((a == "--pad-stick" || a == "--pad-fire") && i + 3 < argc) {
+      const int pad = std::clamp(std::atoi(argv[++i]), 0, 3);
+      Sticks& p = pad_sticks[size_t(pad)] ? *pad_sticks[size_t(pad)] : pad_sticks[size_t(pad)].emplace(sticks);
+      const int16_t x = clamp16(std::atoi(argv[++i])), y = clamp16(std::atoi(argv[++i]));
+      if (a == "--pad-stick") {
+        p.move_x = x;
+        p.move_y = y;
+      } else {
+        p.fire_x = x;
+        p.fire_y = y;
+      }
     } else {
       std::fprintf(stderr,
                    "usage: geow2 [--data <cache>] [--profile <dir>] [--seed <n>] [--frames <n> --screenshot <png>"
                    " [--size <w> <h>] [--mode <0-5>] [--level <0-19>] [--stick <x> <y>] [--fire <x> <y>]"
-                   " [--bomb <step>] [--spawn <type> <x> <y>]... | --frontend [--press <frame> <button>]...]\n");
+                   " [--bomb <step>] [--spawn <type> <x> <y>]... [--player <pad> <team> <role>]... [--versus]"
+                   " [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] | --frontend [--press <frame> <button>]...]\n");
       return 2;
     }
   }
@@ -479,6 +531,10 @@ int main(int argc, char** argv) {
   // Level.StartLevel (value 0x8219D458) for development: Sequence starts at
   // that level (sub_82039628 sets both the level and the one shown).
   if (start_level >= 0) game.sequence.level = game.sequence.shown_level = start_level;
+  if (multiplayer) {
+    game.lobby = lobby;
+    start_multiplayer(game, mode, versus);
+  }
   SDL_GPUDevice* dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
   if (!dev) {
     SDL_Log("no GPU device: %s", SDL_GetError());
@@ -490,12 +546,15 @@ int main(int argc, char** argv) {
   for (size_t i = 0; i < game.achievements.size() && i < 12; ++i)
     renderer.set_ui_texture(kTexAchievement0 + int(i), game.achievements[i].icon);
   int rc;
-  if (headless && frontend)
+  if (headless && frontend) {
     rc = run_frontend_headless(dev, renderer, game, frames, presses, screenshot, shot_w, shot_h);
-  else if (headless)
-    rc = run_headless(dev, renderer, game, frames, sticks, bomb_step, spawns, screenshot, shot_w, shot_h);
-  else
+  } else if (headless) {
+    std::array<Sticks, 4> per_pad{};
+    for (size_t p = 0; p < 4; ++p) per_pad[p] = pad_sticks[p] ? *pad_sticks[p] : sticks;
+    rc = run_headless(dev, renderer, game, frames, per_pad, bomb_step, spawns, screenshot, shot_w, shot_h);
+  } else {
     rc = run_window(dev, renderer, game, cache, profile_dir);
+  }
   renderer.release();
   SDL_DestroyGPUDevice(dev);
   SDL_Quit();

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "game/font.h"
 
@@ -40,5 +41,33 @@ struct HudText {
 // (640 x 360) as UI lines. Sequence shows its level's seconds and
 // hundredths left, with lives and bombs either side.
 void draw_hud(const Font& font, const HudText& text, const HudState& s, LineBatch& out);
+
+// What the multiplayer HUD shows of a score record: the colour id of its
+// first ship (0 none), its ships' player numbers, lives, multiplier and
+// score.
+struct MultiHudRecord {
+  int colour = 0;
+  std::vector<int> numbers;
+  int lives = 0;
+  int multiplier = 1;
+  int64_t score = 0;
+};
+struct MultiHudState {
+  std::vector<MultiHudRecord> records;
+  bool show_lives = false;      // dat_8219D264 > 0 or dat_8219D26C bit 0 clear
+  int lives_mode = 2;           // dat_8219D24C
+  float length = 180.0f;        // dat_8219D258
+  float clock = 0.0f;           // dat_8219CE68
+  int mode = 0;                 // dat_8219D254
+  float level_time = 30.0f;     // dat_8219D25C
+  float level_timer = 0.0f;     // dat_8219CE6C
+};
+
+// sub_8207CA48 with two or more records: each record's row in its corner
+// (left for even, right for odd; top for 0 and 1, below for 2 and 3) in
+// its team colour: ship glyphs, lives, multiplier and score, and a crown
+// for the sole leader (grey for those tied at the top); then Deadline's
+// m:ss clock (no warning colour) or Sequence's level clock.
+void draw_multiplayer_hud(const Font& font, const MultiHudState& s, LineBatch& out);
 
 }  // namespace geow2

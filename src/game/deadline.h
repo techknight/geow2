@@ -13,11 +13,12 @@ class DeadlineSpawner {
   void step(World& w, float elapsed);
   // The bomb's effect on the next waves (sub_8203E4B0).
   void bombed(World& w);
-  // A player's death with no player left (sub_8203E2B8, single player):
+  // A player's death (sub_8203E2B8): in multiplayer with another player
+  // still in the game, the budget drops by half (at least 20); otherwise
   // the next wave waits 3 seconds and the budget drops by a share that
   // shrinks as the clock runs out. `time_left` is dat_8219D258 minus the
   // game time.
-  void player_died(World& w, float time_left);
+  void player_died(World& w, float time_left, bool others_alive = false);
 
   float wave_timer = 0.0f;   // DB48: seconds to the next wave
   float start_delay = 1.0f;  // DB4C: seconds before the first wave

@@ -320,7 +320,8 @@ void World::draw_entities(LineBatch& out) {
 const PlayerTarget* World::nearest_player(const Entity& e) const {
   const PlayerTarget* best = nullptr;
   float best_d = 0.0f;
-  for (const PlayerTarget& p : players) {
+  for (const size_t k : player_order) {
+    const PlayerTarget& p = players[k];
     if (p.removed || p.hidden > 0.0f) continue;
     const float dx = e.x - p.x, dy = e.y - p.y;
     const float d = dx * dx + dy * dy;
@@ -334,8 +335,8 @@ const PlayerTarget* World::nearest_player(const Entity& e) const {
 
 const PlayerTarget* World::target(const Entity& e) const {
   if (!e.owner) return nearest_player(e);
-  for (const PlayerTarget& p : players)
-    if (!p.removed) return &p;
+  for (const size_t k : player_order)
+    if (!players[k].removed) return &players[k];
   return nullptr;
 }
 

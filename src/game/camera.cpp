@@ -43,6 +43,48 @@ void camera_follow_single(CameraState& c, const float* xs, const float* ys, int 
   c.y = std::fmaf(ty - c.y, kCentreRate, c.y);
 }
 
+void camera_follow_multi(CameraState& c, CameraTrack* tracks, const float* xs, const float* ys, int slots,
+                         float half_x, float half_y) {
+  constexpr float kStage1 = 0.2f, kStage2 = 0.05f, kStage3 = 0.025f;  // dat_82000D5C, D60, D64
+  float min_x = half_x, min_y = half_y, max_x = -half_x, max_y = -half_y;
+  for (int i = 0; i < slots; ++i) {
+    CameraTrack& t = tracks[i];
+    t.s1x = (xs[i] - t.s1x) * kStage1 + t.s1x;
+    t.s1y = (ys[i] - t.s1y) * kStage1 + t.s1y;
+    t.s2x = (t.s1x - t.s2x) * kStage2 + t.s2x;
+    t.s2y = (t.s1y - t.s2y) * kStage2 + t.s2y;
+    t.s3x = (t.s2x - t.s3x) * kStage3 + t.s3x;
+    t.s3y = (t.s2y - t.s3y) * kStage3 + t.s3y;
+    const float sx[3] = {t.s1x, t.s2x, t.s3x}, sy[3] = {t.s1y, t.s2y, t.s3y};
+    for (int stage = 0; stage < 3; ++stage) {
+      const float x = sx[stage], y = sy[stage];
+      min_x = fsel(min_x - x, x, min_x);
+      min_y = fsel(min_y - y, y, min_y);
+      max_x = fsel(x - max_x, x, max_x);
+      max_y = fsel(y - max_y, y, max_y);
+    }
+  }
+  // 0x82036D48..0x82036E70: the box's fill of the arena less a margin
+  // (18.25 by 12.5) over (half - 120) * 2 by (half - 80) * 2, each clamped
+  // to [0, 1]; the largest zoom is the larger of 2 half_x * 0.002 and
+  // 2 half_y * 0.0035714286.
+  const float w = max_x - min_x, h = max_y - min_y;
+  const float zx = (half_x * 2.0f) * 0.00200000009f;  // dat_82000D40
+  const float zy = (half_y * 2.0f) * 0.00357142859f;  // dat_82000D44
+  const float rx0 = (w - 18.25f) / ((half_x - 120.0f) * 2.0f);  // dat_82000D3C, dat_82000D50
+  const float ry0 = (h - 12.5f) / ((half_y - 80.0f) * 2.0f);    // dat_82000D38, dat_82000D4C
+  const float zmax = fsel(zx - zy, zx, zy);
+  const float rx = fsel(rx0 - 1.0f, 1.0f, fsel(-rx0, 0.0f, rx0));
+  const float ry = fsel(ry0 - 1.0f, 1.0f, fsel(-ry0, 0.0f, ry0));
+  const float tx = ((max_x + min_x) * 0.5f) * 0.5f;
+  const float ty = ((max_y + min_y) * 0.5f) * 0.5f;
+  c.x = std::fmaf(tx - c.x, 0.0649999976f, c.x);  // dat_82000D48
+  c.y = std::fmaf(ty - c.y, 0.0649999976f, c.y);
+  const float fill = fsel(rx - ry, rx, ry);
+  const float target = std::fmaf(zmax - 1.0f, fill, 1.0f);
+  c.zoom = std::fmaf(target - c.zoom, kZoomRate, c.zoom);
+}
+
 void camera_front_end(CameraState& c, float& idle, float step) {
   idle = idle + step;
   c.zoom = std::fmaf(1.0f - c.zoom, kZoomRate, c.zoom);
