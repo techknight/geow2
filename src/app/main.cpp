@@ -413,7 +413,7 @@ void update_player(Game& g, const Sticks& s) {
   if (!p.fading) {
     const Vec2 move = stick_vector(stick_axis(s.move_x, false), stick_axis(s.move_y, true));
     const Vec2 fire = stick_vector(stick_axis(s.fire_x, false), stick_axis(s.fire_y, true));
-    player_thrust(g.player, move, *g.gm);
+    if (player_thrust(g.player, move, *g.gm)) player_exhaust(w, g.player);
     const size_t fired = g.bullets.size();
     player_fire_step(g.player, g.weapon, fire, kStep, *g.gm, g.bullets);
     for (size_t i = fired; i < g.bullets.size(); ++i) w.enlist(g.bullets[i]);

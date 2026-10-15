@@ -41,7 +41,7 @@ Vec2 stick_vector(float x, float y) {
   return {(inv * x) * clamped, (inv * y) * clamped};
 }
 
-void player_thrust(PlayerMotion& p, Vec2 move, const GameMath& gm) {
+bool player_thrust(PlayerMotion& p, Vec2 move, const GameMath& gm) {
   const float mx2 = float(double(move.x) * move.x), my2 = float(double(move.y) * move.y);
   const float len2 = my2 + mx2;
   if (len2 <= kMoveThreshold) {
@@ -64,7 +64,9 @@ void player_thrust(PlayerMotion& p, Vec2 move, const GameMath& gm) {
     const double d = double(float(gm.atan2(move.y, move.x)) - p.heading) * kInvTwoPi;  // frsp, fsubs
     const double wrapped = d - std::nearbyint(d);
     p.heading = std::fmaf(float(wrapped * kTwoPi), kTurnRate, p.heading);
+    return true;
   }
+  return false;
 }
 
 void integrate(PlayerMotion& p, float step) {

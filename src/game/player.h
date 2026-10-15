@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "game/player_motion.h"
+
 namespace geow2 {
 
 // A mode's player rules, as its setup function leaves them. Deadline's is
@@ -59,5 +61,15 @@ void player_timers(PlayerLife& p, float step);
 // bomb goes off (a blast of 400 at 533.2 a second from the player, and
 // sub_8203E4B0); sound events 6 and 0x35 are for the sound system.
 bool player_bomb(PlayerLife& p, float trigger, const ModeRules& rules);
+
+class World;
+
+// The exhaust (sub_8204FF00, 0x82050418..0x82050A80), while the ship
+// thrusts: four particles from 7 behind the ship (after this step's move),
+// flung backward with its speed (Unit.Player.ParticleThrust) plus a random
+// kick, coloured between the colour wheel at the ship's position (turned
+// by pi) and 1.1 times it; more and whiter while boosted (+0xCC), paler
+// while slowed (+0xD8).
+void player_exhaust(World& w, const PlayerMotion& p);
 
 }  // namespace geow2

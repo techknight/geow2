@@ -33,7 +33,9 @@ Vec2 stick_vector(float x, float y);
 // The thrust, damping and heading part of the player update (sub_8204FF00).
 // `move` is the stick vector in world space (the camera basis in normal
 // play maps stick to world unchanged, see notes/re/input.md).
-void player_thrust(PlayerMotion& p, Vec2 move, const GameMath& gm);
+// Returns whether the stick was pushed past the threshold (the heading
+// and the exhaust follow only then).
+bool player_thrust(PlayerMotion& p, Vec2 move, const GameMath& gm);
 
 // sub_820453E0: position += velocity * step.
 void integrate(PlayerMotion& p, float step);
