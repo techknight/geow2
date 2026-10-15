@@ -1409,6 +1409,14 @@ void step(Game& g, std::span<const Sticks> pads) {
   update_scoring(g);
   // Last step's kill markers go (sub_82043368).
   w.death_markers.clear();
+  // Then last step's removed objects are deleted (sub_820359E0: removal
+  // only queues them, sub_82035A40), the player objects with them; so the
+  // spawner above still counted them. Their destructors run here.
+  w.purge();
+  for (int k = 0; k < g.ship_count; ++k)
+    if (g.ships[size_t(k)].life.removed) g.ships[size_t(k)].life.present = false;
+  std::erase_if(g.player_list, [&g](size_t k) { return !g.ships[k].life.present; });
+  w.player_order = g.player_list;
 
   // The player list in creation order.
   for (const size_t k : std::vector<size_t>(g.player_list))
@@ -1652,12 +1660,6 @@ void step(Game& g, std::span<const Sticks> pads) {
     m.vy = m.vy + w.players[size_t(k)].push_vy;
   }
 
-  // Entities removed this step are deleted, the player objects with them.
-  w.purge();
-  for (int k = 0; k < g.ship_count; ++k)
-    if (g.ships[size_t(k)].life.removed) g.ships[size_t(k)].life.present = false;
-  std::erase_if(g.player_list, [&g](size_t k) { return !g.ships[k].life.present; });
-  w.player_order = g.player_list;
 
   // The achievements checked every step of a game (0x82037B0C..):
   // Treaty (King: 30 zones, no shot or bomb, no shield kill), Surf (Waves: 8 rocket
