@@ -211,8 +211,14 @@ class World {
   // The spawners' feedback: kills by weight (DB50, sub_8203BAC8) and geom
   // value collected (DB54, sub_8203BBB8).
   int spawn_kills = 0, spawn_geoms = 0;
-  // sub_82040818: whether a kill scores now (Deadline: before time is up).
+  // sub_82040818: whether a kill scores now (Deadline: before time is up;
+  // the lives modes: while the player is in the game or can come back).
   bool scoring_open = true;
+  // The rest of sub_820408D0 after the score rises (extra lives and bombs
+  // by score): the game handles it here.
+  std::function<void()> scored;
+  // The C runtime's rand() (Evolved's spawner).
+  CrtRand crt;
   // The player's gate chain (slot record +0x34 / +0x30).
   int gate_chain = 0;
   float gate_chain_time = 0.0f;

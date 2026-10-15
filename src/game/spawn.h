@@ -30,4 +30,38 @@ float random_right_angle(World& w);
 // facing inward; with no player, the centre and a random right angle.
 Placement placed_position(World& w);
 
+// sub_8204F3F8: the live player spawned earliest (with one player, that
+// player), or null.
+const PlayerTarget* first_player(const World& w);
+
+// sub_8205B4C0: arena corner k (0 top left, 1 top right, 2 bottom right,
+// 3 bottom left, at +-292, +-192); any other k, the centre.
+Vec2 corner(int k);
+
+// sub_8203B9A0: the corner nearest the first player; with no player, a
+// random one.
+Vec2 nearest_corner(World& w);
+
+// sub_8203D840: one of `type` at each corner, facing 0.
+void spawn_corners(World& w, int type);
+
+// sub_8203D2C0: one of `type` at corner k, facing 0.
+void spawn_at_corner(World& w, int type, int k);
+
+// sub_8203D8B0: `n` of `type` evenly around the first player at `radius`,
+// facing it (nothing with no player).
+void spawn_ring(World& w, float radius, int type, int n);
+
+// sub_8203D6A0: `n` of `type` scattered within `spread` of `centre`, each
+// kept in the arena if four tries allow, facing a random right angle.
+void spawn_clump(World& w, float spread, int type, Vec2 centre, int n);
+
+// sub_8203C9C0: a line of `type` along a whole wall (side 0 top, 1
+// bottom, 2 left, 3 right), 20 apart, facing into the arena.
+void spawn_wall(World& w, int type, int side, bool flag);
+
+// sub_8203CBE8: half such a line; `other` puts it on the half of the
+// opposite wall.
+void spawn_half_wall(World& w, int type, int side, bool other);
+
 }  // namespace geow2

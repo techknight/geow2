@@ -57,6 +57,14 @@ void draw_hud(const Font& font, const HudText& text, const HudState& s, LineBatc
                     printf_string("%01i:%02i", left / 60, left % 60));
     font.centre(out, 220.0f, 22.0f, 7.5f, 7.5f, kNormal, "x" + format_number(s.multiplier));
     icon_row(font, out, 420.0f, 22.0f, s.bombs_pulse, 0.625f, 2, s.bombs, 0x02, false);
+  } else if (s.start_lives == 0) {
+    font.centre(out, 320.0f, 22.0f, 9.0f, 9.0f, kNormal, "x" + format_number(s.multiplier));
+  } else {
+    // Lives (char 0x0C) right-aligned left of the centre, bombs (0x02)
+    // left-aligned right of it (dat_820049A8, dat_820049A4, size 1.0).
+    icon_row(font, out, 317.0f, 22.0f, s.lives_pulse, 1.0f, 1, s.lives, 0x0C, false);
+    icon_row(font, out, 323.0f, 22.0f, s.bombs_pulse, 1.0f, 0, s.bombs, 0x02, false);
+    font.centre(out, 320.0f, 38.0f, 9.0f, 9.0f, kNormal, "x" + format_number(s.multiplier));  // dat_820049A0
   }
   // Score and high score (the label is the format string).
   font.left(out, 36.0f, 22.0f, 11.0f, 7.5f, kNormal, text.score);

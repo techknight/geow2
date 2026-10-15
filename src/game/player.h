@@ -6,17 +6,25 @@
 
 namespace geow2 {
 
-// A mode's player rules, as its setup function leaves them. Deadline's is
-// sub_82034EA0.
+// A mode's player rules, as its setup function leaves them on top of the
+// reset (sub_820348E8). The defaults are Deadline's (sub_82034EA0).
 struct ModeRules {
-  int mode = 0;                 // dat_8219D254 (0 Deadline)
-  int lives_mode = 2;           // dat_8219D24C: non-zero respawns without lives
+  int mode = 0;                 // dat_8219D254: 0 Deadline, 1 Evolved, 2 Sequence, 3 Waves, 4 Pacifism, 5 King
+  int lives_mode = 2;           // dat_8219D24C: 0 lives, 2 the time limit
   int start_lives = 0;          // dat_8219D264
   int start_bombs = 3;          // dat_8219D268
-  uint32_t flags = 1;           // dat_8219D26C (bit 2: bombs need a count)
+  // dat_8219D26C: bit 0 no extra lives from score, bit 1 no extra bombs
+  // (and no bombing without a starting count).
+  uint32_t flags = 1;
   float respawn_delay = 1.0f;   // dat_8219D270 (the reset sub_820348E8, 0x82034B08)
   float length = 180.0f;        // dat_8219D258 (dat_82000CD8)
+  float level_time = 0.0f;      // dat_8219D25C (Sequence)
 };
+
+// The single-player setups: sub_82034EA0 (Deadline), sub_82034F38
+// (Evolved), sub_82034FA8 (Sequence), sub_82035030 (Waves), sub_820350B0
+// (Pacifism), sub_82035130 (King).
+ModeRules mode_rules(int mode);
 
 // A player's life outside its movement: the object's shield and bomb
 // state, its slot record (0x8219CEA8 + 0x6C per slot) and its score
@@ -33,14 +41,20 @@ struct PlayerLife {
   float shield = 0.0f;           // +0x8C
   bool shield_shown = false;     // +0x90: model part 1 drawn
   // The slot record.
-  float respawn_wait = 0.0f;     // dat_8219CEB8
+  float respawn_wait = 0.25f;    // dat_8219CEB8 (dat_82000720 at the reset)
   float spawn_x = 0.0f, spawn_y = 0.0f;  // dat_8219CEC0 / dat_8219CEC4
-  bool free_spawn = false;       // dat_8219CEE0: the next spawn costs no life
+  bool free_spawn = true;        // dat_8219CEE0: the next spawn costs no life
   // The score record.
   int lives = 0;                 // dat_8219D098
   int bombs = 0;                 // dat_8219D09C
   int deaths = 0;                // dat_8219D0A4
   int shield_kills = 0;          // dat_8219D0D0
+  int64_t bomb_at = 100000;      // dat_8219D0B0: the next extra bomb's score
+  int64_t life_at = 100000;      // dat_8219D0B8: the next extra life's score
+  float lives_pulse = 0.0f;      // dat_8219D0C0: the HUD's lives row
+  float bombs_pulse = 0.0f;      // dat_8219D0C4: the HUD's bombs row
+  bool bomb_used = false;        // dat_8219D0C8
+  bool shield_hit = false;       // dat_8219D0C9
 
   bool alive() const { return present && !removed; }
 };

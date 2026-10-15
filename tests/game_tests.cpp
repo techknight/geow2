@@ -291,7 +291,7 @@ static void test_firing() {
   PlayerMotion p;
   PlayerWeapon w;
   std::vector<Bullet> out;
-  player_fire_step(p, w, {1.0f, 0.0f}, 1.0f / 60.0f, kMath, out);
+  player_fire_step(p, w, {1.0f, 0.0f}, 1.0f / 60.0f, kMath, true, out);
   expect(out.size() == 3 && near(w.cooldown, 0.1f), "three bullets and cooldown");
   if (out.size() == 3) {
     expect(near(out[1].vx, 600.0f) && near(out[1].vy, 0.0f), "centre bullet speed 600");
@@ -300,7 +300,7 @@ static void test_firing() {
   }
   int steps = 0;
   while (out.size() == 3 && steps < 20) {
-    player_fire_step(p, w, {1.0f, 0.0f}, 1.0f / 60.0f, kMath, out);
+    player_fire_step(p, w, {1.0f, 0.0f}, 1.0f / 60.0f, kMath, true, out);
     ++steps;
   }
   expect(steps == 7, "next volley 7 steps later");

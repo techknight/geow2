@@ -19,4 +19,17 @@ class GameRng {
   std::mt19937 mt_;
 };
 
+// The C runtime's rand() (sub_8212FBB8): the per-thread holdrand starts at
+// 1 (sub_82131228) and nothing calls srand. Only Evolved's spawner uses it.
+class CrtRand {
+ public:
+  int next() {
+    hold_ = hold_ * 214013u + 2531011u;
+    return int((hold_ >> 16) & 0x7FFF);
+  }
+
+ private:
+  uint32_t hold_ = 1;
+};
+
 }  // namespace geow2

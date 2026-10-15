@@ -124,4 +124,127 @@ Placement placed_position(World& w) {
   return c[best];
 }
 
+const PlayerTarget* first_player(const World& w) {
+  for (const PlayerTarget& t : w.players)
+    if (!t.removed) return &t;
+  return nullptr;
+}
+
+Vec2 corner(int k) {
+  constexpr float kX = 292.0f, kY = 192.0f;  // dat_82001138 / dat_82001118, dat_82001134 / dat_82001130
+  switch (k) {
+    case 0: return {-kX, -kY};
+    case 1: return {kX, -kY};
+    case 2: return {kX, kY};
+    case 3: return {-kX, kY};
+    default: return {0.0f, 0.0f};
+  }
+}
+
+Vec2 nearest_corner(World& w) {
+  const PlayerTarget* p = first_player(w);
+  if (!p) return corner(int(w.rng.next() & 3));
+  // Squared distances in float, compared in double; the first minimum.
+  Vec2 best;
+  double best_d = 0.0;
+  for (int k = 0; k < 4; ++k) {
+    const Vec2 c = corner(k);
+    const float dx = float(double(p->x) - c.x), dy = float(double(p->y) - c.y);
+    const double d = double(dx * dx + dy * dy);
+    if (k == 0 || d < best_d) {
+      best = c;
+      best_d = d;
+    }
+  }
+  return best;
+}
+
+void spawn_corners(World& w, int type) {
+  for (int k = 0; k < 4; ++k) spawn_at_corner(w, type, k);
+}
+
+void spawn_at_corner(World& w, int type, int k) {
+  const Vec2 c = corner(k);
+  spawn_enemy(w, type, 0.0f, c.x, c.y);
+}
+
+void spawn_ring(World& w, float radius, int type, int n) {
+  const PlayerTarget* p = first_player(w);
+  if (!p) return;
+  constexpr float kTwoPi = 6.28318548f;  // dat_82181578
+  constexpr float kPi = 3.14159274f;     // dat_820010DC
+  for (int i = 0; i < n; ++i) {
+    const float a = (float(i) / float(n)) * kTwoPi;
+    const float x = std::fmaf(float(w.gm.cos(a)), radius, p->x);
+    const float y = std::fmaf(float(w.gm.sin(a)), radius, p->y);
+    spawn_enemy(w, type, a + kPi, x, y);
+  }
+}
+
+void spawn_clump(World& w, float spread, int type, Vec2 centre, int n) {
+  for (; n > 0; --n) {
+    Vec2 q;
+    for (int tries = 0; tries < 4; ++tries) {
+      const Vec2 off = w.random_vector(spread);
+      q = {off.x + centre.x, off.y + centre.y};
+      if (-w.half_x <= q.x && q.x <= w.half_x && -w.half_y <= q.y && q.y <= w.half_y) break;
+    }
+    const float angle = random_right_angle(w);
+    spawn_enemy(w, type, angle, q.x, q.y);
+  }
+}
+
+namespace {
+
+constexpr float kFaceDown = 1.57079637f;    // dat_8200071C: pi/2
+constexpr float kFaceUp = -1.57079637f;     // dat_820010F4
+constexpr float kFaceLeft = -3.14159274f;   // dat_820010F8
+
+// One line of the walls: from `start` while below `end` in steps of 20
+// (dat_82000CE8, each sum rounded to float), along x at y = `fixed` or
+// along y at x = `fixed`.
+void line(World& w, int type, bool along_x, float fixed, float start, float end, float angle, bool flag) {
+  for (float v = start; v < end; v = v + 20.0f) {
+    if (along_x)
+      spawn_enemy(w, type, angle, v, fixed, flag);
+    else
+      spawn_enemy(w, type, angle, fixed, v, flag);
+  }
+}
+
+}  // namespace
+
+void spawn_wall(World& w, int type, int side, bool flag) {
+  const float hx = w.half_x, hy = w.half_y;
+  // Starting 10 (dat_8200070C) in from the corner.
+  switch (side) {
+    case 0: line(w, type, true, -hy, 10.0f - hx, hx, kFaceDown, flag); break;
+    case 1: line(w, type, true, hy, 10.0f - hx, hx, kFaceUp, flag); break;
+    case 2: line(w, type, false, -hx, 10.0f - hy, hy, 0.0f, flag); break;
+    case 3: line(w, type, false, hx, 10.0f - hy, hy, kFaceLeft, flag); break;
+    default: break;
+  }
+}
+
+void spawn_half_wall(World& w, int type, int side, bool other) {
+  const float hx = w.half_x, hy = w.half_y;
+  if (!other) {
+    switch (side) {
+      case 0: line(w, type, true, -hy, 10.0f - hx, 0.0f, kFaceDown, false); break;
+      case 1: line(w, type, true, hy, 10.0f, hx, kFaceUp, false); break;
+      case 2: line(w, type, false, -hx, 10.0f - hy, 0.0f, 0.0f, false); break;
+      case 3: line(w, type, false, hx, 10.0f, hy, kFaceLeft, false); break;
+      default: break;
+    }
+  } else {
+    switch (side) {
+      case 0: line(w, type, true, hy, 10.0f - hx, 0.0f, kFaceUp, false); break;
+      case 1: line(w, type, true, -hy, 10.0f, hx, kFaceDown, false); break;
+      case 2: line(w, type, false, hx, 10.0f - hy, 0.0f, kFaceLeft, false); break;
+      case 3: line(w, type, false, -hx, 10.0f, hy, 0.0f, false); break;
+      default: break;
+    }
+  }
+}
+
 }  // namespace geow2

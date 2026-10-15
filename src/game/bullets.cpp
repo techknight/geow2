@@ -56,12 +56,13 @@ std::vector<Vec2> read_shape(std::span<const uint8_t> image, uint32_t address, i
 BulletShape BulletShape::from_image(std::span<const uint8_t> image) { return {read_shape(image, 0x82181D4C, 6)}; }
 
 void player_fire_step(const PlayerMotion& p, PlayerWeapon& w, Vec2 fire, float step, const GameMath& gm,
-                      std::vector<Bullet>& out) {
+                      bool may_fire, std::vector<Bullet>& out) {
   // sub_8204FF00: fire only when the cooldown is down and the fire stick
   // is pushed far enough; otherwise count the cooldown down.
   if (w.cooldown <= kFireThreshold) {
-    if (kFireStickMin < fire.x * fire.x + fire.y * fire.y) {
-      // sub_8204EFD0 (the mode gates for Pacifism-like modes are not ported).
+    // sub_8204EFD0 returns at once, the cooldown untouched, when the mode
+    // forbids firing.
+    if (kFireStickMin < fire.x * fire.x + fire.y * fire.y && may_fire) {
       const float a = float(gm.atan2(fire.y, fire.x));
       out.push_back(make_bullet(p, a - kSpread1, kSideSpeed, 0, gm));
       out.push_back(make_bullet(p, a, kCentreSpeed, 2, gm));

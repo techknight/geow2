@@ -41,9 +41,10 @@ struct PlayerWeapon {
 };
 
 // The firing part of the player update (sub_8204FF00 → sub_8204EFD0):
-// with `fire` the world fire-stick vector after the dead zone.
+// with `fire` the world fire-stick vector after the dead zone. `may_fire`
+// is the mode's gate (never in Pacifism; in King only inside a zone).
 void player_fire_step(const PlayerMotion& p, PlayerWeapon& w, Vec2 fire, float step, const GameMath& gm,
-                      std::vector<Bullet>& out);
+                      bool may_fire, std::vector<Bullet>& out);
 
 // Per step for one bullet: returns false when it is removed this step (it
 // hit a wall on the previous step). Otherwise moves it and handles the

@@ -15,6 +15,25 @@ int blink_phase(float t) { return int(float(kStepsPerSecond) * t) % 10; }
 
 }  // namespace
 
+ModeRules mode_rules(int mode) {
+  ModeRules r;
+  r.mode = mode;
+  if (mode == 0) return r;
+  // From the reset: lives and bombs 3, no rule flags, no time limit.
+  r.lives_mode = 0;
+  r.start_lives = 3;
+  r.start_bombs = 3;
+  r.flags = 0;
+  r.length = 0.0f;
+  if (mode == 2) r.level_time = 30.0f;  // dat_82000CDC
+  if (mode >= 3) {
+    r.start_lives = 0;
+    r.start_bombs = 0;
+    r.flags |= 3;
+  }
+  return r;
+}
+
 float trigger_axis(uint8_t raw) { return float(raw) * 0.00392156886f; }  // dat_82000E18
 
 void player_spawned(PlayerLife& p) {
@@ -57,6 +76,7 @@ bool player_bomb(PlayerLife& p, float trigger, const ModeRules& rules) {
   p.bomb_wait = 0.2f;  // dat_82000D5C
   if (p.bombs <= 0) return false;  // sound event 0x35
   --p.bombs;
+  p.bomb_used = true;
   return true;
 }
 

@@ -1,13 +1,15 @@
 // geow2: the game.
 //
-//   geow2 [--data <cache-dir>]
-//   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> [--size <w> <h>] [--stick <x> <y>]
+//   geow2 [--data <cache-dir>] [--mode <n>]
+//   geow2 --data <cache-dir> [--mode <n>] --frames <n> --screenshot <out.png> [--size <w> <h>] [--stick <x> <y>]
 //         [--fire <x> <y>] [--bomb <step>] [--spawn <type> <x> <y>]...
 //
 // The second form runs n simulation steps without a window (input: a fixed
 // raw stick value, XInput convention; --bomb pulls the trigger on one
 // step; --spawn adds an enemy of a spawn type at the start, for
-// development captures) and saves the final frame.
+// development captures) and saves the final frame. --mode picks the game
+// mode until the front end is ported: 0 Deadline (the default), 1 Evolved,
+// 2 Sequence, 3 Waves, 4 Pacifism, 5 King.
 //
 // Early development build: Deadline's arena with the player (shots,
 // shield, bombs, death and respawn) and its wanderers, drawn as the
@@ -50,6 +52,7 @@
 #include "game/shockwave.h"
 #include "game/stars.h"
 #include "game/units.h"
+#include "game/wave_spawner.h"
 #include "game/world.h"
 #include "game/rotation.h"
 #include "game/shots.h"
@@ -131,14 +134,58 @@ struct Game {
   std::unique_ptr<Units> units;
   std::unique_ptr<World> world;
   DeadlineSpawner spawner;
+  WaveSpawner waves;     // the other modes' spawner (0x8219DDA0)
   float elapsed = 0.0f;  // dat_8219CE68
-  // The player's life and the mode's rules (Deadline, sub_82034EA0).
+  bool over = false;     // dat_8219CE73: game over
+  // The player's life and the mode's rules.
   PlayerLife life;
   ModeRules rules;
+  std::string plus_life_text = "Extra life";  // ID_X_PLUS_ONE_LIFE (0x83)
+  std::string plus_bomb_text = "Extra bomb";  // ID_X_PLUS_ONE_BOMB (0x84)
   const UnitInfo* player_unit = nullptr;
   bool field_live = false;   // dat_8219CE7D: a player spawned since the last clear
   bool was_fading = false;   // dat_8219D3D0: a player was fading in last step
 };
+
+// sub_82040818: whether the player's kills score. With lives, while the
+// player is in the game, can come back free or has a life left; with the
+// time limit, until time is up.
+void update_scoring(Game& g) {
+  const PlayerLife& p = g.life;
+  if (g.rules.lives_mode == 0)
+    g.world->scoring_open = p.lives >= 1 || p.alive() || p.free_spawn;
+  else if (g.rules.lives_mode == 2)
+    g.world->scoring_open = g.world->clock < g.rules.length;
+}
+
+// The rest of sub_820408D0 once the score has risen: an extra life and an
+// extra bomb at each threshold (100000, then ten times the last), at most
+// nine of each, with sound events 0x1A / 0x19 and a pop-up at the player
+// (the life's 5 above and the bomb's 5 below when both come at once). As
+// in the original, an extra life pulses the bombs' row (dat_8219D0C4) and
+// an extra bomb the lives' row (dat_8219D0C0).
+void score_awards(Game& g) {
+  World& w = *g.world;
+  PlayerLife& p = g.life;
+  bool life = false, bomb = false;
+  if ((g.rules.flags & 1) == 0 && p.life_at <= w.score) {
+    if (p.lives < 9) ++p.lives;
+    p.bombs_pulse = 1.0f;  // dat_820006C4
+    p.life_at = p.life_at * 10;
+    life = true;
+  }
+  if ((g.rules.flags & 2) == 0 && p.bomb_at <= w.score) {
+    if (p.bombs < 9) ++p.bombs;
+    p.lives_pulse = 1.0f;
+    p.bomb_at = p.bomb_at * 10;
+    bomb = true;
+  }
+  if (!life && !bomb) return;
+  const float f = life && bomb ? 5.0f : 0.0f;  // dat_820006F0, dat_820006CC
+  // Size 1.25 (dat_82000768), the player's colour index (0).
+  if (life) w.popups.add_big(g.player.x, g.player.y - f, 1.25f, 0, g.plus_life_text);
+  if (bomb) w.popups.add_big(g.player.x, g.player.y + f, 1.25f, 0, g.plus_bomb_text);
+}
 
 // The player's death (vtable slot 9, sub_8204E988), with the enemy that
 // touched it as the killer.
@@ -171,7 +218,9 @@ void kill_player(Game& g, Entity& killer) {
   // with the HUD.)
   p.removed = true;
   w.players[0].removed = true;
-  // (dat_8219D288 = 1 when no player is left: with the game-over flow.)
+  // No player is left (sub_8204E7D8): dat_8219D288 = 1.
+  g.waves.after_death = 1;
+  update_scoring(g);
 }
 
 // A unit touching the player: slot 12 (sub_8204E8A0) passes it to slot 7
@@ -202,6 +251,7 @@ void player_touched(Game& g, const Touch& t) {
   } else if (e.flags & 0x8) {
     w.remove(e);
   }
+  p.shield_hit = true;
 }
 
 // A new player object (sub_82051448) at the slot's spawn point: radius 5
@@ -294,7 +344,8 @@ void spawn_burst(Game& g) {
   }
 }
 
-bool load(Game& g, const fs::path& cache, int64_t seed) {
+bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
+  g.rules = mode_rules(mode);
   try {
     g.db = std::make_unique<Flask>(read_file(cache / "files" / "Data.bin"));
     g.gm = std::make_unique<GameMath>(GameMath::from_image(read_file(cache / "xex" / "image.bin")));
@@ -348,6 +399,12 @@ bool load(Game& g, const fs::path& cache, int64_t seed) {
   g.life.lives = g.rules.start_lives;
   g.life.bombs = g.rules.start_bombs;
   g.world->players[0].removed = true;
+  // The spawners' reset (sub_8203E538): the shared spawner's state, then
+  // Sequence's between-levels screen block (sub_8203B2C8, 20 draws, not
+  // ported yet: the draws are kept for the generator's order).
+  g.waves.reset(*g.world);
+  for (int i = 0; i < 20; ++i) g.rng.next();
+  g.world->scored = [&g]() { score_awards(g); };
   const FlaskValue* model_ref = unit->s->find("model");
   const auto* ref = model_ref ? std::get_if<FlaskRef>(&model_ref->v) : nullptr;
   if (!ref) {
@@ -379,10 +436,13 @@ bool load(Game& g, const fs::path& cache, int64_t seed) {
     if (auto t = text.find("ID_X_SCORE")) g.hud_text.score = narrow(*t);
     if (auto t = text.find("ID_X_HIGH_SCORE")) g.hud_text.high_score = narrow(*t);
     if (auto t = text.find("ID_X_BONUS_MULTIPLIER")) g.world->bonus_multiplier_text = narrow(*t);
+    if (auto t = text.find("ID_X_PLUS_ONE_LIFE")) g.plus_life_text = narrow(*t);
+    if (auto t = text.find("ID_X_PLUS_ONE_BOMB")) g.plus_bomb_text = narrow(*t);
   } catch (const std::exception& e) {
     SDL_Log("cannot read the text (%s): the HUD uses its built-in labels", e.what());
   }
   g.world->mode = g.rules.mode;
+  g.world->king_mode = g.rules.mode == 5;
   return true;
 }
 
@@ -415,7 +475,10 @@ void update_player(Game& g, const Sticks& s) {
     const Vec2 fire = stick_vector(stick_axis(s.fire_x, false), stick_axis(s.fire_y, true));
     if (player_thrust(g.player, move, *g.gm)) player_exhaust(w, g.player);
     const size_t fired = g.bullets.size();
-    player_fire_step(g.player, g.weapon, fire, kStep, *g.gm, g.bullets);
+    // sub_8204EFD0: never in Pacifism; in King only inside a zone (zones
+    // not ported yet, so never).
+    const bool may_fire = g.rules.mode != 4 && g.rules.mode != 5;
+    player_fire_step(g.player, g.weapon, fire, kStep, *g.gm, may_fire, g.bullets);
     for (size_t i = fired; i < g.bullets.size(); ++i) w.enlist(g.bullets[i]);
     // The larger trigger (axes 8 and 9) sets off a bomb: a blast from the
     // player's position, and the spawner backs off (sub_8203E4B0).
@@ -434,13 +497,18 @@ void update_player(Game& g, const Sticks& s) {
 void step(Game& g, const Sticks& s) {
   World& w = *g.world;
   w.bomb_kills = 0;
-  // Deadline's spawner (sub_8203E7E8) runs while a player is in the game;
+  // The spawner (sub_8203E7E8) runs while a player is in the game:
+  // Deadline's own, the others' shared one (Sequence's is not ported);
   // then the clock (sub_820366A0).
-  if (g.life.alive()) g.spawner.step(w, g.elapsed);
+  if (g.life.alive()) {
+    if (g.rules.mode == 0)
+      g.spawner.step(w, g.elapsed);
+    else if (g.rules.mode != 2)
+      g.waves.step(w, g.rules.mode, g.life.bomb_used || g.life.shield_hit);
+  }
   g.elapsed = kStep + g.elapsed;
   w.clock = g.elapsed;
-  // sub_82040818 for the time-limit rule: kills score until time is up.
-  w.scoring_open = g.rules.lives_mode != 2 || w.clock < g.rules.length;
+  update_scoring(g);
   // Last step's kill markers go (sub_82043368).
   w.death_markers.clear();
 
@@ -462,6 +530,9 @@ void step(Game& g, const Sticks& s) {
   gate_crossings(w);
   // Geoms are pulled in and picked up (sub_8204D410).
   collect_geoms(w);
+  // The HUD rows' pulses fade (0.9 a step, 0x82000D70).
+  g.life.lives_pulse = g.life.lives_pulse * 0.9f;
+  g.life.bombs_pulse = g.life.bombs_pulse * 0.9f;
   // A player that has just started to fade in bursts into view.
   const bool fading = g.life.alive() && g.life.fading;
   if (fading && !g.was_fading) spawn_burst(g);
@@ -479,6 +550,23 @@ void step(Game& g, const Sticks& s) {
     g.field_live = false;
   }
   respawn(g);
+  update_scoring(g);
+  // Game over (sub_820366A0): with lives, when no player is left and none
+  // can come back; with the time limit, when time is up. The field is
+  // cleared (sounds 1 and 0x25; the results follow, sub_820364D0 and
+  // sub_82034408(2), with the front end).
+  if (!g.over) {
+    const PlayerLife& p = g.life;
+    bool end = false;
+    if (g.rules.lives_mode == 0)
+      end = (p.alive() ? 1 : 0) + (p.free_spawn ? 1 : 0) + p.lives < 1;
+    else if (g.rules.lives_mode == 2)
+      end = g.rules.length <= w.clock;
+    if (end) {
+      g.over = true;
+      clear_field(g);
+    }
+  }
 
   // The grid (sub_8205C8F8, then sub_8205B880 on worker threads): pushes
   // gathered from the entities, the spring step, and the line pass from
@@ -603,6 +691,10 @@ void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_
   hud.score = g.world->score;
   hud.multiplier = g.world->multiplier;
   hud.bombs = g.life.bombs;
+  hud.lives = g.life.lives;
+  hud.lives_pulse = g.life.lives_pulse;
+  hud.bombs_pulse = g.life.bombs_pulse;
+  hud.start_lives = g.rules.start_lives;
   hud.clock = g.elapsed;
   hud.length = g.rules.length;
   hud.lives_mode = g.rules.lives_mode;
@@ -667,10 +759,11 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sti
   SDL_UnmapGPUTransferBuffer(dev, down);
   SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets, "
           "%zu entities, score %lld x%d, %zu particles, %zu debris, %zu linger quads, %d deaths, %d bombs left, "
-          "%d bomb kills",
+          "%d bomb kills, %d lives%s",
           out.string().c_str(), frames, g.player.x, g.player.y, g.player.heading, g.camera.x, g.camera.y,
           g.camera.zoom, g.bullets.size(), g.world->entities.size(), (long long)g.world->score, g.world->multiplier, g.world->particles.size(),
-          g.world->debris.size(), g.linger_lines.body.size() / 4, g.life.deaths, g.life.bombs, g.world->bomb_kills);
+          g.world->debris.size(), g.linger_lines.body.size() / 4, g.life.deaths, g.life.bombs, g.world->bomb_kills, g.life.lives,
+          g.over ? ", game over" : "");
   SDL_ReleaseGPUTransferBuffer(dev, down);
   SDL_ReleaseGPUTexture(dev, tex);
   return 0;
@@ -751,6 +844,7 @@ int main(int argc, char** argv) {
   uint32_t shot_w = 1280, shot_h = 720;
   int64_t seed = -1;
   int bomb_step = -1;
+  int mode = 0;
   std::vector<DevSpawn> spawns;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -758,6 +852,7 @@ int main(int argc, char** argv) {
     else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
     else if (a == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
     else if (a == "--seed" && i + 1 < argc) seed = std::atoll(argv[++i]);
+    else if (a == "--mode" && i + 1 < argc) mode = std::clamp(std::atoi(argv[++i]), 0, 5);
     else if (a == "--size" && i + 2 < argc) {
       shot_w = uint32_t(std::atoi(argv[++i]));
       shot_h = uint32_t(std::atoi(argv[++i]));
@@ -776,7 +871,7 @@ int main(int argc, char** argv) {
       sticks.fire_y = clamp16(std::atoi(argv[++i]));
     } else {
       std::fprintf(stderr,
-                   "usage: geow2 [--data <cache>] [--seed <n>] [--frames <n> --screenshot <png> [--size <w> <h>]"
+                   "usage: geow2 [--data <cache>] [--seed <n>] [--mode <0-5>] [--frames <n> --screenshot <png> [--size <w> <h>]"
                    " [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--spawn <type> <x> <y>]...]\n");
       return 2;
     }
@@ -788,7 +883,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   Game game;
-  if (!load(game, cache, seed)) return 1;
+  if (!load(game, cache, seed, mode)) return 1;
   SDL_GPUDevice* dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
   if (!dev) {
     SDL_Log("no GPU device: %s", SDL_GetError());

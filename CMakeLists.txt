@@ -63,6 +63,7 @@ add_library(geow2_game STATIC
   src/game/shots.cpp
   src/game/snake.cpp
   src/game/spawn.cpp
+  src/game/wave_spawner.cpp
   src/game/stars.cpp
   src/game/units.cpp
   src/game/wanderer.cpp

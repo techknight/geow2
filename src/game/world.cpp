@@ -211,6 +211,7 @@ void World::award(const Entity& victim, const Killer& k) {
       (k.object_type == 5 && k.shot_bounces > 0))
     points = fives * 25;
   score += points;
+  if (scored) scored();
   // The points linger where the victim was (size 1, the player's colour:
   // index 0 in single player; "%s", dat_82000CD4).
   popups.add_small(victim.x, victim.y, 1.0f, 0, format_number(points));
