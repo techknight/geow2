@@ -17,7 +17,7 @@ class GameMath {
     double c00, c08, c10, c28, c30;  // table + 0x00, 0x08, 0x10, 0x28, 0x30
     double poly[8];                  // table + 0x38 .. 0x70 (poly[0] = +0x38)
     double one;                      // 0x82000C78
-    double past_range;               // table + 0x7FB0
+    double past_range;               // 0x82197FB0 (a NaN in the shipped executable)
     float c18, c1c, c20, c24;        // table + 0x18, 0x1C, 0x20, 0x24 (f32)
     // atan2 (sub_8212FE70), table at 0x82197DA0:
     double at_half_pi, at_pi, at_threshold, at_root3;  // +0x08, +0x10, +0x18, +0x28
@@ -25,6 +25,12 @@ class GameMath {
     double at_q[4];                                    // +0x58, +0x60, +0x68, +0x70
     float at_zero, at_one;                             // +0xA8, +0xB0 (f32)
     double at_base[4];                                 // 0x82197E20: angle per reduction case
+    // tan (sub_82130A98):
+    double tan_k, tan_range;   // 0x8201D358 (2/pi), 0x8201D368
+    double tan_hi, tan_lo;     // 0x82197F50, 0x82197F58 (pi/2 in two parts)
+    double tan_a, tan_b, tan_c, tan_d, tan_e, tan_f, tan_g, tan_one;
+    // tan_a..g: 0x8201D3C8, 0x8201D378, 0x8201D3A8, 0x8201D3C0, 0x8201D3B8,
+    // 0x8201D398, 0x8201D3B0; tan_one: 0x8201D388
   };
 
   explicit GameMath(const Constants& c) : k_(c) {}
@@ -34,6 +40,7 @@ class GameMath {
   double sin(double x) const;
   double cos(double x) const;
   double atan2(double y, double x) const;  // sub_8212FE70(y, x)
+  double tan(double x) const;              // sub_82130A98
 
   // Single-precision helpers as the callers use them (result rounded with frsp).
   float sinf(float x) const { return float(sin(x)); }

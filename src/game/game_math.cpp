@@ -49,7 +49,7 @@ GameMath GameMath::from_image(std::span<const uint8_t> image) {
   c.c30 = f64_at(image, kTable + 0x30);
   for (int i = 0; i < 8; ++i) c.poly[i] = f64_at(image, kTable + 0x38 + uint32_t(i) * 8);
   c.one = f64_at(image, kOne);
-  c.past_range = f64_at(image, kTable + 0x7FB0);
+  c.past_range = f64_at(image, 0x82197FB0);
   c.c18 = f32_at(image, kTable + 0x18);
   c.c1c = f32_at(image, kTable + 0x1C);
   c.c20 = f32_at(image, kTable + 0x20);
@@ -66,7 +66,38 @@ GameMath GameMath::from_image(std::span<const uint8_t> image) {
   }
   c.at_zero = f32_at(image, kAtan + 0xA8);
   c.at_one = f32_at(image, kAtan + 0xB0);
+  c.tan_k = f64_at(image, 0x8201D358);
+  c.tan_range = f64_at(image, 0x8201D368);
+  c.tan_hi = f64_at(image, 0x82197F50);
+  c.tan_lo = f64_at(image, 0x82197F58);
+  c.tan_a = f64_at(image, 0x8201D3C8);
+  c.tan_b = f64_at(image, 0x8201D378);
+  c.tan_c = f64_at(image, 0x8201D3A8);
+  c.tan_d = f64_at(image, 0x8201D3C0);
+  c.tan_e = f64_at(image, 0x8201D3B8);
+  c.tan_f = f64_at(image, 0x8201D398);
+  c.tan_g = f64_at(image, 0x8201D3B0);
+  c.tan_one = f64_at(image, 0x8201D388);
   return GameMath(c);
+}
+
+double GameMath::tan(double x) const {
+  // sub_82130A98: returns x itself when it is exactly 0.
+  if (x == 0.0) return x;
+  const double kf = round_nearest(x * k_.tan_k);
+  double r = std::fma(-k_.tan_hi, kf, x);  // fnmsub
+  r = std::fma(-k_.tan_lo, kf, r);         // fnmsub
+  const double z = r * r;
+  double a = std::fma(-z, k_.tan_a, k_.tan_b);  // fnmsub: b - z * a
+  double b = std::fma(z, k_.tan_c, -k_.tan_d);  // fmsub
+  a = std::fma(a, z, -k_.tan_e);                // fmsub
+  b = std::fma(b, z, k_.tan_f);                 // fmadd
+  const double p = std::fma(a, z, k_.tan_one);  // fmadd
+  b = std::fma(b, z, -k_.tan_g);                // fmsub
+  const double n = p * r;
+  const double q = std::fma(b, z, k_.tan_one);  // fmadd
+  const double v = (int64_t(kf) & 1) ? q / -n : n / q;
+  return std::fabs(x) - k_.tan_range >= 0.0 ? k_.past_range : v;  // fsel
 }
 
 double GameMath::atan2(double y, double x) const {

@@ -188,6 +188,13 @@ int check_database(const fs::path& files) {
         worst_atan = std::fmax(worst_atan, std::fabs(gm.atan2(y, x) - std::atan2(y, x)));
       }
     std::printf("game atan2: max difference from the C library %.3g\n", worst_atan);
+    double worst_tan = 0.0;
+    for (int i = -1400; i <= 1400; ++i) {
+      const double x = i * 0.001;  // within (-1.4, 1.4): away from the poles at +-pi/2
+      worst_tan = std::fmax(worst_tan, std::fabs(gm.tan(x) - std::tan(x)));
+    }
+    std::printf("game tan: max difference from the C library %.3g; sin(3e8) is %s\n", worst_tan,
+                std::isnan(gm.sin(3e8)) ? "NaN (as shipped)" : "not NaN");
 
     // Build every model's line lists the way the game does at load.
     size_t models = 0, lines = 0, empty = 0;
