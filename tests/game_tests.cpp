@@ -6,6 +6,7 @@
 #include <string>
 
 #include "game/camera.h"
+#include "game/grid.h"
 #include "game/model_geometry.h"
 #include "game/player_motion.h"
 #include "game/rotation.h"
@@ -252,7 +253,26 @@ static void test_camera_follow() {
   expect(near(c.x, 50.0f), "camera settles at half the player position");
 }
 
+static void test_grid() {
+  Grid g;
+  g.reset(300.0f, 200.0f);
+  expect(near(g.rest(0, 0).x, -300.0f) && near(g.rest(0, 0).y, -200.0f), "grid corner (0, 0)");
+  expect(near(g.rest(88, 132).x, 300.0f) && near(g.rest(88, 132).y, 200.0f), "grid corner (88, 132)");
+  // Nothing pushing: the mesh stays at rest.
+  g.step({}, 300.0f, 200.0f);
+  expect(near(g.position(44, 66).x, g.rest(44, 66).x) && near(g.position(44, 66).y, g.rest(44, 66).y),
+         "grid idle stays at rest");
+  // A push at the centre: a point just right of it moves right, the border stays.
+  GridInputs in;
+  in.pushes.push_back({{0.0f, 0.0f, 30.0f, 4.0f}});
+  for (int s = 0; s < 5; ++s) g.step(in, 300.0f, 200.0f);
+  const int mid_row = 44, right_col = 66 + 2;
+  expect(g.position(mid_row, right_col).x > g.rest(mid_row, right_col).x, "grid push moves points away");
+  expect(g.position(0, 66).x == g.rest(0, 66).x && g.position(0, 66).y == g.rest(0, 66).y, "grid border fixed");
+}
+
 int main() {
+  test_grid();
   test_camera_follow();
   test_camera_pieces();
   test_game_math();

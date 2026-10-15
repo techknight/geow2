@@ -36,6 +36,7 @@ target_link_libraries(geow2_data PUBLIC geow2_extract)
 add_library(geow2_game STATIC
   src/game/camera.cpp
   src/game/game_math.cpp
+  src/game/grid.cpp
   src/game/model_geometry.cpp
   src/game/player_motion.cpp
   src/game/rotation.cpp
