@@ -1,0 +1,30 @@
+cmake_minimum_required(VERSION 3.28)
+project(geow2 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(MSVC)
+  add_compile_options(/W4 /permissive- /utf-8)
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX)
+endif()
+
+# Extractor: reads the user's XBLA package and writes the cache the game uses.
+add_library(geow2_extract STATIC
+  src/extract/aes128.cpp
+  src/extract/io.cpp
+  src/extract/sha1.cpp
+  src/extract/lzx.cpp
+  src/extract/stfs.cpp
+  src/extract/xex.cpp
+)
+target_include_directories(geow2_extract PUBLIC src)
+
+add_executable(geow2-extract src/extract/main.cpp)
+target_link_libraries(geow2-extract PRIVATE geow2_extract)
+
+enable_testing()
+add_executable(extract_tests tests/extract_tests.cpp)
+target_link_libraries(extract_tests PRIVATE geow2_extract)
+add_test(NAME extract_tests COMMAND extract_tests)
