@@ -448,6 +448,49 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
         }
     break;
   }
+  // The achievements from the SPA resource (XDBF at 0x821FB480).
+  try {
+    const auto image = read_file(cache / "xex" / "image.bin");
+    const size_t at = 0x821FB480 - 0x82000000;
+    if (at < image.size()) {
+      const Xdbf x = Xdbf::parse(std::span<const uint8_t>(image).subspan(at));
+      // sub_820802E0: achievement id to bit.
+      static const std::map<int, uint32_t> kBits = {{5, 0x001}, {7, 0x002}, {11, 0x004}, {12, 0x008},
+                                                    {1, 0x010}, {3, 0x020}, {6, 0x040}, {2, 0x080},
+                                                    {4, 0x100}, {8, 0x200}, {9, 0x400}, {10, 0x800}};
+      auto latin1 = [](const std::string& u) {
+        // UTF-8 to the font's single bytes (Latin-1; others '?').
+        std::string out;
+        for (size_t i = 0; i < u.size();) {
+          const unsigned char c = static_cast<unsigned char>(u[i]);
+          if (c < 0x80) {
+            out.push_back(char(c));
+            ++i;
+          } else if ((c & 0xE0) == 0xC0 && i + 1 < u.size()) {
+            const unsigned v = (c & 0x1Fu) << 6 | (static_cast<unsigned char>(u[i + 1]) & 0x3Fu);
+            out.push_back(v <= 0xFF ? char(v) : '?');
+            i += 2;
+          } else {
+            out.push_back('?');
+            ++i;
+            while (i < u.size() && (static_cast<unsigned char>(u[i]) & 0xC0) == 0x80) ++i;
+          }
+        }
+        return out;
+      };
+      for (const Xdbf::Achievement& a : x.achievements()) {
+        Game::AchievementInfo info;
+        const auto b = kBits.find(a.id);
+        info.bit = b == kBits.end() ? 0 : b->second;
+        info.name = latin1(x.string(1, a.name));
+        info.description = latin1(x.string(1, a.description));
+        info.gamerscore = a.gamerscore;
+        if (auto icon = decode_png(x.image(a.image))) info.icon = std::move(*icon);
+        g.achievements.push_back(std::move(info));
+      }
+    }
+  } catch (const std::exception&) {
+  }
   // The credits: 12-byte entries (type, text pointer, y) up to type 5.
   try {
     const auto image = read_file(cache / "xex" / "image.bin");

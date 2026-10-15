@@ -11,6 +11,7 @@
 #include "game/line_quads.h"
 #include "game/math.h"
 #include "game/stars.h"
+#include "data/tga.h"
 #include "game/ui.h"
 
 namespace geow2 {
@@ -54,6 +55,8 @@ class Renderer {
   // The UI's textures from the user's files (D3DX's TGA reading, A8R8G8B8,
   // one level); a missing one is left out and its sprites are skipped.
   void load_ui_textures(const std::filesystem::path& files_dir);
+  // A UI texture from a decoded image (the achievement icons).
+  void set_ui_texture(int index, const Image& image);
   void release();
 
   // The light map's update for one simulation step (sub_82065930): warp

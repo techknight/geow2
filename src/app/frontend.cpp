@@ -646,15 +646,17 @@ void Frontend::main_menu(bool reset) {
     menu_pad_ = in.pad;
     mode_select(true);
   });
-  // Multiplayer and the achievements screen are not ported yet: shown
-  // locked.
+  // Multiplayer is not ported yet: shown locked.
   add_item(0x02, {}, {}, [](int, int) { return false; });
   add_item(0x04, [this](const MenuInput& in, int, int) {
     if (in.pad == -1) return;
     menu_pad_ = in.pad;
     leaderboards(true);
   });
-  add_item(0x10, {}, {}, [](int, int) { return false; });
+  add_item(0x10, [this](const MenuInput& in, int, int) {
+    if (in.pad == -1) return;
+    achievements_screen();
+  });
   add_item(0x05, [this](const MenuInput& in, int, int) {
     if (in.pad == -1) return;
     help(true);
@@ -966,7 +968,7 @@ void Frontend::pause(bool reset) {
   add_item(0x08, [resume](const MenuInput& in, int, int) { resume(in); });
   add_item(0x05, [this](const MenuInput&, int, int) { help(true); });
   add_item(0x04, [this](const MenuInput&, int, int) { leaderboards(true); });
-  add_item(0x10, {}, {}, [](int, int) { return false; });
+  add_item(0x10, [this](const MenuInput&, int, int) { achievements_screen(); });
   add_item(0x09, [this](const MenuInput&, int, int) { exit_confirm(); });
 }
 
@@ -1312,6 +1314,75 @@ void Frontend::board_view(int mode, std::function<void(const MenuInput&)> back) 
          const int max_first = std::max(count - 10, 0);
          if (in.pressed & kUp) board_first_ = std::clamp(board_first_ - 1, 0, max_first);
          if (in.pressed & kDown) board_first_ = std::clamp(board_first_ + 1, 0, max_first);
+       },
+       0);
+  screen_.tips = [this](TextLayout& l) {
+    l.add(palette_[kUiHighlight], " \x1D\x1E ")->scale = 0.75f;
+    l.add(palette_[kUiNormal], text_(0x2C));
+    l.add(palette_[kUiHighlight], " B ");
+    l.add(palette_[kUiNormal], text_(0x2E));
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Achievements (the dashboard's list in the original; DIFFERENCES.md)
+
+void Frontend::achievements_screen() {
+  const bool in = in_game(g_);
+  achievement_first_ = 0;
+  open(0,
+       [this, in](const MenuInput&) {
+         if (in)
+           pause(false);
+         else
+           main_menu(false);
+       },
+       [this](UiCanvas& c) {
+         const Font& font = g_.font;
+         const UiPalette& P = palette_;
+         int unlocked = 0, score = 0, total = 0;
+         for (const auto& a : g_.achievements) {
+           total += a.gamerscore;
+           if (g_.achieved & a.bit) {
+             ++unlocked;
+             score += a.gamerscore;
+           }
+         }
+         ui_bar(c, P, 18.0f, 40.0f);
+         font.centre_fit(c.lines, 320.0f, 24.0f, 15.0f, 10.0f, 540.0f, P[kUiNormal].data(),
+                         format("%s - %i / %i - %i / %i", text_(0x10).c_str(), unlocked, int(g_.achievements.size()),
+                                score, total));
+         ui_panel(c, 0.0f, 46.0f, 22.0f, cursor_, P[kUiBackground], 2);
+         ui_panel(c, 618.0f, 46.0f, 640.0f, cursor_, P[kUiBackground], 4);
+         // Six rows at a time.
+         const float rh = ((cursor_ - 46.0f) + 6.0f) / 6.0f;
+         for (int i = 0; i < 6; ++i) {
+           const int k = achievement_first_ + i;
+           if (k >= int(g_.achievements.size())) break;
+           const auto& a = g_.achievements[size_t(k)];
+           const bool got = (g_.achieved & a.bit) != 0;
+           const float y = std::fmaf(float(i), rh, 46.0f), y1 = (y + rh) - 6.0f;
+           ui_panel(c, 28.0f, y, 612.0f, y1, got ? P[kUiBackground] : P[kUiLockedBackground], 0);
+           const float icon = (y1 - y) - 8.0f;
+           const float b = got ? 0.125f : 0.03125f;
+           c.sprite(34.0f, y + 4.0f, icon, icon, {b, b, b, 1.0f}, kTexAchievement0 + k, false);
+           const Rgba& tc = got ? P[kUiNormal] : P[kUiDisabled];
+           const float x = 34.0f + icon + 10.0f;
+           font.left_fit(c.lines, x, y + 5.0f, 10.0f, 10.0f, 600.0f - x - 60.0f, tc.data(), a.name);
+           font.right(c.lines, 600.0f, y + 5.0f, 10.0f, 10.0f, tc.data(), format("%i", a.gamerscore));
+           text_box(font, c.lines, P, x, y + 20.0f, 7.0f, 7.0f, 3.0f, 600.0f - x, 0, 0,
+                    got ? P[kUiHighlight] : P[kUiDisabled], a.description);
+         }
+       },
+       false,
+       [this](const MenuInput& in) {
+         if (in.pressed & kBack) {
+           if (screen_.back) screen_.back(in);
+           return;
+         }
+         const int max_first = std::max(int(g_.achievements.size()) - 6, 0);
+         if (in.pressed & kUp) achievement_first_ = std::clamp(achievement_first_ - 1, 0, max_first);
+         if (in.pressed & kDown) achievement_first_ = std::clamp(achievement_first_ + 1, 0, max_first);
        },
        0);
   screen_.tips = [this](TextLayout& l) {

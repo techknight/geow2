@@ -29,7 +29,9 @@ target_include_directories(geow2_extract PUBLIC src)
 # Readers for the original data formats, shared by the extractor and the game.
 add_library(geow2_data STATIC
   src/data/flask.cpp
+  src/data/png_read.cpp
   src/data/tga.cpp
+  src/data/xdbf.cpp
   src/data/xtlo.cpp
 )
 target_link_libraries(geow2_data PUBLIC geow2_extract)

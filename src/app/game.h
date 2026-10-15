@@ -19,6 +19,8 @@
 
 #include "app/renderer.h"
 #include "data/flask.h"
+#include "data/png_read.h"
+#include "data/xdbf.h"
 #include "data/xtlo.h"
 #include "extract/bytes.h"
 #include "game/bullets.h"
@@ -144,6 +146,16 @@ struct Game {
   uint32_t achieved = 0;
   uint32_t earned = 0;
   std::function<void(uint32_t bit)> unlocked;
+  // The achievements as the title's SPA (XDBF at 0x821FB480) lists them:
+  // name, description, gamerscore and icon (English strings), with the
+  // bit sub_820802E0 gives each id.
+  struct AchievementInfo {
+    uint32_t bit = 0;
+    std::string name, description;
+    int gamerscore = 0;
+    Image icon;
+  };
+  std::vector<AchievementInfo> achievements;
   // The single-player score tables, by mode (sub_82034C50).
   std::array<ScoreTable, 6> tables{};
   bool first_spawn = true;  // dat_8219CE70

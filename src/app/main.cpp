@@ -431,6 +431,8 @@ int main(int argc, char** argv) {
   Renderer renderer;
   if (!renderer.init(dev, fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "shaders")) return 1;
   renderer.load_ui_textures(cache / "files");
+  for (size_t i = 0; i < game.achievements.size() && i < 12; ++i)
+    renderer.set_ui_texture(kTexAchievement0 + int(i), game.achievements[i].icon);
   int rc;
   if (headless && frontend)
     rc = run_frontend_headless(dev, renderer, game, frames, presses, screenshot, shot_w, shot_h);

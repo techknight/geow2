@@ -151,6 +151,7 @@ class Frontend {
   void leaderboards(bool reset);           // local boards (Xbox LIVE's in the original)
   void board_view(int mode, std::function<void(const MenuInput&)> back);
   void after_game();                       // sub_8208EF90
+  void achievements_screen();              // stands in for XamShowAchievementsUI
 
   // Drawing helpers.
   void draw_title_block(UiCanvas& c) const;  // sub_8208F718 / sub_8208F9B8
@@ -195,6 +196,7 @@ class Frontend {
   int board_first_ = 0;
   float board_scroll_ = 0.0f;  // dat_821EA114
   int board_hold_ = 0;         // dat_821EA118
+  int achievement_first_ = 0;
   // The title art's pulse phases (BA24 logo, BA20 star), advanced once per
   // frame the title block is drawn.
   float logo_phase_ = 0.0f, star_phase_ = 0.0f;

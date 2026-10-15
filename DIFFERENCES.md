@@ -35,6 +35,20 @@ Format for each entry:
   original icons. There is no online service.
 - **Decided**: 2026-10-14; local boards' shape 2026-10-15.
 
+### The achievements list
+
+- **What**: where the achievements are shown.
+- **Original**: the menus' Achievements item opens the console's own list
+  (`XamShowAchievementsUI`, `sub_8208F1C8`); unlocking shows the
+  dashboard's notification.
+- **Port**: the item opens a screen drawn with the game's UI: the twelve
+  achievements in the order of the title's achievement table (its XDBF
+  resource in the user's XEX), each with its icon, name, description and
+  gamerscore, dimmed until unlocked; up and down scroll it. No
+  notification is shown when one unlocks (sound event 0x24 is the
+  game's own cue).
+- **Decided**: 2026-10-15.
+
 ### Profiles, sign-in and player names
 
 - **What**: who is playing and where their settings are kept.

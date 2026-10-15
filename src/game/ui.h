@@ -69,7 +69,8 @@ enum UiTexture : int {
   kTexController,    // controller.tga, dat_821A1D54
   kTexRetroAtvi,     // retroatvi.tga, dat_821A1D58
   kTexRetroBizarre,  // retrobizarre.tga, dat_821A1D5C
-  kUiTextureCount
+  kTexAchievement0,  // the achievement icons (the SPA's images), in its order
+  kUiTextureCount = kTexAchievement0 + 12
 };
 
 // A sprite queue entry (0x28 bytes at 0x821AAA08): a textured rectangle in

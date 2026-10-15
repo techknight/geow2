@@ -260,9 +260,9 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
 }
 
 void Renderer::load_ui_textures(const fs::path& dir) {
-  static const char* kFiles[kUiTextureCount] = {"logo0.tga", "star.tga", "controller.tga", "retroatvi.tga",
-                                                "retrobizarre.tga"};
-  for (int i = 0; i < kUiTextureCount; ++i) {
+  static const char* kFiles[kTexAchievement0] = {"logo0.tga", "star.tga", "controller.tga", "retroatvi.tga",
+                                                 "retrobizarre.tga"};
+  for (int i = 0; i < kTexAchievement0; ++i) {
     std::optional<Image> img;
     try {
       img = decode_tga(read_file(dir / kFiles[i]));
@@ -272,36 +272,46 @@ void Renderer::load_ui_textures(const fs::path& dir) {
       SDL_Log("no UI texture %s", kFiles[i]);
       continue;
     }
-    SDL_GPUTextureCreateInfo tci{};
-    tci.type = SDL_GPU_TEXTURETYPE_2D;
-    tci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    tci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    tci.width = img->width;
-    tci.height = img->height;
-    tci.layer_count_or_depth = 1;
-    tci.num_levels = 1;
-    SDL_GPUTexture* tex = SDL_CreateGPUTexture(device_, &tci);
-    if (!tex) continue;
-    const uint32_t bytes = img->width * img->height * 4;
-    SDL_GPUTransferBufferCreateInfo ti{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, bytes, 0};
-    SDL_GPUTransferBuffer* up = SDL_CreateGPUTransferBuffer(device_, &ti);
-    void* p = SDL_MapGPUTransferBuffer(device_, up, false);
-    std::memcpy(p, img->rgba.data(), bytes);
-    SDL_UnmapGPUTransferBuffer(device_, up);
-    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
-    SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
-    SDL_GPUTextureTransferInfo src{up, 0, img->width, img->height};
-    SDL_GPUTextureRegion dst{};
-    dst.texture = tex;
-    dst.w = img->width;
-    dst.h = img->height;
-    dst.d = 1;
-    SDL_UploadToGPUTexture(copy, &src, &dst, false);
-    SDL_EndGPUCopyPass(copy);
-    SDL_SubmitGPUCommandBuffer(cmd);
-    SDL_ReleaseGPUTransferBuffer(device_, up);
-    ui_textures_[size_t(i)] = tex;
+    set_ui_texture(i, *img);
   }
+}
+
+void Renderer::set_ui_texture(int index, const Image& img) {
+  if (index < 0 || index >= kUiTextureCount || img.width == 0 || img.height == 0) return;
+  SDL_GPUTexture*& slot = ui_textures_[size_t(index)];
+  if (slot) {
+    SDL_ReleaseGPUTexture(device_, slot);
+    slot = nullptr;
+  }
+  SDL_GPUTextureCreateInfo tci{};
+  tci.type = SDL_GPU_TEXTURETYPE_2D;
+  tci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+  tci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+  tci.width = img.width;
+  tci.height = img.height;
+  tci.layer_count_or_depth = 1;
+  tci.num_levels = 1;
+  SDL_GPUTexture* tex = SDL_CreateGPUTexture(device_, &tci);
+  if (!tex) return;
+  const uint32_t bytes = img.width * img.height * 4;
+  SDL_GPUTransferBufferCreateInfo ti{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, bytes, 0};
+  SDL_GPUTransferBuffer* up = SDL_CreateGPUTransferBuffer(device_, &ti);
+  void* p = SDL_MapGPUTransferBuffer(device_, up, false);
+  std::memcpy(p, img.rgba.data(), bytes);
+  SDL_UnmapGPUTransferBuffer(device_, up);
+  SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
+  SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
+  SDL_GPUTextureTransferInfo src{up, 0, img.width, img.height};
+  SDL_GPUTextureRegion dst{};
+  dst.texture = tex;
+  dst.w = img.width;
+  dst.h = img.height;
+  dst.d = 1;
+  SDL_UploadToGPUTexture(copy, &src, &dst, false);
+  SDL_EndGPUCopyPass(copy);
+  SDL_SubmitGPUCommandBuffer(cmd);
+  SDL_ReleaseGPUTransferBuffer(device_, up);
+  slot = tex;
 }
 
 void Renderer::release() {
