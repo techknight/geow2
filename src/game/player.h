@@ -14,7 +14,7 @@ struct ModeRules {
   int start_lives = 0;          // dat_8219D264
   int start_bombs = 3;          // dat_8219D268
   uint32_t flags = 1;           // dat_8219D26C (bit 2: bombs need a count)
-  float respawn_delay = 0.0f;   // dat_8219D270
+  float respawn_delay = 1.0f;   // dat_8219D270 (the reset sub_820348E8, 0x82034B08)
   float length = 180.0f;        // dat_8219D258 (dat_82000CD8)
 };
 
