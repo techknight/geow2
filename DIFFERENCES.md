@@ -68,6 +68,20 @@ Format for each entry:
   (`sub_8204FF00`).
 - **Decided**: 2026-10-15; multiplayer 2026-10-15.
 
+### Language
+
+- **What**: how the language is chosen.
+- **Original**: the console's language (`sub_820829D0`): German, French,
+  Spanish and Italian are used as they are, any other is English; the
+  text comes from `Text-<code>.loc`, the achievements from the SPA's
+  string table for that language, and number separators follow it
+  (`sub_8205D740`).
+- **Port**: the first of the system's preferred languages that the game
+  has, else English; `--language en|de|fr|es|it` overrides it. Headless
+  captures use English unless told otherwise, so they do not depend on
+  the machine.
+- **Decided**: 2026-10-15.
+
 ### Leaving the game
 
 - **What**: "Return to arcade".

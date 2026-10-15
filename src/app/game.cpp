@@ -1013,7 +1013,8 @@ void setup_multiplayer(Game& g, bool versus) {
 
 }  // namespace
 
-bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
+bool load(Game& g, const fs::path& cache, int64_t seed, int mode, int language) {
+  if (language < 3 || language > 6) language = 1;
   g.rules = mode_rules(mode);
   try {
     g.db = std::make_unique<Flask>(read_file(cache / "files" / "Data.bin"));
@@ -1154,8 +1155,14 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
         Game::AchievementInfo info;
         const auto b = kBits.find(a.id);
         info.bit = b == kBits.end() ? 0 : b->second;
-        info.name = latin1(x.string(1, a.name));
-        info.description = latin1(x.string(1, a.description));
+        // The SPA's strings in the game's language (XDBF locales use the
+        // same numbers), English where a string is missing.
+        auto text = [&](int id) {
+          std::string t = x.string(language, id);
+          return latin1(t.empty() ? x.string(1, id) : t);
+        };
+        info.name = text(a.name);
+        info.description = text(a.description);
         info.gamerscore = a.gamerscore;
         if (auto icon = decode_png(x.image(a.image))) info.icon = std::move(*icon);
         g.achievements.push_back(std::move(info));
@@ -1181,9 +1188,15 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
   g.world->geom_shapes = &g.geom_shapes;
   g.world->shots = &g.bullets;
   g.ui = ui_transform(*g.gm);
-  // The HUD's strings in English (the slot conversion keeps Latin-1).
+  // The text in the game's language (sub_82082720: GAME:\Text-<code>.loc,
+  // codes and names at 0x82005C50..; anything but German, French, Spanish
+  // or Italian is English). The slot conversion keeps Latin-1.
+  static const char* const kCode[7] = {"en", "en", "en", "de", "fr", "es", "it"};
+  static const char* const kName[7] = {"english", "english", "english", "german", "french", "spanish", "italian"};
+  set_language(language);
   try {
-    const TextTable text(read_file(cache / "files" / "Text-en.loc"), "english");
+    const TextTable text(read_file(cache / "files" / (std::string("Text-") + kCode[language] + ".loc")),
+                         kName[language]);
     auto narrow = [](const std::u16string& w) {
       std::string out;
       for (char16_t c : w) out.push_back(c <= 0xFF ? char(c) : '?');

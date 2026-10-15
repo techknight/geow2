@@ -58,6 +58,10 @@ back in menus and pauses a game. "Return to arcade" quits.
 Multiplayer takes up to four pads (the keyboard counts as the first):
 choose Multiplayer in the main menu, and the others join with A or START.
 
+The game speaks your system's language when it is one the original has
+(English, German, French, Spanish, Italian); `--language de` and so on
+choose another.
+
 Display: F11 (or Alt+Enter) toggles fullscreen. `--720p` renders exactly
 1280x720 and scales it to the window (`--native` goes back to rendering
 at the window's size), `--no-vsync` / `--vsync` choose the presentation;

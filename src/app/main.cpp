@@ -1,7 +1,7 @@
 // geow2: the game.
 //
 //   geow2 [--data <cache-dir>] [--profile <dir>] [--fullscreen | --windowed] [--720p | --native]
-//         [--vsync | --no-vsync]
+//         [--vsync | --no-vsync] [--language en|de|fr|es|it]
 //   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> [--size <w> <h>] [--mode <n>] [--level <n>]
 //         [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--spawn <type> <x> <y>]...
 //         [--player <pad> <team> <role>]... [--versus] [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>]
@@ -525,6 +525,17 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& cache, 
   return 0;
 }
 
+// A language code (en, de, fr, es, it) to the game's number; 0 for others.
+int language_code(const std::string& code) {
+  const std::string c = code.substr(0, 2);
+  if (c == "en") return 1;
+  if (c == "de") return 3;
+  if (c == "fr") return 4;
+  if (c == "es") return 5;
+  if (c == "it") return 6;
+  return 0;
+}
+
 int button_axis(const std::string& b) {
   if (b == "a") return 0xC;
   if (b == "b") return 0xD;
@@ -557,6 +568,7 @@ int main(int argc, char** argv) {
   int start_level = -1;
   bool frontend = false;
   int fullscreen = -1, exact_720p = -1, vsync = -1;  // -1: as saved
+  int language = 0;  // 0: the system's (windowed) or English (headless)
   std::vector<DevSpawn> spawns;
   std::vector<Press> presses;
   for (int i = 1; i < argc; ++i) {
@@ -569,6 +581,7 @@ int main(int argc, char** argv) {
     else if (a == "--mode" && i + 1 < argc) mode = std::clamp(std::atoi(argv[++i]), 0, 5);
     else if (a == "--level" && i + 1 < argc) start_level = std::clamp(std::atoi(argv[++i]), 0, 19);
     else if (a == "--frontend") frontend = true;
+    else if (a == "--language" && i + 1 < argc) language = language_code(argv[++i]);
     else if (a == "--fullscreen" || a == "--windowed") fullscreen = a == "--fullscreen";
     else if (a == "--720p" || a == "--native") exact_720p = a == "--720p";
     else if (a == "--vsync" || a == "--no-vsync") vsync = a == "--vsync";
@@ -617,7 +630,7 @@ int main(int argc, char** argv) {
     } else {
       std::fprintf(stderr,
                    "usage: geow2 [--data <cache>] [--profile <dir>] [--fullscreen|--windowed] [--720p|--native]"
-                   " [--vsync|--no-vsync] [--seed <n>] [--frames <n> --screenshot <png>"
+                   " [--vsync|--no-vsync] [--language <en|de|fr|es|it>] [--seed <n>] [--frames <n> --screenshot <png>"
                    " [--size <w> <h>] [--mode <0-5>] [--level <0-19>] [--stick <x> <y>] [--fire <x> <y>]"
                    " [--bomb <step>] [--spawn <type> <x> <y>]... [--player <pad> <team> <role>]... [--versus]"
                    " [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] | --frontend [--press <frame> <button>]...]\n");
@@ -636,7 +649,17 @@ int main(int argc, char** argv) {
     SDL_free(pref);
   }
   Game game;
-  if (!load(game, cache, seed, mode)) return 1;
+  // The language: --language, else the system's first preferred one the
+  // game has (the console language in the original), English when headless.
+  if (language == 0 && !headless) {
+    int n = 0;
+    if (SDL_Locale** locales = SDL_GetPreferredLocales(&n)) {
+      for (int k = 0; k < n && language == 0; ++k)
+        if (locales[k] && locales[k]->language) language = language_code(locales[k]->language);
+      SDL_free(locales);
+    }
+  }
+  if (!load(game, cache, seed, mode, language == 0 ? 1 : language)) return 1;
   // Level.StartLevel (value 0x8219D458) for development: Sequence starts at
   // that level (sub_82039628 sets both the level and the one shown).
   if (start_level >= 0) game.sequence.level = game.sequence.shown_level = start_level;

@@ -300,14 +300,22 @@ void Font::left_fit(LineBatch& out, float x, float y, float w, float h, float ma
   run(out, x, y, w, h, colour, s);
 }
 
+namespace {
+int g_language = 1;  // dat_8218E778
+}  // namespace
+
+void set_language(int language) { g_language = language; }
+int language() { return g_language; }
+
 std::string format_number(int64_t v) {
   // "%I64i", then a separator after every third digit from the right.
+  const char sep = g_language == 3 || g_language == 5 || g_language == 6 ? '.' : g_language == 4 ? '\x01' : ',';
   const std::string digits = std::to_string(v);
   std::string out;
   int n = 0;
   for (size_t i = digits.size(); i-- > 0;) {
     out.insert(out.begin(), digits[i]);
-    if (++n % 3 == 0 && i > 0) out.insert(out.begin(), ',');
+    if (++n % 3 == 0 && i > 0) out.insert(out.begin(), sep);
   }
   return out;
 }

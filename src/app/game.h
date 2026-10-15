@@ -253,7 +253,9 @@ struct Game {
 };
 
 // Loads the user's data from the cache and sets up a game of `mode`.
-bool load(Game& g, const std::filesystem::path& cache, int64_t seed, int mode);
+// `language` picks the text: 1 English, 3 German, 4 French, 5 Spanish,
+// 6 Italian (sub_820829D0's codes).
+bool load(Game& g, const std::filesystem::path& cache, int64_t seed, int mode, int language = 1);
 // sub_82033148: a new game of `mode` (the game block reset, the mode's
 // setup, the playfield and spawners reset); the flow goes to playing.
 void start_game(Game& g, int mode);

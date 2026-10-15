@@ -86,7 +86,14 @@ class Font {
   mutable bool kerning_ = true;
 };
 
-// sub_8205D740: a number with thousands separators (',' in English).
+// The game's language (dat_8218E778, from sub_820829D0): 1 English, 3
+// German, 4 French, 5 Spanish, 6 Italian.
+void set_language(int language);
+int language();
+
+// sub_8205D740: a number with thousands separators by language
+// (sub_820826C8): ',' in English, '.' in German, Spanish and Italian,
+// glyph 1 (a thin space) in French.
 std::string format_number(int64_t v);
 
 }  // namespace geow2
