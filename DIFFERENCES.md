@@ -110,6 +110,22 @@ Format for each entry:
   interpolated.
 - **Decided**: 2026-10-14; bloom sizes 2026-10-15.
 
+### Frame timing
+
+- **What**: what happens when a frame takes too long, and the 50 Hz
+  variant.
+- **Original**: one simulation step of a fixed 1/60 s per presented
+  frame (`sub_820366A0` adds `dat_8219D280` each frame), presented every
+  vblank (present parameters from `sub_8205D538`), so a frame that misses
+  a vblank slows the game down rather than skipping time. On a PAL 50 Hz
+  console the step is 1/50 s and the game runs at 50 steps a second
+  (`sub_8205D538`, `XGetVideoMode`).
+- **Port**: steps are taken from real time, 60 a second whatever the
+  display's refresh rate, so on a display other than 60 Hz the game still
+  runs at the original speed; after a slow frame the missed steps are run
+  before the next picture (at most 8 at once). There is no 50 Hz mode.
+- **Decided**: 2026-10-15.
+
 ### Reciprocal estimates
 
 - **What**: line widths, grid spring lengths, particle forces, the
