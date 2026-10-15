@@ -60,7 +60,8 @@ void Hill::kill(World& w, const Killer&) { w.remove(*this); }
 void Hill::update(World& w) {
   const float dt = w.step;
   // The radius: shrinking by two thirds of R a second in state 3 (to 1),
-  // else growing by 2R a second while below R (overshooting it).
+  // else growing by 2R a second while below R; the step after it passes R
+  // it is set to R (0x8204AF5C stores R itself).
   if (state == 3) {
     if (radius <= 1.0f)
       radius = 1.0f;
@@ -68,6 +69,8 @@ void Hill::update(World& w) {
       radius = std::fmaf(-(dt * 0.6666667f), kHillRadius, radius);  // dat_82000FF4
   } else if (radius < kHillRadius) {
     radius = std::fmaf(kHillRadius * dt, 2.0f, radius);  // dat_820006FC
+  } else {
+    radius = kHillRadius;
   }
   sx = sy = radius;
   switch (state) {
@@ -155,12 +158,13 @@ Vec2 hill_position(World& w) {
     if (n > 9) break;
     o[n++] = {e->x, e->y, near_zone * near_zone};
   }
-  constexpr double kTwoPow31 = 4.656612873077393e-10;  // 2^-31
+  constexpr float kTwoPow31 = 4.65661287e-10f;  // 2^-31, dat_820006C8
   Vec2 out{0.0f, 0.0f};
   for (int tries = 0;; ++tries) {
-    const double ry = double(w.half_y - kHillRadius), rx = double(w.half_x - kHillRadius);
-    const float y = float(double(float(double(w.rng.next()) * kTwoPow31 - 1.0)) * ry);
-    const float x = float(double(float(double(w.rng.next()) * kTwoPow31 - 1.0)) * rx);
+    // Single precision, fused (0x8204AB7C..0x8204ABE8): y first.
+    const float ry = w.half_y - kHillRadius, rx = w.half_x - kHillRadius;
+    const float y = std::fmaf(float(w.rng.next()), kTwoPow31, -1.0f) * ry;
+    const float x = std::fmaf(float(w.rng.next()), kTwoPow31, -1.0f) * rx;
     out = {x, y};
     bool clear = true;
     for (int i = 0; i < n; ++i) {
