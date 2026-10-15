@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "game/gate.h"
 #include "game/geoms.h"
 #include "game/rotation.h"
 
@@ -203,7 +204,9 @@ void World::award(const Entity& victim, const Killer& k) {
   if (!scoring_open[size_t(ri)]) return;
   ScoreRecord& rec = records[size_t(ri)];
   scorer = pi;
-  ++rec.kills;
+  // The kill count (+0x38, unlock progress) skips snake segments (0xE) and
+  // a gate's second end (0x18 without +0x8C) (0x820409AC).
+  if (victim.type != 0xE && !(victim.type == 0x18 && !static_cast<const GateEnd&>(victim).leader)) ++rec.kills;
   int base = 0;
   switch (victim.type) {
     case 2: case 4: case 10: case 0x1F: case 0x25: base = 50; break;
