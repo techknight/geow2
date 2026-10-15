@@ -1,0 +1,4 @@
+#!/bin/sh
+# Refuses commits that would add game data. Enable once per clone:
+#   git config core.hooksPath tools/hooks
+exec python tools/guard.py
