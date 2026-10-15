@@ -249,6 +249,7 @@ int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, 
   }
   UiCanvas ui;
   fe.draw(ui);
+  r.tuning.bloom_level = g.bloom_level;
   if (capture(dev, r, g, ui, out, w, h)) return 1;
   SDL_Log("wrote %s after %d frames: flow state %d, %zu UI quads", out.string().c_str(), frames, g.flow,
           ui.lines.body.size() / 4);
@@ -313,6 +314,7 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& profile
     if (pending > kStep) pending = 0.0;
     ui.clear();
     fe.draw(ui);
+    r.tuning.bloom_level = g.bloom_level;
     SDL_GPUTexture* swap = nullptr;
     uint32_t w = 0, h = 0;
     if (SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window, &swap, &w, &h) && swap)
@@ -416,6 +418,7 @@ int main(int argc, char** argv) {
   }
   Renderer renderer;
   if (!renderer.init(dev, fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "shaders")) return 1;
+  renderer.load_ui_textures(cache / "files");
   int rc;
   if (headless && frontend)
     rc = run_frontend_headless(dev, renderer, game, frames, presses, screenshot, shot_w, shot_h);

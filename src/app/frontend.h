@@ -154,6 +154,15 @@ class Frontend {
 
   // Drawing helpers.
   void draw_title_block(UiCanvas& c) const;  // sub_8208F718 / sub_8208F9B8
+  // sub_82091630: the pad picture with the mode's controls labelled.
+  void controller_diagram(UiCanvas& c, float x, float y, float size, bool move, bool fire, bool bomb) const;
+  // sub_82061FC0: a model part flat in UI units at (x, y), scaled.
+  void flat_icon(UiCanvas& c, float x, float y, float sx, float sy, const ModelGeometry& m, const Rgba& colour) const;
+  // sub_8207A798: a rules-screen icon, drawn with the icon camera.
+  void rules_icon(UiCanvas& c, float x, float y, float rot, float scale, Vec2 offset, const ModelGeometry& m, Vec4 up,
+                  const Rgba& colour) const;
+  void intro(const MenuInput& in);           // sub_8207E9F0
+  void draw_intro(UiCanvas& c) const;        // sub_8207E628
   void draw_header(UiCanvas& c, int text) const;  // the bar at 18..40 and its title
   void tips_menu(TextLayout& l) const;      // sub_8208F2F8
   void tips_back(TextLayout& l) const;      // sub_8208F258
@@ -186,6 +195,13 @@ class Frontend {
   int board_first_ = 0;
   float board_scroll_ = 0.0f;  // dat_821EA114
   int board_hold_ = 0;         // dat_821EA118
+  // The title art's pulse phases (BA24 logo, BA20 star), advanced once per
+  // frame the title block is drawn.
+  float logo_phase_ = 0.0f, star_phase_ = 0.0f;
+  mutable bool title_drawn_ = false;
+  // The intro (dat_821D39DD phase, E8 time, EC fade-in, E4 scale, E0 speed).
+  int intro_phase_ = 0;
+  float intro_time_ = 0.0f, intro_fade_ = 0.0f, intro_scale_ = 1.0f, intro_speed_ = 0.0f;
 };
 
 }  // namespace geow2

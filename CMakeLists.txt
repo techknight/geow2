@@ -29,6 +29,7 @@ target_include_directories(geow2_extract PUBLIC src)
 # Readers for the original data formats, shared by the extractor and the game.
 add_library(geow2_data STATIC
   src/data/flask.cpp
+  src/data/tga.cpp
   src/data/xtlo.cpp
 )
 target_link_libraries(geow2_data PUBLIC geow2_extract)
@@ -98,7 +99,7 @@ if(GEOW2_BUILD_GAME)
   find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" ${VULKAN_SDK_BINS} REQUIRED)
   set(SHADER_OUT ${CMAKE_CURRENT_BINARY_DIR}/shaders)
   set(SPIRV)
-  foreach(shader line.vert ui_line.vert line_body.frag line_cap.frag fullscreen.vert downsample.frag blur.frag combine.frag
+  foreach(shader line.vert ui_line.vert ui_fill.frag ui_sprite.vert ui_sprite_flat.vert ui_sprite.frag line_body.frag line_cap.frag fullscreen.vert downsample.frag blur.frag combine.frag
           composite.frag grid.vert grid.frag light_warp.vert light_warp.frag light_sprite.vert light_sprite.frag
           light_combine.frag light_feedback.frag star.vert star.frag
           wall.vert wall.frag particle.frag)

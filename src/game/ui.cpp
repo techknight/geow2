@@ -102,6 +102,22 @@ void ui_panel(UiCanvas& cv, float x0, float y0, float x1, float y1, const Rgba& 
   if (!(flags & 4)) emit_ui_line2(cv.lines, x1, y0, x1, y1, c1.data(), c1.data());
 }
 
+void UiCanvas::sprite(float x, float y, float w, float h, const Rgba& colour, int texture, bool flat) {
+  if (sprites.size() >= 64) return;
+  UiSprite s;
+  s.x = x;
+  s.y = y;
+  s.w = w;
+  s.h = h;
+  s.texture = texture;
+  s.r = colour[0] * 8.0f;  // dat_82000D18
+  s.g = colour[1] * 8.0f;
+  s.b = colour[2] * 8.0f;
+  s.a = colour[3];
+  s.flat = flat;
+  sprites.push_back(s);
+}
+
 void ui_bar(UiCanvas& c, const UiPalette& p, float y0, float y1) { ui_panel(c, 0.0f, y0, 640.0f, y1, p[kUiBackground], 6); }
 
 TextLayout::Field* TextLayout::add_empty() {

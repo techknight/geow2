@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 
+#include "data/tga.h"
 #include "extract/bytes.h"
 #include "game/bloom_weights.h"
 
@@ -51,10 +52,21 @@ struct Attr {
 
 SDL_GPUGraphicsPipeline* make_pipeline(SDL_GPUDevice* dev, SDL_GPUShader* vs, SDL_GPUShader* fs,
                                        SDL_GPUTextureFormat format, bool additive, uint32_t pitch,
-                                       std::initializer_list<Attr> attrs, bool per_instance = false) {
+                                       std::initializer_list<Attr> attrs, bool per_instance = false,
+                                       bool min_blend = false) {
   SDL_GPUColorTargetDescription target{};
   target.format = format;
-  if (additive) {
+  if (min_blend) {
+    // Blend 0x1000741 (sub_82067A08): colour ONE, MIN, INV_SRC_ALPHA (the
+    // factors do not apply to MIN); alpha ZERO + ONE (kept).
+    target.blend_state.enable_blend = true;
+    target.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+    target.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+    target.blend_state.color_blend_op = SDL_GPU_BLENDOP_MIN;
+    target.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+    target.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+    target.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+  } else if (additive) {
     // Blend 0x1010101 (sub_820679A8): ONE + ONE for colour and alpha.
     target.blend_state.enable_blend = true;
     target.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
@@ -107,6 +119,10 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   constexpr auto F = SDL_GPU_SHADERSTAGE_FRAGMENT;
   SDL_GPUShader* line_vs = shader("line.vert.spv", V, 0, 1);
   SDL_GPUShader* ui_vs = shader("ui_line.vert.spv", V, 0, 1);
+  SDL_GPUShader* ui_fill_fs = shader("ui_fill.frag.spv", F, 0, 0);
+  SDL_GPUShader* ui_sprite_vs = shader("ui_sprite.vert.spv", V, 0, 1);
+  SDL_GPUShader* ui_sprite_flat_vs = shader("ui_sprite_flat.vert.spv", V, 0, 0);
+  SDL_GPUShader* ui_sprite_fs = shader("ui_sprite.frag.spv", F, 1, 0);
   SDL_GPUShader* body_fs = shader("line_body.frag.spv", F, 0, 0);
   SDL_GPUShader* cap_fs = shader("line_cap.frag.spv", F, 0, 0);
   SDL_GPUShader* grid_vs = shader("grid.vert.spv", V, 0, 1);
@@ -138,6 +154,14 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   // The UI's line presets 0x821B45B0 / 0x821B45BC: the same pixel shaders.
   ui_body_ = make_pipeline(device, ui_vs, body_fs, kLayerFormat, true, sizeof(LineVertex), {{F4, 0}, {F4, 16}});
   ui_caps_ = make_pipeline(device, ui_vs, cap_fs, kLayerFormat, true, sizeof(LineVertex), {{F4, 0}, {F4, 16}});
+  // The panel fill (preset 0x821B467C) and the sprites (0x821B46D0 bent,
+  // 0x821B46DC flat; ONE + ONE).
+  ui_fill_ = make_pipeline(device, ui_vs, ui_fill_fs, kLayerFormat, false, sizeof(LineVertex), {{F4, 0}, {F4, 16}},
+                           false, true);
+  ui_sprite_ = make_pipeline(device, ui_sprite_vs, ui_sprite_fs, kLayerFormat, true, sizeof(LineVertex),
+                             {{F4, 0}, {F4, 16}});
+  ui_sprite_flat_ = make_pipeline(device, ui_sprite_flat_vs, ui_sprite_fs, kLayerFormat, true, sizeof(LineVertex),
+                                  {{F4, 0}, {F4, 16}});
   grid_ = make_pipeline(device, grid_vs, grid_fs, kLayerFormat, true, sizeof(GridVertex), {{F3, 0}, {F2, 20}});
   warp_ = make_pipeline(device, warp_vs, warp_fs, kLayerFormat, false, sizeof(GridVertex), {{F2, 0}, {F2, 12}});
   sprites_ = make_pipeline(device, sprite_vs, sprite_fs, kLayerFormat, true, sizeof(LightVertex),
@@ -186,7 +210,7 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   light_combined_ = make_target(kLightW, kLightH);
   make_chain(light_chain_, kLightW, kLightH, false);
 
-  if (!body_ || !caps_ || !ui_body_ || !ui_caps_ || !grid_ || !warp_ || !sprites_ || !stars_ || !walls_ || !particles_ || !star_sprite_ || !downsample_ || !blur_ || !combine_ || !light_combine_ ||
+  if (!body_ || !caps_ || !ui_body_ || !ui_caps_ || !ui_fill_ || !ui_sprite_ || !ui_sprite_flat_ || !grid_ || !warp_ || !sprites_ || !stars_ || !walls_ || !particles_ || !star_sprite_ || !downsample_ || !blur_ || !combine_ || !light_combine_ ||
       !feedback_ || !sampler_ || !sprite_sampler_ || !sprite_ || !light_.tex) {
     SDL_Log("cannot create the render resources: %s", SDL_GetError());
     return false;
@@ -235,12 +259,57 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   return true;
 }
 
+void Renderer::load_ui_textures(const fs::path& dir) {
+  static const char* kFiles[kUiTextureCount] = {"logo0.tga", "star.tga", "controller.tga", "retroatvi.tga",
+                                                "retrobizarre.tga"};
+  for (int i = 0; i < kUiTextureCount; ++i) {
+    std::optional<Image> img;
+    try {
+      img = decode_tga(read_file(dir / kFiles[i]));
+    } catch (const std::exception&) {
+    }
+    if (!img) {
+      SDL_Log("no UI texture %s", kFiles[i]);
+      continue;
+    }
+    SDL_GPUTextureCreateInfo tci{};
+    tci.type = SDL_GPU_TEXTURETYPE_2D;
+    tci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    tci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    tci.width = img->width;
+    tci.height = img->height;
+    tci.layer_count_or_depth = 1;
+    tci.num_levels = 1;
+    SDL_GPUTexture* tex = SDL_CreateGPUTexture(device_, &tci);
+    if (!tex) continue;
+    const uint32_t bytes = img->width * img->height * 4;
+    SDL_GPUTransferBufferCreateInfo ti{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, bytes, 0};
+    SDL_GPUTransferBuffer* up = SDL_CreateGPUTransferBuffer(device_, &ti);
+    void* p = SDL_MapGPUTransferBuffer(device_, up, false);
+    std::memcpy(p, img->rgba.data(), bytes);
+    SDL_UnmapGPUTransferBuffer(device_, up);
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
+    SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUTextureTransferInfo src{up, 0, img->width, img->height};
+    SDL_GPUTextureRegion dst{};
+    dst.texture = tex;
+    dst.w = img->width;
+    dst.h = img->height;
+    dst.d = 1;
+    SDL_UploadToGPUTexture(copy, &src, &dst, false);
+    SDL_EndGPUCopyPass(copy);
+    SDL_SubmitGPUCommandBuffer(cmd);
+    SDL_ReleaseGPUTransferBuffer(device_, up);
+    ui_textures_[size_t(i)] = tex;
+  }
+}
+
 void Renderer::release() {
   if (!device_) return;
   resize(0, 0);
   for (Target* t : {&light_, &light_warped_, &light_new_, &light_combined_}) free_target(*t);
   free_chain(light_chain_);
-  for (SDL_GPUGraphicsPipeline* p : {body_, caps_, ui_body_, ui_caps_, grid_, warp_, sprites_, stars_, walls_, particles_, downsample_, blur_, combine_,
+  for (SDL_GPUGraphicsPipeline* p : {body_, caps_, ui_body_, ui_caps_, ui_fill_, ui_sprite_, ui_sprite_flat_, grid_, warp_, sprites_, stars_, walls_, particles_, downsample_, blur_, combine_,
                                      light_combine_, feedback_, composite_})
     if (p) SDL_ReleaseGPUGraphicsPipeline(device_, p);
   for (SDL_GPUShader* s : shaders_)
@@ -249,7 +318,12 @@ void Renderer::release() {
     if (s) SDL_ReleaseGPUSampler(device_, s);
   for (SDL_GPUTexture* t : {sprite_, star_sprite_})
     if (t) SDL_ReleaseGPUTexture(device_, t);
-  for (Buffer* b : {&lines_, &ui_lines_, &linger_lines_, &particle_vertices_, &grid_vertices_, &wall_vertices_, &warp_vertices_, &sprite_vertices_, &star_vertices_,
+  for (SDL_GPUTexture*& t : ui_textures_)
+    if (t) {
+      SDL_ReleaseGPUTexture(device_, t);
+      t = nullptr;
+    }
+  for (Buffer* b : {&ui_fill_vertices_, &ui_sprite_vertices_, &icon_lines_, &lines_, &ui_lines_, &linger_lines_, &particle_vertices_, &grid_vertices_, &wall_vertices_, &warp_vertices_, &sprite_vertices_, &star_vertices_,
                     &quad_index_, &warp_index_}) {
     if (b->buf) SDL_ReleaseGPUBuffer(device_, b->buf);
     if (b->staging) SDL_ReleaseGPUTransferBuffer(device_, b->staging);
@@ -494,8 +568,8 @@ void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextu
                     uint32_t out_h, const Mat4& vp, const std::vector<StarVertex>& stars,
                     const std::vector<GridVertex>* grid, const std::vector<GridVertex>& walls,
                     const std::vector<LineVertex>& particles, const LineBatch& linger, const LineBatch& foreground,
-                    const LineBatch& ui,
-                    const Mat4& ui_transform) {
+                    const UiCanvas& canvas, const Mat4& ui_transform, const Mat4& icon_vp) {
+  const LineBatch& ui = canvas.lines;
   // The 16:9 picture, letterboxed into the output.
   uint32_t pw = out_w, ph = uint32_t(float(out_w) / kAspect + 0.5f);
   if (ph > out_h) {
@@ -518,8 +592,57 @@ void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextu
   lv.insert(lv.end(), linger.caps.begin(), linger.caps.end());
   const uint32_t linger_body = uint32_t(linger.body.size() / 4), linger_caps = uint32_t(linger.caps.size() / 4);
   upload(cmd, linger_lines_, SDL_GPU_BUFFERUSAGE_VERTEX, lv.data(), uint32_t(lv.size() * sizeof(LineVertex)));
+  // The panel fill: (x, y, 0, side 0, rgb * 0.1, a) (sub_82091E98; the
+  // pixel shader ignores the colour).
+  std::vector<LineVertex> fv;
+  fv.reserve(canvas.fill.size());
+  for (const UiFillVertex& f : canvas.fill) fv.push_back({f.x, f.y, 0.0f, 0.0f, f.r * 0.1f, f.g * 0.1f, f.b * 0.1f, f.a});
+  const uint32_t fill_quads = uint32_t(fv.size() / 4);
+  // The sprites as quads: bent ones tessellated into 1 + trunc(w / 20) by
+  // 1 + trunc(h / 20) cells (sub_8205D980), flat ones one quad
+  // (sub_8205DD38); colour (a * 8r, a * 8g, a * 8b).
+  std::vector<LineVertex> sv;
+  struct SpriteDraw {
+    uint32_t first, quads;
+    int texture;
+    bool flat;
+  };
+  std::vector<SpriteDraw> sprite_draws;
+  for (const bool flat : {false, true})
+    for (const UiSprite& s : canvas.sprites) {
+      if (s.flat != flat || s.texture < 0 || s.texture >= kUiTextureCount || !ui_textures_[size_t(s.texture)]) continue;
+      const float c[4] = {s.a * s.r, s.a * s.g, s.a * s.b, 1.0f};
+      const uint32_t first = uint32_t(sv.size() / 4);
+      if (flat) {
+        sv.push_back({s.x, s.y, 0.0f, 0.0f, c[0], c[1], c[2], c[3]});
+        sv.push_back({s.x + s.w, s.y, 1.0f, 0.0f, c[0], c[1], c[2], c[3]});
+        sv.push_back({s.x + s.w, s.y + s.h, 1.0f, 1.0f, c[0], c[1], c[2], c[3]});
+        sv.push_back({s.x, s.y + s.h, 0.0f, 1.0f, c[0], c[1], c[2], c[3]});
+      } else {
+        const int cols = 1 - int(s.w * -0.05f), rows = 1 - int(s.h * -0.05f);  // dat_820028F0
+        for (int j = 0; j < rows; ++j) {
+          const float v0 = float(j) / float(rows), v1 = float(j + 1) / float(rows);
+          const float y0 = std::fmaf(s.h, v0, s.y), y1 = std::fmaf(s.h, v1, s.y);
+          for (int i = 0; i < cols; ++i) {
+            const float u0 = float(i) / float(cols), u1 = float(i + 1) / float(cols);
+            const float x0 = std::fmaf(s.w, u0, s.x), x1 = std::fmaf(s.w, u1, s.x);
+            sv.push_back({x0, y0, u0, v0, c[0], c[1], c[2], c[3]});
+            sv.push_back({x1, y0, u1, v0, c[0], c[1], c[2], c[3]});
+            sv.push_back({x1, y1, u1, v1, c[0], c[1], c[2], c[3]});
+            sv.push_back({x0, y1, u0, v1, c[0], c[1], c[2], c[3]});
+          }
+        }
+      }
+      sprite_draws.push_back({first, uint32_t(sv.size() / 4) - first, s.texture, flat});
+    }
+  std::vector<LineVertex> iv(canvas.icons.body);
+  iv.insert(iv.end(), canvas.icons.caps.begin(), canvas.icons.caps.end());
+  const uint32_t icon_body = uint32_t(canvas.icons.body.size() / 4), icon_caps = uint32_t(canvas.icons.caps.size() / 4);
   quad_indices(cmd, std::max({body_quads + cap_quads, grid_quads, particle_quads, ui_body + ui_caps,
-                              linger_body + linger_caps}));
+                              linger_body + linger_caps, fill_quads, uint32_t(sv.size() / 4), icon_body + icon_caps}));
+  upload(cmd, ui_fill_vertices_, SDL_GPU_BUFFERUSAGE_VERTEX, fv.data(), uint32_t(fv.size() * sizeof(LineVertex)));
+  upload(cmd, ui_sprite_vertices_, SDL_GPU_BUFFERUSAGE_VERTEX, sv.data(), uint32_t(sv.size() * sizeof(LineVertex)));
+  upload(cmd, icon_lines_, SDL_GPU_BUFFERUSAGE_VERTEX, iv.data(), uint32_t(iv.size() * sizeof(LineVertex)));
   upload(cmd, ui_lines_, SDL_GPU_BUFFERUSAGE_VERTEX, uv.data(), uint32_t(uv.size() * sizeof(LineVertex)));
   upload(cmd, particle_vertices_, SDL_GPU_BUFFERUSAGE_VERTEX, particles.data(),
          uint32_t(particles.size() * sizeof(LineVertex)));
@@ -600,6 +723,14 @@ void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextu
     SDL_BindGPUGraphicsPipeline(rp, caps_);
     if (linger_caps) SDL_DrawGPUIndexedPrimitives(rp, linger_caps * 6, 1, 0, int32_t(linger_body * 4), 0);
   }
+  // The UI block's end in layer A: the panel fill caps what is behind it.
+  if (fill_quads) {
+    SDL_PushGPUVertexUniformData(cmd, 0, ui_transform.m, sizeof(ui_transform.m));
+    const SDL_GPUBufferBinding vb{ui_fill_vertices_.buf, 0};
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    SDL_BindGPUGraphicsPipeline(rp, ui_fill_);
+    SDL_DrawGPUIndexedPrimitives(rp, fill_quads * 6, 1, 0, 0, 0);
+  }
   SDL_EndGPURenderPass(rp);
 
   // Layer B (sub_820669F0): line bodies (preset 0x821B4694), then caps
@@ -613,16 +744,44 @@ void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextu
     SDL_BindGPUGraphicsPipeline(rp, caps_);
     if (cap_quads) SDL_DrawGPUIndexedPrimitives(rp, cap_quads * 6, 1, 0, int32_t(body_quads * 4), 0);
   }
-  // The UI (Render.Layer.Ui in layer B): bodies 0x821A4108, caps
-  // 0x821A4948, with the UI transform, additive.
+  // The UI (Render.Layer.Ui in layer B): the panel fill again (its
+  // additive second draw adds nothing to the colour of a black fill), then
+  // bodies 0x821A4108 and caps 0x821A4948, with the UI transform,
+  // additive; then the sprites, bent then flat; then the model icons with
+  // their own camera.
+  SDL_PushGPUVertexUniformData(cmd, 0, ui_transform.m, sizeof(ui_transform.m));
+  if (fill_quads) {
+    const SDL_GPUBufferBinding vb{ui_fill_vertices_.buf, 0};
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    SDL_BindGPUGraphicsPipeline(rp, ui_fill_);
+    SDL_DrawGPUIndexedPrimitives(rp, fill_quads * 6, 1, 0, 0, 0);
+  }
   if (ui_body + ui_caps) {
-    SDL_PushGPUVertexUniformData(cmd, 0, ui_transform.m, sizeof(ui_transform.m));
     const SDL_GPUBufferBinding vb{ui_lines_.buf, 0};
     SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
     SDL_BindGPUGraphicsPipeline(rp, ui_body_);
     if (ui_body) SDL_DrawGPUIndexedPrimitives(rp, ui_body * 6, 1, 0, 0, 0);
     SDL_BindGPUGraphicsPipeline(rp, ui_caps_);
     if (ui_caps) SDL_DrawGPUIndexedPrimitives(rp, ui_caps * 6, 1, 0, int32_t(ui_body * 4), 0);
+  }
+  if (!sprite_draws.empty()) {
+    const SDL_GPUBufferBinding vb{ui_sprite_vertices_.buf, 0};
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    for (const SpriteDraw& d : sprite_draws) {
+      SDL_BindGPUGraphicsPipeline(rp, d.flat ? ui_sprite_flat_ : ui_sprite_);
+      const SDL_GPUTextureSamplerBinding tex{ui_textures_[size_t(d.texture)], sampler_};
+      SDL_BindGPUFragmentSamplers(rp, 0, &tex, 1);
+      SDL_DrawGPUIndexedPrimitives(rp, d.quads * 6, 1, d.first * 6, 0, 0);
+    }
+  }
+  if (icon_body + icon_caps) {
+    SDL_PushGPUVertexUniformData(cmd, 0, icon_vp.m, sizeof(icon_vp.m));
+    const SDL_GPUBufferBinding vb{icon_lines_.buf, 0};
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    SDL_BindGPUGraphicsPipeline(rp, body_);
+    if (icon_body) SDL_DrawGPUIndexedPrimitives(rp, icon_body * 6, 1, 0, 0, 0);
+    SDL_BindGPUGraphicsPipeline(rp, caps_);
+    if (icon_caps) SDL_DrawGPUIndexedPrimitives(rp, icon_caps * 6, 1, 0, int32_t(icon_body * 4), 0);
   }
   SDL_EndGPURenderPass(rp);
 

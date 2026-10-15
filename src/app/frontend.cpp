@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "game/rotation.h"
+
 namespace geow2 {
 namespace {
 
@@ -254,6 +256,12 @@ void Frontend::frame(const std::array<PadState, 4>& pads) {
   }
   if (lock_ud_ > 0) --lock_ud_;
   if (lock_lr_ > 0) --lock_lr_;
+  if (title_drawn_) {
+    // fma(frequency * step, 2pi, phase) (dat_8218E7DC).
+    logo_phase_ = std::fmaf(0.1f * kStep, 6.28318548f, logo_phase_);
+    star_phase_ = std::fmaf(0.2f * kStep, 6.28318548f, star_phase_);
+    title_drawn_ = false;
+  }
 }
 
 void Frontend::request_game(int mode) {
@@ -373,10 +381,93 @@ void Frontend::draw_header(UiCanvas& c, int text) const {
 }
 
 void Frontend::draw_title_block(UiCanvas& c) const {
-  // sub_8208F718: Ui.Title.ShowBox and ShowLogo are off; the logo texture
-  // and the star flare (ShowTex, ShowStar) are sprites, not drawn yet.
-  // Then Ui.Title.ShowLine: the panel's bottom edge at the menu's top.
+  // sub_8208F718: Ui.Title.ShowBox and ShowLogo are off; ShowTex: the logo
+  // texture across the top (Ui.Title.X 0, Y 6, Height 100) at alpha
+  // fma(PulseStrength 0, cos(phase), Alpha 1); ShowStar: the flare (100 *
+  // StarScale 1, centred on (StarX 153, StarY 50 + Title.Y)) at
+  // fma(StarPulseStrength 0.2, cos(phase), StarAlpha 1.75). Both bent
+  // (RemoveBend off).
+  title_drawn_ = true;
+  const float a = std::fmaf(0.0f, float(g_.gm->cos(logo_phase_)), 1.0f);
+  c.sprite(0.0f, 6.0f, 640.0f, 100.0f, {a, a, a, a}, kTexLogo, false);
+  const float s = 1.0f * 100.0f;  // dat_82001020
+  const float sa = std::fmaf(0.2f, float(g_.gm->cos(star_phase_)), 1.75f);
+  c.sprite(153.0f - s * 0.5f, (50.0f + 6.0f) - s * 0.5f, s, s, {sa, sa, sa, sa}, kTexStar, false);
+  // Ui.Title.ShowLine: the panel's bottom edge at the menu's top.
   ui_panel(c, 0.0f, 18.0f, 640.0f, cursor_, palette_[kUiBackground], 0xF);
+}
+
+void Frontend::flat_icon(UiCanvas& c, float x, float y, float sx, float sy, const ModelGeometry& m,
+                         const Rgba& colour) const {
+  if (m.parts.empty()) return;
+  for (const ModelLine& l : m.parts[0]) {
+    const float lc[4] = {l.r * colour[0], l.g * colour[1], l.b * colour[2], l.a * colour[3]};
+    const Vec4 p0{std::fmaf(l.p0.x, sx, 0.0f) + x, std::fmaf(-l.p0.y, sy, y) + 0.0f, 0.0f, 0.0f};
+    const Vec4 p1{std::fmaf(l.p1.x, sx, 0.0f) + x, std::fmaf(-l.p1.y, sy, y) + 0.0f, 0.0f, 0.0f};
+    emit_line(c.lines, kLineWidthUnit, m.cap_size, p0, p1, lc, 8.0f);  // dat_82000D18
+  }
+}
+
+void Frontend::rules_icon(UiCanvas& c, float x, float y, float rot, float scale, Vec2 offset, const ModelGeometry& m,
+                          Vec4 up, const Rgba& colour) const {
+  // M = diag(-scale, scale, scale) * Rz(rot) * basis(eye, (offset, 100),
+  // up), the eye at ((x - 320) * 0.9, (y - 180) * 0.9, 0) (dat_82000D70).
+  const Vec4 eye{(x - 320.0f) * 0.9f, (y - 180.0f) * 0.9f, 0.0f, 1.0f};
+  const Mat4 basis = look_at_basis(eye, {offset.x, offset.y, 100.0f, 0.0f}, up);
+  Mat4 r = rotation_axis(*g_.gm, rot, 0.0f, 0.0f, 1.0f);
+  const float k[3] = {-scale, scale, scale};
+  for (int row = 0; row < 3; ++row)
+    for (int col = 0; col < 4; ++col) r.m[row * 4 + col] = r.m[row * 4 + col] * k[row];
+  draw_model_part(c.icons, m, 0, mul(r, basis), colour.data());
+}
+
+void Frontend::controller_diagram(UiCanvas& c, float x, float y, float size, bool move, bool fire, bool bomb) const {
+  const Font& font = g_.font;
+  const float hw = size * 0.5f, hh = (size * 0.64f) * 0.5f;
+  c.sprite(x - hw, y - hh, size, size * 0.64f, palette_[kUiHighlight], kTexController, false);
+  auto at = [&](float ax, float ay) { return Vec2{std::fmaf(ax, hw, x), std::fmaf(ay, hh, y)}; };
+  // Ui.Pad.* anchors (defaults).
+  const Vec2 L = at(-0.508f, 0.23f), R = at(0.247f, 0.6f);
+  const bool bumpers = (profile_.controls & 4) != 0;
+  const Vec2 LT = bumpers ? at(-0.57f, -0.57f) : at(-0.47f, -0.88f);
+  const Vec2 RT = bumpers ? at(0.575f, -0.57f) : at(0.475f, -0.88f);
+  const Rgba line_on = scaled(palette_[kUiSelection], 4.0f), &off = palette_[kUiDisabled];
+  // Which stick moves and which fires (profile bits 0 and 1).
+  std::vector<int> left, right;
+  const bool move_right = profile_.controls & 1, fire_right = profile_.controls & 2;
+  if (move) (move_right ? right : left).push_back(0x0C);
+  if (fire) (fire_right ? right : left).push_back(0x0D);
+  {
+    const bool none = left.empty();
+    const float d = left.size() == 2 ? 11.0f : 0.0f;
+    const Rgba& lc = none ? off : line_on;
+    emit_ui_line(c.lines, L.x, L.y, L.x, (L.y + 54.0f) - d, lc.data());
+    if (none) left.push_back(0x26);
+    for (size_t i = 0; i < left.size(); ++i)
+      font.centre(c.lines, L.x, (L.y + (i == 0 ? 57.0f : 68.0f)) - d, 8.0f, 8.0f,
+                  (none ? off : palette_[kUiNormal]).data(), text_(left[i]));
+  }
+  {
+    const bool none = right.empty();
+    const Rgba& lc = none ? off : line_on;
+    emit_ui_line(c.lines, R.x, R.y, R.x, R.y + 15.0f, lc.data());
+    if (none) right.push_back(0x26);
+    for (size_t i = 0; i < right.size(); ++i)
+      font.centre(c.lines, R.x, R.y + (i == 0 ? 18.0f : 29.0f), 8.0f, 8.0f, (none ? off : palette_[kUiNormal]).data(),
+                  text_(right[i]));
+  }
+  const float yb = LT.y - 10.0f;
+  const float W = RT.x - LT.x;
+  const std::string label = text_(bomb ? 0x0E : 0x26);
+  const float m = font.measure(label) * 8.0f;
+  const float w = std::min(W - 12.0f, std::max(m, 0.0f));
+  const float gap = ((W - w) - 8.0f) * 0.5f;
+  const Rgba& lc = bomb ? line_on : off;
+  emit_ui_line(c.lines, LT.x, LT.y, LT.x, yb, lc.data());
+  emit_ui_line(c.lines, LT.x, yb, LT.x + gap, yb, lc.data());
+  emit_ui_line(c.lines, RT.x, RT.y, RT.x, yb, lc.data());
+  emit_ui_line(c.lines, RT.x, yb, RT.x - gap, yb, lc.data());
+  font.centre_fit(c.lines, x, yb - 4.0f, 8.0f, 8.0f, w, (bomb ? palette_[kUiNormal] : off).data(), label);
 }
 
 void Frontend::draw(UiCanvas& c) const {
@@ -479,10 +570,63 @@ void Frontend::draw(UiCanvas& c) const {
 // Boot and the main menu
 
 void Frontend::boot() {
-  // The intro's two splashes are textures (retroatvi.tga, retrobizarre.tga)
-  // not drawn yet; the main menu comes at once.
+  // sub_820334A8: the intro screen; no bloom until it is over.
   g_.flow = 0;
-  main_menu(false);
+  g_.bloom_level = 0.0f;
+  open(0, {}, [this](UiCanvas& c) { draw_intro(c); }, false, [this](const MenuInput& in) { intro(in); }, 0);
+  screen_.hide_strip = true;
+}
+
+void Frontend::intro(const MenuInput& in) {
+  // sub_8207E9F0 (Ui.Intro.Pause off; SpringFactor 0.8, SpringDamp 0.6).
+  intro_time_ = kStep + intro_time_;
+  const float a = std::fmaf(kStep, 4.0f, intro_fade_);  // dat_820006F4
+  intro_fade_ = std::clamp(a, 0.0f, 1.0f);
+  if (intro_phase_ == 0) {
+    intro_scale_ = 1.0f;
+    intro_speed_ = 0.0f;
+  } else {
+    intro_scale_ = intro_speed_ + intro_scale_;
+    intro_speed_ = std::fmaf(1.0f - intro_scale_, 0.8f, intro_speed_) * 0.6f;
+  }
+  // A or START skips to the fade-out.
+  if ((in.pressed & (kStart | kA)) && intro_time_ < 4.25f) intro_time_ = 4.25f;  // dat_820011F0
+  if (intro_time_ > 5.0f) {  // dat_82004A28
+    if (intro_phase_ == 0) {
+      intro_scale_ = intro_time_ = intro_fade_ = intro_speed_ = 0.0f;
+      intro_phase_ = 1;
+      g_.bloom_level = 1.0f;  // (sound event 0x70)
+    } else {
+      g_.bloom_level = 1.0f;  // (the menu music, sub_82078A50(0))
+      main_menu(false);
+    }
+  }
+  fade_ = 0.0f;
+}
+
+void Frontend::draw_intro(UiCanvas& c) const {
+  // sub_8207E628: fully shown until 4.25 s, gone at 4.75 s.
+  const float f = std::clamp(((5.0f - intro_time_) - 0.25f) * 2.0f, 0.0f, 1.0f) * intro_fade_;
+  if (intro_phase_ == 0) {
+    // retroatvi.tga over the whole screen, flat; Ui.Intro.Alpha 0.55,
+    // times 1.5 (dat_82000C90).
+    const float k = (0.55f * f) * 1.5f;
+    c.sprite(0.0f, 0.0f, 640.0f, 360.0f, {k, k, k, k}, kTexRetroAtvi, true);
+  } else {
+    // retrobizarre.tga springing to size (Ui.Intro.Size 260, Y 160), then
+    // "Bizarre" / "Creations" under it (TextY -38, TextRatio 0.663; literal,
+    // not localised) in the normal colour.
+    const float size = 260.0f, S = size * intro_scale_;
+    const Rgba& n = palette_[kUiNormal];
+    const Rgba col{n[0] * f * 0.55f, n[1] * f * 0.55f, n[2] * f * 0.55f, n[3] * f * 0.55f};
+    c.sprite(std::fmaf(-S, 0.5f, 320.0f), 160.0f - size * 0.5f, S, size, col, kTexRetroBizarre, false);
+    const Rgba nf{n[0] * f, n[1] * f, n[2] * f, n[3] * f};
+    const float y = ((size * 0.5f) + -38.0f) + 160.0f;
+    g_.font.centre_fit(c.lines, 320.0f, y, 40.0f, 10.0f, 0.663f * S, nf.data(), "Bizarre");
+    g_.font.centre_fit(c.lines, 320.0f, y + 17.0f, 40.0f, 10.0f, 0.663f * S, nf.data(), "Creations");
+  }
+  // (The ESRB line shows only on North American consoles or with
+  // Ui.Intro.ShowEsrb; neither applies here.)
 }
 
 void Frontend::main_menu(bool reset) {
@@ -628,9 +772,11 @@ void Frontend::mode_tile(UiCanvas& c, int index, int text, bool selected) const 
                      : pre      ? palette_[kUiLockedBackgroundPending]
                                 : palette_[kUiLockedBackground];
   ui_panel(c, x0, y0, x0 + 289.0f, y0 + h, tile, 0);
-  // The icon (a CharMap model, sub_82061FC0) is not drawn yet; the name
-  // under it.
+  // The icon: the item's CharMap model, then the name under it.
   const float yi = std::fmaf(h - 20.0f, 0.5f, y0) + 10.0f;
+  static const char* kIcon[6] = {"deadline", "king", "evolved", "pacifism", "waves", "progression"};
+  const auto icon = g_.charmap.find(kIcon[index]);
+  if (icon != g_.charmap.end()) flat_icon(c, x0 + 44.0f, yi - 2.0f, 1.1f, 1.1f, icon->second, col);
   font.centre_fit(c.lines, x0 + 44.0f, yi + 10.0f, 6.0f, 6.0f, 75.0f, col.data(), text_(text));
   const float L = x0 + 88.0f, R = x0 + 280.0f, C = (R + L) * 0.5f;
   if (fresh) {
@@ -666,23 +812,46 @@ void Frontend::mode_tile(UiCanvas& c, int index, int text, bool selected) const 
 
 void Frontend::rules(int index, std::function<void(const MenuInput&)> back, int item_text, Action start) {
   static const int kTitle[6] = {0x1C, 0x1E, 0x20, 0x1F, 0x21, 0x1D};  // by profile index
-  // The lines per mode: text id, and the icon's name when it is text.
+  // The lines per mode: text id, the icon (a unit's model, a CharMap
+  // model, or glyphs drawn as text), its rotation, scale, aim offset and
+  // colour (sub_8207ABB0, sub_8207A8B8).
   struct Line {
     int text;
-    const char* glyphs;  // drawn as text when the icon is not a model
+    const char* unit = nullptr;     // a Unit's model
+    const char* charmap = nullptr;  // a CharMap model (up (0, 1, 0))
+    const char* glyphs = nullptr;
+    float rot = 0.0f, scale = 1.0f;
+    Vec2 offset{0.0f, 0.0f};
+    Rgba colour{1, 1, 1, 1};
   };
   struct Rules {
     std::vector<Line> lines;
     std::vector<int> tips;
     bool move, fire, bomb;
   };
+  constexpr float kPi = 3.14159274f;  // dat_820048D0
   static const Rules kRules[6] = {
-      {{{0x45, nullptr}, {0x46, nullptr}, {0x47, "\x0C\x02"}}, {0x48, 0x49}, true, true, true},  // Evolved
-      {{{0x4A, nullptr}, {0x4B, nullptr}, {0x4C, nullptr}}, {0x4D, 0x4E}, true, true, true},     // Deadline
-      {{{0x4F, nullptr}, {0x50, nullptr}, {0x51, nullptr}}, {0x52, 0x53}, true, false, false},   // Pacifism
-      {{{0x54, nullptr}}, {0x55, 0x56, 0x57}, true, true, false},                                // Waves
-      {{{0x58, nullptr}, {0x59, nullptr}, {0x5A, nullptr}}, {0x5B, 0x5C}, true, true, false},    // King
-      {{{0x5D, nullptr}, {0x5E, nullptr}, {0x5F, nullptr}}, {0x60, 0x61}, true, true, true},     // Sequence
+      {{{0x45, "player", nullptr, nullptr, -1.91986215f},  // dat_82004908
+        {0x46, "spinner", nullptr, nullptr, 0.610865235f, 1.0f, {5.0f, -10.0f}},  // dat_82004904
+        {0x47, nullptr, nullptr, "\x0C\x02"}},
+       {0x48, 0x49}, true, true, true},  // Evolved
+      {{{0x4A, "player", nullptr, nullptr, 2.26892805f},  // dat_82004920
+        {0x4B, "wanderer", nullptr, nullptr, 0.383972436f, 1.0f, {0.0f, -20.0f}},  // dat_82004918
+        {0x4C, "geom"}},
+       {0x4D, 0x4E}, true, true, true},  // Deadline
+      {{{0x4F, "player", nullptr, nullptr, 1.91986215f},  // dat_82004930
+        {0x50, "gatezoom", nullptr, nullptr, 0.0f, 1.0f, {0.0f, 1.0f}},
+        {0x51, "gate", nullptr, nullptr, 0.0f, 1.0f, {-20.0f, 20.0f}}},
+       {0x52, 0x53}, true, false, false},  // Pacifism
+      {{{0x54, "rocket", nullptr, nullptr, kPi}}, {0x55, 0x56, 0x57}, true, true, false},  // Waves
+      {{{0x58, "hill", nullptr, nullptr, 0.0f, 10.0f, {0.0f, 1.0f}, {0.1f, 0.1f, 1.0f, 1.0f}},
+        {0x59, "hill", nullptr, nullptr, 0.0f, 10.0f, {0.0f, 1.0f}, {0.1f, 1.0f, 0.1f, 1.0f}},
+        {0x5A, "hill", nullptr, nullptr, 0.0f, 10.0f, {0.0f, 1.0f}, {1.0f, 0.1f, 0.1f, 1.0f}}},
+       {0x5B, 0x5C}, true, true, false},  // King
+      {{{0x5D, nullptr, "intermissionSuccess", nullptr, kPi, 1.0f, {0.0f, 0.0f}, {0, 0, 0, 0}},
+        {0x5E, nullptr, "intermissionOutOfTime", nullptr, kPi, 1.0f, {0.0f, 20.0f}, {0, 0, 0, 0}},
+        {0x5F, nullptr, "intermissionDied", nullptr, kPi, 1.0f, {0.0f, 0.0f}, {0, 0, 0, 0}}},
+       {0x60, 0x61}, true, true, true},  // Sequence (palette slots 19, 21, 20)
   };
   const int x = std::clamp(index, 0, 5);
   open(0, back,
@@ -695,24 +864,33 @@ void Frontend::rules(int index, std::function<void(const MenuInput&)> back, int 
          font.left(c.lines, 52.0f, 58.0f, 8.0f, 8.0f, palette_[kUiHighlight].data(), text_(0x62));
          // (English: the Evolved spacing is the others'.)
          float y = 82.0f;
-         auto line = [&](int text, const char* glyphs, bool tip) {
+         auto line = [&](const Line* l, int text) {
            const float t = text_box(font, c.lines, palette_, 92.0f, y, 8.0f, 8.0f, 4.0f, 288.0f, 0, 0,
                                     palette_[kUiNormal], text_(text));
            const float yi = y + std::min(t * 0.5f, 10.0f);
-           if (tip)
+           if (!l) {
              font.centre(c.lines, 72.0f, yi, 2.0f, 2.0f, palette_[kUiHighlight].data(), "O");
-           else if (glyphs)
-             font.centre(c.lines, 72.0f, yi, 6.0f, 6.0f, palette_[kUiHighlight].data(), glyphs);
-           // (Model icons, sub_8207A798: not drawn yet.)
+           } else if (l->glyphs) {
+             font.centre(c.lines, 72.0f, yi, 6.0f, 6.0f, palette_[kUiHighlight].data(), l->glyphs);
+           } else if (l->unit) {
+             const UnitInfo* u = g_.units->find(l->unit);
+             if (u && u->has_model) rules_icon(c, 72.0f, yi, l->rot, l->scale, l->offset, u->model, u->up, l->colour);
+           } else if (l->charmap) {
+             const auto m = g_.charmap.find(l->charmap);
+             static const int kSlot[3] = {kUiIntermissionSuccess, kUiIntermissionOutOfTime, kUiIntermissionDied};
+             const int k = l->text - 0x5D;
+             if (m != g_.charmap.end())
+               rules_icon(c, 72.0f, yi, l->rot, l->scale, l->offset, m->second, {0.0f, 1.0f, 0.0f, 0.0f},
+                          palette_[kSlot[k >= 0 && k < 3 ? k : 0]]);
+           }
            y = y + (t + 14.0f);
          };
-         for (const Line& l : kRules[x].lines) line(l.text, l.glyphs, false);
+         for (const Line& l : kRules[x].lines) line(&l, l.text);
          y = y + 8.0f;
          font.left(c.lines, 52.0f, y, 8.0f, 8.0f, palette_[kUiHighlight].data(), text_(0x63));
          y = y + 24.0f;
-         for (int t : kRules[x].tips) line(t, nullptr, true);
-         // (The controller diagram sub_82091630(500, 180, 200, ...) is a
-         // texture with labels: not drawn yet.)
+         for (int t : kRules[x].tips) line(nullptr, t);
+         controller_diagram(c, 500.0f, 180.0f, 200.0f, kRules[x].move, kRules[x].fire, kRules[x].bomb);
        },
        false,
        [this](const MenuInput& in) {
@@ -834,7 +1012,7 @@ void Frontend::controls() {
          for (int i = 0; i < 40; ++i)
            emit_ui_body(c.lines, float(i) * 0.025f * 640.0f, cursor_, float(i + 1) * 0.025f * 640.0f, cursor_, q.data(),
                         q.data());
-         // (The controller diagram: a texture, not drawn yet.)
+         controller_diagram(c, 320.0f, std::fmaf(y1 + 46.0f, 0.5f, -5.0f), 200.0f, true, true, true);
        },
        false, {}, 0);
   screen_.width = 300.0f;

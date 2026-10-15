@@ -435,6 +435,17 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
     SDL_Log("cannot read the shot and geom shapes: %s", e.what());
     return false;
   }
+  for (uint32_t r = 0; r < g.db->records().size(); ++r) {
+    if (g.db->types()[g.db->records()[r].type].name != "CharMap") continue;
+    const FlaskValue v = g.db->decode(r);
+    if (const FlaskStruct* s = as_struct(&v))
+      for (const auto& [name, field] : s->fields)
+        if (const auto* cref = std::get_if<FlaskRef>(&field.v)) {
+          const FlaskValue cmodel = g.db->decode(cref->record);
+          if (const FlaskStruct* m = as_struct(&cmodel)) g.charmap[name] = build_model_geometry(*m, *g.gm);
+        }
+    break;
+  }
   // The credits: 12-byte entries (type, text pointer, y) up to type 5.
   try {
     const auto image = read_file(cache / "xex" / "image.bin");
@@ -711,7 +722,8 @@ void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_
   static LineBatch front;
   foreground(g, front);
   r.draw(cmd, target, format, w, h, camera_view_projection(g.camera, *g.gm), g.star_vertices,
-         g.grid_visible ? &g.grid_lines : nullptr, g.walls, g.particle_quads, g.linger_lines, front, ui.lines, g.ui);
+         g.grid_visible ? &g.grid_lines : nullptr, g.walls, g.particle_quads, g.linger_lines, front, ui, g.ui,
+         camera_view_projection(CameraState{}, *g.gm));
 }
 
 // One simulation step and its light map update (one per step, as the

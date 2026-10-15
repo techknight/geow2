@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -126,12 +127,16 @@ struct Game {
   // 3 paused, 4 ending; the end countdown (dat_821993D4) and its reason
   // (dat_821993D8: 1 quit, 2 game over, 3 profile change).
   int flow = 2;
+  // dat_821D39F0: scales both blooms; 0 at boot until the intro is over.
+  float bloom_level = 1.0f;
   float end_timer = 0.0f;
   int end_reason = 0;
   bool hint_pending = false;  // sub_82034408's achievement-hint test (+1 s)
   // The text slots by id, and the credits (table 0x8218D9E0: type, text).
   UiText text;
   std::vector<std::pair<int, std::string>> credits;
+  // The CharMap record's models (mode icons, intermission marks), by field.
+  std::map<std::string, ModelGeometry> charmap;
   // The single-player score tables, by mode (sub_82034C50).
   std::array<ScoreTable, 6> tables{};
   bool first_spawn = true;  // dat_8219CE70

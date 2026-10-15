@@ -11,6 +11,7 @@
 #include "game/line_quads.h"
 #include "game/math.h"
 #include "game/stars.h"
+#include "game/ui.h"
 
 namespace geow2 {
 
@@ -50,6 +51,9 @@ struct RenderTuning {
 class Renderer {
  public:
   bool init(SDL_GPUDevice* device, const std::filesystem::path& shader_dir);
+  // The UI's textures from the user's files (D3DX's TGA reading, A8R8G8B8,
+  // one level); a missing one is left out and its sprites are skipped.
+  void load_ui_textures(const std::filesystem::path& files_dir);
   void release();
 
   // The light map's update for one simulation step (sub_82065930): warp
@@ -65,8 +69,7 @@ class Renderer {
             uint32_t out_h, const Mat4& view_projection, const std::vector<StarVertex>& stars,
             const std::vector<GridVertex>* grid, const std::vector<GridVertex>& walls,
             const std::vector<LineVertex>& particles, const LineBatch& linger, const LineBatch& foreground,
-            const LineBatch& ui,
-            const Mat4& ui_transform);
+            const UiCanvas& ui, const Mat4& ui_transform, const Mat4& icon_view_projection);
 
   RenderTuning tuning;
 
@@ -113,6 +116,10 @@ class Renderer {
   SDL_GPUGraphicsPipeline* particles_ = nullptr;
   SDL_GPUGraphicsPipeline* ui_body_ = nullptr;
   SDL_GPUGraphicsPipeline* ui_caps_ = nullptr;
+  SDL_GPUGraphicsPipeline* ui_fill_ = nullptr;
+  SDL_GPUGraphicsPipeline* ui_sprite_ = nullptr;
+  SDL_GPUGraphicsPipeline* ui_sprite_flat_ = nullptr;
+  std::array<SDL_GPUTexture*, kUiTextureCount> ui_textures_{};
   SDL_GPUGraphicsPipeline* downsample_ = nullptr;
   SDL_GPUGraphicsPipeline* blur_ = nullptr;
   SDL_GPUGraphicsPipeline* combine_ = nullptr;
@@ -125,6 +132,7 @@ class Renderer {
   SDL_GPUTexture* sprite_ = nullptr;          // dat_821A1D60
   SDL_GPUTexture* star_sprite_ = nullptr;     // dat_821B4768
 
+  Buffer ui_fill_vertices_, ui_sprite_vertices_, icon_lines_;
   Buffer lines_, ui_lines_, linger_lines_, particle_vertices_, grid_vertices_, wall_vertices_, warp_vertices_, sprite_vertices_, star_vertices_, quad_index_,
       warp_index_;
   uint32_t quad_index_quads_ = 0;

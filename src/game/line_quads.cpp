@@ -15,10 +15,11 @@ struct Rgb {
   float r, g, b;
 };
 
-// Colour: (r * a) * 18 per channel, in single precision (fmuls).
-Rgb folded(const float c[4]) {
+// Colour: (r * a) * k per channel (18, or 8 for the UI's copy), in single
+// precision (fmuls).
+Rgb folded(const float c[4], float k = kColourScale) {
   const float a = c[3];
-  return {(a * c[0]) * kColourScale, (c[1] * a) * kColourScale, (c[2] * a) * kColourScale};
+  return {(a * c[0]) * k, (c[1] * a) * k, (c[2] * a) * k};
 }
 
 void emit(LineBatch& out, float width, float cap_size, const Vec4& p0, const Vec4& p1, Rgb c0, Rgb c1) {
@@ -71,8 +72,9 @@ void emit(LineBatch& out, float width, float cap_size, const Vec4& p0, const Vec
 
 }  // namespace
 
-void emit_line(LineBatch& out, float width, float cap_size, const Vec4& p0, const Vec4& p1, const float colour[4]) {
-  const Rgb c = folded(colour);
+void emit_line(LineBatch& out, float width, float cap_size, const Vec4& p0, const Vec4& p1, const float colour[4],
+               float colour_scale) {
+  const Rgb c = folded(colour, colour_scale);
   emit(out, width, cap_size, p0, p1, c, c);
 }
 

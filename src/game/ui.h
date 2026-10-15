@@ -61,16 +61,45 @@ struct UiFillVertex {
   float r, g, b, a;
 };
 
-// What a UI frame draws: lines (the UI line batches) and filled quads,
-// with the UI fade (dat_821993D0) the panels apply.
+// The UI's textures, loaded from the user's files (sub_8205E408,
+// sub_8205E2D8).
+enum UiTexture : int {
+  kTexLogo = 0,      // logo0.tga (Ui.Title.LogoTexture 0), dat_821A1D50
+  kTexStar,          // star.tga, dat_821A1D4C
+  kTexController,    // controller.tga, dat_821A1D54
+  kTexRetroAtvi,     // retroatvi.tga, dat_821A1D58
+  kTexRetroBizarre,  // retrobizarre.tga, dat_821A1D5C
+  kUiTextureCount
+};
+
+// A sprite queue entry (0x28 bytes at 0x821AAA08): a textured rectangle in
+// UI units, its colour stored as rgb * 8 and a; bent onto the UI cylinder
+// (sub_8205D870) or flat over the screen (sub_8205D8F8).
+struct UiSprite {
+  float x = 0, y = 0, w = 0, h = 0;
+  int texture = 0;
+  float r = 0, g = 0, b = 0, a = 0;
+  bool flat = false;
+};
+
+// What a UI frame draws: lines (the UI line batches), filled quads, the
+// sprite queue and the rules screens' model icons (batches 0x821A5968 /
+// 0x821A6178, drawn flat with the camera of sub_82068408), with the UI
+// fade (dat_821993D0) the panels apply.
 struct UiCanvas {
   LineBatch lines;
   std::vector<UiFillVertex> fill;  // four vertices per quad
+  std::vector<UiSprite> sprites;   // at most 64
+  LineBatch icons;
   float fade = 1.0f;
   void clear() {
     lines.clear();
     fill.clear();
+    sprites.clear();
+    icons.clear();
   }
+  // sub_8205D870 / sub_8205D8F8: a push past 64 entries is dropped.
+  void sprite(float x, float y, float w, float h, const Rgba& colour, int texture, bool flat);
 };
 
 // sub_82091FF8: a panel from (x0, y0) to (x1, y1) in `colour` (times the

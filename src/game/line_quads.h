@@ -32,8 +32,11 @@ constexpr float kLineWidthUnit = 1.1f;
 
 // sub_8205EB58(cap_size, p0, p1, colour): one body quad and two end-cap
 // quads, computed as the original does (fused operations in double,
-// rounded once on store). `width` is Render.LineWidth.Unit.
-void emit_line(LineBatch& out, float width, float cap_size, const Vec4& p0, const Vec4& p1, const float colour[4]);
+// rounded once on store). `width` is Render.LineWidth.Unit. Its UI copy
+// sub_82060CC0 differs only in the colour scale: 8 (dat_82000D18) instead
+// of 18 (dat_82002728).
+void emit_line(LineBatch& out, float width, float cap_size, const Vec4& p0, const Vec4& p1, const float colour[4],
+               float colour_scale = 18.0f);
 
 // sub_8205F6B8(p0, p1, colour0, colour1): the same quads with a colour per
 // end and cap size 1 (the line debris, Render.Layer.Smash).
