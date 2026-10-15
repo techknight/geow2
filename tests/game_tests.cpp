@@ -40,6 +40,19 @@ static GameMath test_math() {
   c.c1c = 1.0f;
   c.c20 = -1.0f;
   c.c24 = 0.5f;
+  // atan2 roles: angles exact for the axis directions used below.
+  c.at_half_pi = 1.5707963267948966;
+  c.at_pi = 3.1415926535897931;
+  c.at_threshold = 0.2679491924311228;  // tan(pi/12)
+  c.at_root3 = 1.7320508075688772;
+  for (int i = 0; i < 4; ++i) c.at_p[i] = 0.0, c.at_q[i] = 0.0;
+  c.at_q[0] = 1.0;
+  c.at_zero = 0.0f;
+  c.at_one = 1.0f;
+  c.at_base[0] = 0.0;
+  c.at_base[1] = 0.5235987755982988;
+  c.at_base[2] = 1.5707963267948966;
+  c.at_base[3] = 1.0471975511965976;
   return GameMath(c);
 }
 
@@ -54,6 +67,13 @@ static void test_game_math() {
   }
   expect(worst < 1e-12, "game sin/cos structure matches the C library");
   expect(kMath.sin(0.0) == 0.0 && kMath.cos(0.0) == 1.0, "sin(0), cos(0)");
+  // atan2 special cases and axis directions.
+  expect(kMath.atan2(0.0, 1.0) == 0.0, "atan2(0, 1)");
+  expect(kMath.atan2(0.0, -1.0) == 3.1415926535897931, "atan2(0, -1)");
+  expect(kMath.atan2(1.0, 0.0) == 1.5707963267948966, "atan2(1, 0)");
+  expect(kMath.atan2(-1.0, 0.0) == -1.5707963267948966, "atan2(-1, 0)");
+  expect(kMath.atan2(1.0, 1e-300) > 1.57, "atan2 steep");
+  expect(kMath.atan2(-0.0, -0.0) == -3.1415926535897931, "atan2(-0, -0)");
 }
 
 // Helpers to build decoded Flask values by hand.
@@ -149,7 +169,7 @@ static void test_thrust_and_integrate() {
   // One frame of full thrust right from rest: v = 50 * 1 * 0.8 = 40;
   // x += 40 / 60.
   PlayerMotion p;
-  player_thrust(p, {1.0f, 0.0f});
+  player_thrust(p, {1.0f, 0.0f}, kMath);
   expect(near(p.vx, 40.0f) && near(p.vy, 0.0f), "thrust then damping");
   expect(near(p.thrust_level, 1.0f), "thrust level");
   integrate(p, 1.0f / 60.0f);
@@ -158,11 +178,11 @@ static void test_thrust_and_integrate() {
   expect(near(p.heading, 0.0f), "heading toward 0");
   PlayerMotion q;
   q.heading = 3.0f;
-  player_thrust(q, {-1.0f, 0.0f});  // target pi: shortest turn is +0.14159
+  player_thrust(q, {-1.0f, 0.0f}, kMath);  // target pi: shortest turn is +0.14159
   expect(near(q.heading, 3.0f + 0.1f * (3.14159265f - 3.0f)), "heading shortest turn");
   PlayerMotion w;
   w.heading = -3.0f;
-  player_thrust(w, {-1.0f, 0.0f});  // target pi from -3: the short way is -0.14159 (through -pi)
+  player_thrust(w, {-1.0f, 0.0f}, kMath);  // target pi from -3: the short way is -0.14159 (through -pi)
   expect(near(w.heading, -3.0f - 0.1f * 0.14159265f), "heading wraps through -pi");
 }
 

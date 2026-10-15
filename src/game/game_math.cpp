@@ -54,7 +54,60 @@ GameMath GameMath::from_image(std::span<const uint8_t> image) {
   c.c1c = f32_at(image, kTable + 0x1C);
   c.c20 = f32_at(image, kTable + 0x20);
   c.c24 = f32_at(image, kTable + 0x24);
+  constexpr uint32_t kAtan = 0x82197DA0;
+  c.at_half_pi = f64_at(image, kAtan + 0x08);
+  c.at_pi = f64_at(image, kAtan + 0x10);
+  c.at_threshold = f64_at(image, kAtan + 0x18);
+  c.at_root3 = f64_at(image, kAtan + 0x28);
+  for (int i = 0; i < 4; ++i) {
+    c.at_p[i] = f64_at(image, kAtan + 0x38 + uint32_t(i) * 8);
+    c.at_q[i] = f64_at(image, kAtan + 0x58 + uint32_t(i) * 8);
+    c.at_base[i] = f64_at(image, 0x82197E20 + uint32_t(i) * 8);
+  }
+  c.at_zero = f32_at(image, kAtan + 0xA8);
+  c.at_one = f32_at(image, kAtan + 0xB0);
   return GameMath(c);
+}
+
+double GameMath::atan2(double y, double x) const {
+  // sub_8212FE70: y in f1, x in f2.
+  const double zero = k_.at_zero;
+  double r;
+  if (x == zero) {
+    if (y == zero) {
+      if (!std::signbit(x)) return y;
+      return std::signbit(y) ? -k_.at_pi : k_.at_pi;
+    }
+    r = k_.at_half_pi;
+  } else {
+    const double ax = std::fabs(x), ay = std::fabs(y);
+    int index = 0;
+    double num = ay, den = ax;
+    if (ay > ax) {
+      index = 2;
+      num = ax;
+      den = ay;
+    }
+    double t = num / den;  // fdiv
+    if (t > k_.at_threshold) {
+      ++index;
+      const double sum = k_.at_root3 + t;                                // fadd
+      t = std::fma(k_.at_root3, t, -double(k_.at_one)) / sum;            // fmsub, fdiv
+    }
+    const double z = t * t;
+    double q = k_.at_q[3] + z;  // fadd
+    double p = std::fma(k_.at_p[3], z, k_.at_p[2]);
+    q = std::fma(q, z, k_.at_q[2]);
+    p = std::fma(p, z, k_.at_p[1]);
+    q = std::fma(q, z, k_.at_q[1]);
+    p = std::fma(p, z, k_.at_p[0]);
+    q = std::fma(q, z, k_.at_q[0]);
+    r = ((p * z) * t) / q + t;
+    if (index > 1) r = -r;
+    r = k_.at_base[index] + r;
+  }
+  r = x >= 0.0 ? r : k_.at_pi - r;  // fsel on x
+  return std::signbit(y) ? -r : r;
 }
 
 double GameMath::poly(double r) const {

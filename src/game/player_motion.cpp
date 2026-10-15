@@ -5,10 +5,6 @@
 namespace geow2 {
 namespace {
 
-// The game's atan2 (sub_8212FE70) evaluates its own polynomial in double;
-// std::atan2 agrees after rounding to float except at rare ties.
-float game_atan2(float y, float x) { return float(std::atan2(double(y), double(x))); }
-
 constexpr float kDeadZone = 0.25f;          // dat_82000720
 constexpr float kMoveThreshold = 0.2f;      // dat_82000D5C (squared length)
 constexpr float kThrust = 50.0f;            // dat_82001040
@@ -45,7 +41,7 @@ Vec2 stick_vector(float x, float y) {
   return {(inv * x) * clamped, (inv * y) * clamped};
 }
 
-void player_thrust(PlayerMotion& p, Vec2 move) {
+void player_thrust(PlayerMotion& p, Vec2 move, const GameMath& gm) {
   const float mx2 = float(double(move.x) * move.x), my2 = float(double(move.y) * move.y);
   const float len2 = my2 + mx2;
   if (len2 <= kMoveThreshold) {
@@ -65,7 +61,7 @@ void player_thrust(PlayerMotion& p, Vec2 move) {
     // default mode, not truncation), so the turn is the shortest one; the
     // final step is a fused single-precision multiply-add (fmadds at
     // 0x82050454).
-    const double d = double(game_atan2(move.y, move.x) - p.heading) * kInvTwoPi;
+    const double d = double(float(gm.atan2(move.y, move.x)) - p.heading) * kInvTwoPi;  // frsp, fsubs
     const double wrapped = d - std::nearbyint(d);
     p.heading = std::fmaf(float(wrapped * kTwoPi), kTurnRate, p.heading);
   }

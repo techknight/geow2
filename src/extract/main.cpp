@@ -181,6 +181,13 @@ int check_database(const fs::path& files) {
       worst = std::fmax(worst, std::fabs(gm.cos(x) - std::cos(x)));
     }
     std::printf("game sin/cos: max difference from the C library %.3g\n", worst);
+    double worst_atan = 0.0;
+    for (int i = -300; i <= 300; ++i)
+      for (int j = -300; j <= 300; ++j) {
+        const double y = i * 0.0173, x = j * 0.0191;
+        worst_atan = std::fmax(worst_atan, std::fabs(gm.atan2(y, x) - std::atan2(y, x)));
+      }
+    std::printf("game atan2: max difference from the C library %.3g\n", worst_atan);
 
     // Build every model's line lists the way the game does at load.
     size_t models = 0, lines = 0, empty = 0;
