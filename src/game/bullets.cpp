@@ -31,6 +31,13 @@ Bullet make_bullet(const PlayerMotion& p, float angle, double factor, int type, 
   b.vx = std::fmaf(speed, gm.cosf(angle), p.vx);
   b.vy = std::fmaf(speed, gm.sinf(angle), p.vy);
   b.heading = float(gm.atan2(b.vy, b.vx));
+  // The constructor (sub_82052DB8, all but type 4) starts the shot 5
+  // ahead along the firing angle (dat_820006F0); that is also where the
+  // step starts from (+0x90 / +0x94).
+  b.y = b.y + gm.sinf(angle) * 5.0f;
+  b.x = b.x + gm.cosf(angle) * 5.0f;
+  b.prev_x = b.x;
+  b.prev_y = b.y;
   return b;
 }
 
