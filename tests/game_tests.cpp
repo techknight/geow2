@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 
+#include "game/camera.h"
 #include "game/model_geometry.h"
 #include "game/player_motion.h"
 #include "game/rotation.h"
@@ -240,7 +241,19 @@ static void test_camera_pieces() {
   expect(near(proj.m[5], 1.0f) && near(proj.m[0], 0.5f) && proj.m[11] == 1.0f, "perspective");
 }
 
+static void test_camera_follow() {
+  // One player at (100, 0): the target is half of it (50), reached at 0.15
+  // per step; the zoom stays 1.
+  CameraState c;
+  const float x = 100.0f, y = 0.0f;
+  camera_follow_single(c, &x, &y, 1, 300.0f, 200.0f);
+  expect(near(c.x, 7.5f) && near(c.y, 0.0f) && near(c.zoom, 1.0f), "camera eases toward half the player position");
+  for (int i = 0; i < 200; ++i) camera_follow_single(c, &x, &y, 1, 300.0f, 200.0f);
+  expect(near(c.x, 50.0f), "camera settles at half the player position");
+}
+
 int main() {
+  test_camera_follow();
   test_camera_pieces();
   test_game_math();
   test_stick();

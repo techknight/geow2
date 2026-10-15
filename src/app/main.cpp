@@ -7,9 +7,8 @@
 // raw stick value, XInput convention) and saves the final frame.
 //
 // Early development build: only the player ship in the arena. Provisional
-// until their code is traced and ported: the camera is fixed at the arena
-// centre (the follow code is not ported), and lines are drawn as plain
-// thin lines (not the original's quads, glow and bloom).
+// until its code is traced and ported: lines are drawn as plain thin lines
+// (not the original's quads, glow and bloom).
 
 #include <SDL3/SDL.h>
 
@@ -25,6 +24,7 @@
 #include "app/png.h"
 #include "data/flask.h"
 #include "extract/bytes.h"
+#include "game/camera.h"
 #include "game/game_math.h"
 #include "game/model_geometry.h"
 #include "game/player_motion.h"
@@ -39,7 +39,6 @@ constexpr float kStep = 1.0f / 60.0f;          // dat_8219D280 = 1.0 / 60.0 (sub
 constexpr float kArenaHalfX = 300.0f;          // dat_82000CF4 (sub_82036250)
 constexpr float kArenaHalfY = 200.0f;          // dat_82000CF0
 constexpr float kAspect = 1.77777779f;         // dat_82002DB0
-constexpr float kFov = 0.0174532924f * 36.0f;  // pi/180 * 36 with zoom 1 (sub_82067A20)
 
 struct Vertex {
   float x, y, z, w;
@@ -80,6 +79,7 @@ struct Game {
   ModelGeometry ship;
   float tint[4] = {1, 1, 1, 1};  // player colour (constructor: unit tint, rgb times alpha)
   PlayerMotion player;
+  CameraState camera;
 };
 
 bool load(Game& g, const fs::path& cache) {
@@ -125,6 +125,8 @@ void step(Game& g, int16_t raw_x, int16_t raw_y) {
   integrate(g.player, kStep);
   Vec2 n;
   if (arena_contact(g.player.radius, kArenaHalfX, kArenaHalfY, g.player.x, g.player.y, n)) player_wall(g.player, n);
+  // The camera follows after the entity updates (sub_820366A0).
+  camera_follow_single(g.camera, &g.player.x, &g.player.y, 1, kArenaHalfX, kArenaHalfY);
 }
 
 // The ship's body (part 0) in world space, coloured as the draw does
@@ -140,12 +142,6 @@ std::vector<Vertex> ship_vertices(const Game& g) {
     out.push_back({b.x, b.y, b.z, 1.0f, r, gg, bl, al});
   }
   return out;
-}
-
-Mat4 view_projection(const GameMath& gm) {
-  // Provisional: camera fixed above the arena centre (follow not ported).
-  const Mat4 basis = look_at_basis({0, 0, 512.0f, 1}, {0, 0, -512.0f, 0}, {0, -1.0f, 0, 0});
-  return mul(inverse(basis), perspective(gm, kFov, kAspect, 1.0f, 10000.0f));
 }
 
 struct Gpu {
@@ -250,7 +246,7 @@ void draw(Gpu& gpu, SDL_GPUCommandBuffer* cmd, SDL_GPUGraphicsPipeline* pipe, SD
     SDL_BindGPUGraphicsPipeline(pass, pipe);
     const SDL_GPUBufferBinding bind{gpu.vertices, 0};
     SDL_BindGPUVertexBuffers(pass, 0, &bind, 1);
-    const Mat4 m = view_projection(*g.gm);
+    const Mat4 m = camera_view_projection(g.camera, *g.gm);
     SDL_PushGPUVertexUniformData(cmd, 0, m.m, sizeof(m.m));
     SDL_DrawGPUPrimitives(pass, uint32_t(v.size()), 1, 0, 0);
   }
@@ -293,8 +289,9 @@ int run_headless(Gpu& gpu, Game& g, int frames, int16_t sx, int16_t sy, const fs
   const auto* px = static_cast<const uint8_t*>(SDL_MapGPUTransferBuffer(gpu.device, down, false));
   write_png(out, w, h, {px, size_t(w) * h * 4});
   SDL_UnmapGPUTransferBuffer(gpu.device, down);
-  SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f", out.string().c_str(), frames,
-          g.player.x, g.player.y, g.player.heading);
+  SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f",
+          out.string().c_str(), frames, g.player.x, g.player.y, g.player.heading, g.camera.x, g.camera.y,
+          g.camera.zoom);
   SDL_ReleaseGPUTransferBuffer(gpu.device, down);
   SDL_ReleaseGPUGraphicsPipeline(gpu.device, pipe);
   SDL_ReleaseGPUTexture(gpu.device, tex);
