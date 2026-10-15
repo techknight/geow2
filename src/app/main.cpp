@@ -357,7 +357,7 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
   std::ofstream trace;
   if (!trace_path.empty()) {
     trace.open(trace_path, std::ios::trunc);
-    trace << "step,clock,x,y,vx,vy,rng_index,rng_word0,seq_phase,seq_wait,enemies\n";
+    trace << "step,clock,x,y,vx,vy,rng_index,rng_word0,seq_phase,seq_wait,enemies,particles\n";
   }
   // Type 16 (0x10) is a power-up item; the rest are enemies.
   for (const DevSpawn& d : spawns)
@@ -404,9 +404,10 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
     if (trace.is_open()) {
       const PlayerMotion& m = g.ships[0].motion;
       char line[256];
-      std::snprintf(line, sizeof(line), "%d,%.9g,%.9g,%.9g,%.9g,%.9g,%d,%08x,%d,%.9g,%d\n", i + 1,
+      std::snprintf(line, sizeof(line), "%d,%.9g,%.9g,%.9g,%.9g,%.9g,%d,%08x,%d,%.9g,%d,%zu\n", i + 1,
                     double(g.elapsed), double(m.x), double(m.y), double(m.vx), double(m.vy), g.rng.index(),
-                    g.rng.word(0), g.sequence.phase, double(g.sequence.wait), g.world->enemy_count);
+                    g.rng.word(0), g.sequence.phase, double(g.sequence.wait), g.world->enemy_count,
+                    g.world->particles.size());
       trace << line;
     }
   }
