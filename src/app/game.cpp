@@ -342,16 +342,20 @@ void update_player(Game& g, size_t k, std::span<const Sticks> pads) {
     const Vec2 move = stick_vector(stick_axis(mp.move_x, false), stick_axis(mp.move_y, true));
     const Vec2 fire = stick_vector(stick_axis(fp.fire_x, false), stick_axis(fp.fire_y, true));
     if (player_thrust(m, move, *g.gm)) player_exhaust(w, m);
-    const size_t fired = g.bullets.size();
-    // sub_8204EFD0: never in Pacifism; in King only inside a zone.
+    const size_t before = g.bullets.size();
+    // sub_8204EFD0: never in Pacifism; in King only inside a zone. A volley
+    // sounds, then marks the record as having fired (byte +0x60).
     const bool may_fire = g.rules.mode == 5 ? in_hill(w, m.radius, m.x, m.y) : g.rules.mode != 4;
     const bool upgraded = 0.0f < sh.weapon.upgrade_time;
     player_fire_step(m, sh.weapon, fire, kStep, *g.gm, may_fire, g.bullets);
-    for (size_t i = fired; i < g.bullets.size(); ++i) {
+    for (size_t i = before; i < g.bullets.size(); ++i) {
       g.bullets[i].owner = k;
       w.enlist(g.bullets[i]);
     }
-    if (g.bullets.size() > fired) w.play(upgraded ? audio::Event::kFireSpecial : audio::Event::kFireNormal);
+    if (g.bullets.size() > before) {
+      w.play(upgraded ? audio::Event::kFireSpecial : audio::Event::kFireNormal);
+      g.recs[size_t(sh.record)].fired = true;
+    }
     // The larger trigger (axes 8 and 9) sets off a bomb: a blast from the
     // player's position, and the spawner backs off (sub_8203E4B0).
     const float lt = std::max(trigger_axis(mp.left_trigger), trigger_axis(fp.left_trigger));
@@ -429,7 +433,7 @@ void foreground(const Game& g, LineBatch& out) {
 
 // sub_82034408(reason): the end countdown, 1.5 seconds (dat_82000C90), a
 // second more when an achievement hint is on screen (single player: King
-// with no bomb or shield hit and 10 or more zones; Waves likewise with
+// with no shot, bomb or shield kill and 10 or more zones; Waves likewise with
 // more than 3 rocket walls; Deadline's Rebound line showing; Pacifism with
 // 25 or more edge marks while Wax On or Wax Off is still to come).
 // sub_8204F7C8: the ship within 10 of an edge marks that edge's cell (by
@@ -500,9 +504,9 @@ void arm_end(Game& g, int reason) {
   if (g.multiplayer)
     hint = false;
   else if (g.rules.mode == 5)
-    hint = !p.bomb_used && !p.shield_hit && g.world->records[0].zones >= 10;
+    hint = !p.fired && !p.shield_hit && g.world->records[0].zones >= 10;
   else if (g.rules.mode == 3)
-    hint = !p.bomb_used && !p.shield_hit && g.waves.walls >= 4;
+    hint = !p.fired && !p.shield_hit && g.waves.walls >= 4;
   else if (g.rules.mode == 0)
     hint = !(g.achieved & 0x200) && 0.0f < g.world->bounce_hint;
   else if (g.rules.mode == 4)
@@ -853,7 +857,7 @@ void step(Game& g, std::span<const Sticks> pads) {
     if (g.rules.mode == 0)
       g.spawner.step(w, g.elapsed);
     else
-      g.waves.step(w, g.rules.mode, g.recs[0].bomb_used || g.recs[0].shield_hit, g.after_death);
+      g.waves.step(w, g.rules.mode, g.recs[0].fired || g.recs[0].shield_hit, g.after_death);
   }
   const int second = int(g.elapsed);
   g.elapsed = kStep + g.elapsed;
@@ -1050,16 +1054,16 @@ void step(Game& g, std::span<const Sticks> pads) {
   w.player_order = g.player_list;
 
   // The achievements checked every step of a game (0x82037B0C..):
-  // Treaty (King: 30 zones, no bomb, no shield hit), Surf (Waves: 8 rocket
+  // Treaty (King: 30 zones, no shot or bomb, no shield kill), Surf (Waves: 8 rocket
   // walls likewise), Phobia (Waves: 1000 points at multiplier 1), Rebound
   // (Deadline: 75 bounced-shot kills), Magpie (multiplier 500).
   if (in_game(g) && !g.multiplayer) {
     const LifeRecord& p = g.recs[0];
     const ScoreRecord& rec = w.records[0];
     if (g.rules.mode == 5) {
-      if (!p.bomb_used && !p.shield_hit && rec.zones > 29) award_achievement(g, 0x002, 0);
+      if (!p.fired && !p.shield_hit && rec.zones > 29) award_achievement(g, 0x002, 0);
     } else if (g.rules.mode == 3) {
-      if (!p.bomb_used && !p.shield_hit && g.waves.walls > 7) award_achievement(g, 0x040, 0);
+      if (!p.fired && !p.shield_hit && g.waves.walls > 7) award_achievement(g, 0x040, 0);
       if (rec.score > 999 && rec.multiplier == 1) award_achievement(g, 0x100, 0);
     } else if (g.rules.mode == 0 && w.bounce_kills > 0x4A) {
       award_achievement(g, 0x200, 0);
@@ -1089,15 +1093,15 @@ void draw_game_hud(const Game& g, LineBatch& ui) {
   hud.lives_mode = g.rules.lives_mode;
   draw_hud(g.font, g.hud_text, hud, ui);
   // The achievement hints under the field (single player, not paused):
-  // King's zones while no bomb or shield hit (from 10, text 0xA3 / 0xA4)
+  // King's zones while nothing fired and no shield kill (from 10, text 0xA3 / 0xA4)
   // and Waves' rocket walls likewise (from 4, 0xA5 / 0xA6).
   if (frozen(g) || g.multiplayer) return;
   const float* normal = UiPalette::defaults()[kUiNormal].data();
   std::string hint;
-  if (g.rules.mode == 5 && !p.bomb_used && !p.shield_hit && g.world->records[0].zones >= 10) {
+  if (g.rules.mode == 5 && !p.fired && !p.shield_hit && g.world->records[0].zones >= 10) {
     const int n = g.world->records[0].zones;
     hint = n < 30 ? format("%s - %i / %i", g.text(0xA3).c_str(), n, 30) : format("%s - %i", g.text(0xA4).c_str(), n);
-  } else if (g.rules.mode == 3 && !p.bomb_used && !p.shield_hit && g.waves.walls > 3) {
+  } else if (g.rules.mode == 3 && !p.fired && !p.shield_hit && g.waves.walls > 3) {
     const int n = g.waves.walls;
     hint = n < 8 ? format("%s - %i / %i", g.text(0xA5).c_str(), n, 8) : format("%s - %i", g.text(0xA6).c_str(), n);
   }

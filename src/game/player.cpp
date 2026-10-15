@@ -80,7 +80,7 @@ int player_bomb(PlayerLife& p, LifeRecord& r, float trigger, const ModeRules& ru
   p.bomb_wait = 0.2f;  // dat_82000D5C
   if (r.bombs <= 0) return 2;  // BombDryFire
   --r.bombs;
-  r.bomb_used = true;
+  r.fired = true;
   return 1;
 }
 

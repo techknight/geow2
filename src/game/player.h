@@ -58,8 +58,8 @@ struct LifeRecord {
   int64_t life_at = 100000;      // +0x50 (dat_8219D0B8): the next extra life's score
   float lives_pulse = 0.0f;      // +0x58 (dat_8219D0C0): the HUD's lives row
   float bombs_pulse = 0.0f;      // +0x5C (dat_8219D0C4): the HUD's bombs row
-  bool bomb_used = false;        // +0x60 (dat_8219D0C8)
-  bool shield_hit = false;       // +0x61 (dat_8219D0C9)
+  bool fired = false;            // +0x60 (dat_8219D0C8): fired a volley or a bomb
+  bool shield_hit = false;       // +0x61 (dat_8219D0C9): the shield destroyed something
   int rank = 0;                  // +0x6C (dat_8219D0D4): 0 first
   bool tie = true;               // +0x70 (dat_8219D0D8)
 };
