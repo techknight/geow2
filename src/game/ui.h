@@ -109,6 +109,14 @@ struct UiCanvas {
 // side, 4 no right side, 8 no top, 0x10 no bottom, 0x20 no grid.
 void ui_panel(UiCanvas& c, float x0, float y0, float x1, float y1, const Rgba& colour, uint32_t flags);
 
+// sub_820913B0: a vertical scroll bar at x from `top` to `bottom` for a
+// list of `count` rows showing `visible` from `first`: the thumb (at
+// least 0.05 of the length) between two track lines with 2-unit gaps
+// (none where the thumb meets an end, snapping there within a quarter
+// row), or one `idle` line when everything fits.
+void ui_scroll_bar(UiCanvas& c, float x, float top, float bottom, float first, float count, float visible,
+                   const Rgba& thumb, const Rgba& track, const Rgba& idle);
+
 // sub_82092478(y0, y1): a full-width panel in the background colour
 // without sides.
 void ui_bar(UiCanvas& c, const UiPalette& p, float y0, float y1);

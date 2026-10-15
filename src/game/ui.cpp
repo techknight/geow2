@@ -118,6 +118,47 @@ void UiCanvas::sprite(float x, float y, float w, float h, const Rgba& colour, in
   sprites.push_back(s);
 }
 
+void ui_scroll_bar(UiCanvas& c, float x, float top, float bottom, float first, float count, float visible,
+                   const Rgba& thumb, const Rgba& track, const Rgba& idle) {
+  // fsel(a, b, c): a >= 0 ? b : c.
+  auto fsel = [](float a, float b, float v) { return a >= 0.0f ? b : v; };
+  auto unit = [&](float v) { return fsel(v - 1.0f, 1.0f, fsel(-v, 0.0f, v)); };
+  if (!(visible < count)) {
+    emit_ui_line(c.lines, x, top, x, bottom, idle.data());
+    return;
+  }
+  const float inv = 1.0f / count;
+  const float h = bottom - top;
+  const float quarter = inv * 0.25f;  // dat_82000720
+  const float gap = 2.0f / h;         // dat_820006FC
+  const float size = unit(inv * visible);
+  const float at = unit(inv * first);
+  const float shown = fsel(size - 1.0f, 1.0f, fsel(0.05f - size, 0.05f, size));  // dat_82000D60, dat_82006248
+  float start = at, end = shown + at, gap_top = 2.0f, gap_bottom = 2.0f;
+  if (at < quarter) {
+    start = 0.0f;
+    end = shown;
+    gap_top = 0.0f;
+  } else if (at - gap < quarter) {
+    start = unit(gap);
+    end = unit(gap + shown);
+  }
+  if (1.0f - (size + at) < quarter) {
+    start = 1.0f - shown;
+    end = 1.0f;
+    gap_bottom = 0.0f;
+  } else if ((1.0f - end) - gap < quarter) {
+    start = unit((1.0f - shown) - gap);
+    end = unit(1.0f - gap);
+  }
+  const float length = h - (gap_bottom + gap_top);
+  const float y0 = std::fmaf(length, start, gap_top) + top;
+  const float y1 = (std::fmaf(length, end, gap_bottom) + gap_top) + top;
+  emit_ui_line(c.lines, x, top, x, y0 - gap_top, track.data());
+  emit_ui_line(c.lines, x, y0, x, y1 - gap_bottom, thumb.data());
+  emit_ui_line(c.lines, x, y1, x, bottom, track.data());
+}
+
 void ui_bar(UiCanvas& c, const UiPalette& p, float y0, float y1) { ui_panel(c, 0.0f, y0, 640.0f, y1, p[kUiBackground], 6); }
 
 TextLayout::Field* TextLayout::add_empty() {

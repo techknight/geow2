@@ -1378,6 +1378,9 @@ void Frontend::results() {
                          format("%i. %s", r + 1, b.rows[size_t(r)].name.c_str()));
            font.right(c.lines, 600.0f, yy, 8.0f, 8.0f, col.data(), num);
          }
+         // The board's scroll bar (sub_820913B0 at 606, eight rows).
+         ui_scroll_bar(c, 606.0f, 148.0f, L, float(first), float(count), 8.0f, scaled(P[kUiBright], 0.5f),
+                       scaled(P[kUiNormal], 0.25f), scaled(P[kUiDisabled], 0.5f));
          heading(B - 56.0f, text_(0x68));
          box(B - 36.0f, 36.0f, T.entry[1].score, 12.0f, 6.0f);
        },
@@ -2107,6 +2110,9 @@ void Frontend::board_view(int mode, std::function<void(const MenuInput&)> back) 
            font.left_fit(c.lines, 28.0f + 130.0f, y + 2.0f, 10.0f, 10.0f, 300.0f, col.data(), b.rows[size_t(r)].name);
            font.right(c.lines, 28.0f + 570.0f, y + 2.0f, 10.0f, 10.0f, col.data(), format_number(b.rows[size_t(r)].score));
          }
+         // The scroll bar (sub_820913B0 at 612, ten rows).
+         ui_scroll_bar(c, 612.0f, 46.0f, cursor_, float(board_first_), float(b.rows.size()), 10.0f,
+                       scaled(P[kUiScrollBar], 0.5f), scaled(P[kUiBackground], 0.5f), scaled(P[kUiBackground], 0.25f));
        },
        false,
        [this](const MenuInput& in) {
