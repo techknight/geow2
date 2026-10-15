@@ -104,8 +104,9 @@ Format for each entry:
   Space a fully pulled right trigger (the bomb), Enter is A, X and Y are
   X and Y, and Escape is START while playing (pause) and B in the menus.
   SDL's triggers (0 to 32767) are scaled to the XInput byte the original
-  reads (axes 8 and 9, times 1/255).
-- **Decided**: 2026-10-15; menus 2026-10-15.
+  reads (axes 8 and 9, times 1/255). In multiplayer the keyboard is part
+  of the first pad slot (with a pad there, both work).
+- **Decided**: 2026-10-15; menus 2026-10-15; multiplayer 2026-10-15.
 
 ### Resolution
 
@@ -115,14 +116,15 @@ Format for each entry:
   fIsHiDef); the bloom chain then starts with one more halving step
   (`sub_82064640`).
 - **Port**: renders the 16:9 picture at the window or monitor resolution
-  (letterboxed), with an option for an exact 720p internal render. The
-  bloom chain halves from that size as the original does from its own,
-  with the extra step whenever the picture is taller than 720 lines; at
-  exactly 1280x720 and 1920x1080 it matches the original's two layouts,
-  at other sizes the glow's reach in screen terms differs slightly. The
-  simulation always runs at the original's tick rate and is never
-  interpolated.
-- **Decided**: 2026-10-14; bloom sizes 2026-10-15.
+  (letterboxed). The bloom chain halves from that size as the original
+  does from its own, with the extra step whenever the picture is taller
+  than 720 lines; at exactly 1280x720 and 1920x1080 it matches the
+  original's two layouts, at other sizes the glow's reach in screen terms
+  differs slightly. `--720p` instead renders exactly the original's
+  1280x720 frame and scales it (bilinear) into the window. Fullscreen
+  (F11) and vsync are the player's choice. The simulation always runs at
+  the original's tick rate and is never interpolated.
+- **Decided**: 2026-10-14; bloom sizes, 720p mode 2026-10-15.
 
 ### Frame timing
 
