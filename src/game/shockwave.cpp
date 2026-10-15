@@ -37,25 +37,34 @@ void Shockwave::update(World& w) {
 }
 
 void Shockwave::blast(World& w) {
-  // Kind 0 (the bomb): sub_82055DA0 with tag 4 (no score). Everything in
-  // reach that is not removed, a player or fading in, and not of type code
-  // 0x1C, is destroyed.
-  if (kind != 0) return;  // kinds 1 and 2 (sub_820564C0, sub_82056120): with their users
+  // Kind 0 (the bomb): sub_82055DA0, kill tag 4 (no score); everything
+  // within the radius not removed, a player or fading in, and not of type
+  // code 0x1C. Kind 1 (a gate's, sub_820564C0) and kind 2 (a well's,
+  // sub_82056120): tag 3, reaching what touches the ring (its radius
+  // added); kind 1 spares gates, kind 2 hits wells (slot 7) instead.
   Killer k;
   k.x = x;
   k.y = y;
-  k.kind = 4;
-  const float r2 = r * r;
+  k.kind = kind == 0 ? 4 : 3;
+  k.object_type = 0xF;
+  k.blast_kind = kind;
+  k.source = this;
   std::vector<Entity*> hit;
   w.for_each_near(x, y, r, [&](Entity& e) {
     if ((e.flags & 0x13) || e.type == 0x1C || &e == this) return;
+    if (kind == 1 && e.type == 0x18) return;
     const float dx = e.x - x, dy = e.y - y;
-    if (dy * dy + dx * dx <= r2) hit.push_back(&e);
+    const float reach = kind == 0 ? r : e.radius + r;
+    if (dy * dy + dx * dx <= reach * reach) hit.push_back(&e);
   });
-  // The original calls slot 9 inside the walk: what an earlier kill
+  // The original calls the slots inside the walk: what an earlier kill
   // removed is skipped.
   for (Entity* e : hit) {
     if (e->flags & 0x13) continue;
+    if (kind == 2 && e->type == 3) {
+      e->hit_by_shot(w, k);
+      continue;
+    }
     e->kill(w, k);
     ++w.bomb_kills;
   }

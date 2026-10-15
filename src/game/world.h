@@ -31,6 +31,7 @@ struct Killer {
   int kind = 0;
   int object_type = 0;                 // the killer object's type code (5: a player shot)
   const Entity* source = nullptr;      // the killer object itself, when the code needs it
+  int blast_kind = -1;                 // a blast killer's kind (+0x68)
   int shot_bounces = 0;                // the shot's +0xA0
 };
 
@@ -87,10 +88,15 @@ class Entity {
   // Slot 7 (sub_820459D8 for units): hit by a shot; kills it.
   virtual void hit_by_shot(World& w, const Killer& k) { kill(w, k); }
   // Slot 9 (sub_82046010(self, killer, 0) for units): destroyed.
-  virtual void kill(World& w, const Killer& k);
+  virtual void kill(World& w, const Killer& k) { die(w, k, 0); }
+  // sub_82046010(self, killer, flags): unless flag 1, the killed effect,
+  // line debris (in the entity's colour with flag 0x10, else white) and a
+  // kill marker; unless 2, the score and geoms; unless 4, sound 2; unless
+  // 8, removal.
+  void die(World& w, const Killer& k, uint32_t f);
   // The points sub_820408D0 gives the types it scores by their own state
   // (rocket, gravity well, gate); 0 for the rest.
-  virtual int special_points() const { return 0; }
+  virtual int special_points(const World&) const { return 0; }
   // The geoms sub_8204E108 drops for the types it counts by their own
   // state (gravity well, snake segment); 0 for the rest.
   virtual int special_geoms() const { return 0; }
@@ -124,6 +130,8 @@ class Entity {
 // A player as the entities see it (list 0x821813AC).
 struct PlayerTarget {
   float x = 0, y = 0, vx = 0, vy = 0;
+  float prev_x = 0, prev_y = 0;  // +0xBC / +0xC0: position at the start of its update
+  float push_vx = 0, push_vy = 0;  // velocity the entities' pulls added this step
   float radius = 0;
   bool removed = false;    // flag 1
   float hidden = 0;        // +0xE0: targeted only while <= 0
@@ -196,6 +204,10 @@ class World {
   // the walk (sub_820453E0): the game handles it here.
   std::function<void(const Touch&)> touch;
   int bomb_kills = 0;                   // dat_8219D284: shockwave kills this step
+  float clock = 0.0f;                   // dat_8219CE68: the game time
+  // The player's gate chain (slot record +0x34 / +0x30).
+  int gate_chain = 0;
+  float gate_chain_time = 0.0f;
   // Kill markers (sub_82043418, type 0x19, list 0x82181420): they live one
   // step and push the grid (radius 32, strength 6).
   std::vector<Vec2> death_markers;

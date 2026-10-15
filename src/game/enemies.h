@@ -93,7 +93,7 @@ class Rocket : public Entity {
   void update(World& w) override;            // sub_82054E30
   void wall(World& w, Vec2 n) override;      // 0x82054B80
   Mat4 custom_placement(World& w) override;  // sub_82054D08
-  int special_points() const override { return variant ? 125 : 75; }
+  int special_points(const World&) const override { return variant ? 125 : 75; }
 
   float sign = 1.0f;     // +0x80: thrust direction along the axis
   float axis = 0.0f;     // +0x84: travel angle

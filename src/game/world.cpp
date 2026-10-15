@@ -97,19 +97,21 @@ void Entity::post_move(World& w) {
 
 Mat4 Entity::custom_placement(World& w) { return placement_style_none(w.gm, x, y, heading); }
 
-void Entity::kill(World& w, const Killer& k) {
-  // sub_82046010 with no flags: the unit's killed effect, line debris in
-  // white, a kill marker, the score, geoms, sound 2, and removal.
+void Entity::die(World& w, const Killer& k, uint32_t f) {
   if (flags & kEntityRemoved) return;
-  if (unit) {
-    w.effects.trigger(unit->killed, x, y);
-    const float white[4] = {1, 1, 1, 1};  // dat_820006C4
-    w.shatter(unit, placement(w), x, y, radius, k, white);
+  if (!(f & 1)) {
+    if (unit) {
+      w.effects.trigger(unit->killed, x, y);
+      const float white[4] = {1, 1, 1, 1};  // dat_820006C4
+      w.shatter(unit, placement(w), x, y, radius, k, (f & 0x10) ? colour : white);
+    }
+    w.death_markers.push_back({x, y});
   }
-  w.death_markers.push_back({x, y});
-  w.award(*this, k);
-  if (w.geom_shapes) drop_geoms(w, *this, k);
-  w.remove(*this);
+  if (!(f & 2)) {
+    w.award(*this, k);
+    if (w.geom_shapes) drop_geoms(w, *this, k);
+  }
+  if (!(f & 8)) w.remove(*this);
 }
 
 Mat4 Entity::placement(World& w) {
@@ -183,7 +185,7 @@ void World::award(const Entity& victim, const Killer& k) {
     case 0x12: case 0x21: base = 25; break;
     case 0x14: base = 500; break;
     case 0x1B: base = 75; break;
-    default: base = victim.special_points(); break;  // types 3, 0x16, 0x18
+    default: base = victim.special_points(*this); break;  // types 3, 0x16, 0x18
   }
   // multiplier * points * 0.25 (dat_82000720), doubled in King, rounded
   // down to a multiple of 5.
@@ -193,7 +195,11 @@ void World::award(const Entity& victim, const Killer& k) {
   int64_t points = fives * 5;
   if (points < 1) return;
   // Shots that bounced off a gate (kind 5's +0xA0 > 0) score five times.
-  if (k.shot_bounces > 0) points = fives * 25;
+  // Killed by a well or a gate, by their blasts (kinds 1 and 2), or by a
+  // shot that bounced off a gate's beam: five times the points.
+  if ((k.object_type == 3 || k.object_type == 0x18) || (k.object_type == 0xF && (k.blast_kind == 1 || k.blast_kind == 2)) ||
+      (k.object_type == 5 && k.shot_bounces > 0))
+    points = fives * 25;
   score += points;
 }
 
@@ -245,8 +251,10 @@ void World::light_entities(std::vector<LightVertex>& lights) {
 }
 
 void World::draw_entities(LineBatch& out) {
+  // Slot 2 for models; the others draw their shape table (sub_82061908),
+  // which only the beam ghost uses so far.
   for (auto& p : entities)
-    if (!(p->flags & kEntityRemoved) && (p->flags & kEntityHasModel)) p->draw(*this, out);
+    if (!(p->flags & kEntityRemoved)) p->draw(*this, out);
 }
 
 const PlayerTarget* World::nearest_player(const Entity& e) const {

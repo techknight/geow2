@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "game/enemies.h"
+#include "game/gate.h"
 #include "game/snake.h"
 #include "game/wanderer.h"
 
@@ -24,6 +25,8 @@ Entity* spawn_enemy(World& w, int type, float angle, float x, float y, bool flag
       head->build_segments(w);
       return head;
     }
+    case 16:
+      return spawn_gate(w, x, y);
     case 12:
     case 13:
       return w.add(std::make_unique<Rocket>(w, angle, x, y, type == 13));

@@ -22,6 +22,7 @@ struct Bullet {
   float prev_x = 0, prev_y = 0;  // +0x90 / +0x94: position at the start of the step
   int type = 0;
   bool hit = false;             // +0x9C
+  int bounces = 0;              // +0xA0: times it bounced off a gate's beam
   bool removed = false;         // flag 1: hit something, gone
 };
 

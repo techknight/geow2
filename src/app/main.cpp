@@ -33,6 +33,7 @@
 #include "game/camera.h"
 #include "game/deadline.h"
 #include "game/game_math.h"
+#include "game/gate.h"
 #include "game/geoms.h"
 #include "game/grid.h"
 #include "game/killer_ghost.h"
@@ -208,6 +209,8 @@ void spawn_player(Game& g) {
   t = PlayerTarget{};
   t.x = g.player.x;
   t.y = g.player.y;
+  t.prev_x = t.x;
+  t.prev_y = t.y;
   t.radius = g.player.radius;
 }
 
@@ -370,6 +373,11 @@ struct Sticks {
 void update_player(Game& g, const Sticks& s) {
   World& w = *g.world;
   PlayerLife& p = g.life;
+  if (!p.fading) {
+    // The update starts by keeping where the player was (+0xBC / +0xC0).
+    w.players[0].prev_x = g.player.x;
+    w.players[0].prev_y = g.player.y;
+  }
   if (p.fading) {
     p.fade = std::fmaf(kStep, 1.5f, p.fade);  // dat_82000C90
     if (p.fade >= 1.0f) {
@@ -403,6 +411,7 @@ void step(Game& g, const Sticks& s) {
   // then the clock (sub_820366A0).
   if (g.life.alive()) g.spawner.step(w, g.elapsed);
   g.elapsed = kStep + g.elapsed;
+  w.clock = g.elapsed;
   // Last step's kill markers go (sub_82043368).
   w.death_markers.clear();
 
@@ -419,6 +428,8 @@ void step(Game& g, const Sticks& s) {
   // Shots against enemies (sub_820523B0).
   shot_collisions(w, g.bullets);
   std::erase_if(g.bullets, [](const Bullet& b) { return b.removed; });
+  // Players crossing gates' beams (sub_820476F0).
+  gate_crossings(w);
   // Geoms are pulled in and picked up (sub_8204D410).
   collect_geoms(w);
   // A player that has just started to fade in bursts into view.

@@ -43,6 +43,7 @@ add_library(geow2_game STATIC
   src/game/effects.cpp
   src/game/enemies.cpp
   src/game/game_math.cpp
+  src/game/gate.cpp
   src/game/geoms.cpp
   src/game/grid.cpp
   src/game/killer_ghost.cpp

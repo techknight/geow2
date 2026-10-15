@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "game/bullets.h"
+#include "game/gate.h"
 #include "game/snake.h"
 
 namespace geow2 {
@@ -33,6 +35,22 @@ KillerGhost::KillerGhost(World& w, Entity& killer, const float tint[4]) {
   }
 }
 
+KillerGhost::KillerGhost(World& w, float ax, float ay, float bx, float by, const float c[4]) {
+  (void)w;
+  x = (ax + bx) * 0.5f;
+  y = (ay + by) * 0.5f;
+  type = 7;
+  unit_based = false;
+  flags |= 0xC0;
+  for (int i = 0; i < 4; ++i) {
+    colour[i] = c[i];
+    base_colour[i] = c[i];
+  }
+  killer_type = 0x18;
+  segment = {{ax - x, ay - y}, {bx - x, by - y}};
+  killer_points = 2;
+}
+
 void KillerGhost::update(World& w) {
   time = time - w.step;
   if (time <= 0.0f) w.remove(*this);
@@ -50,7 +68,12 @@ void KillerGhost::update(World& w) {
 }
 
 void KillerGhost::draw(World& w, LineBatch& out) {
-  (void)w;
+  if (shown && !segment.empty()) {
+    // The generic shape draw (sub_82061908) in its fading colour.
+    for (const Segment& s : shape_segments(segment, x, y, heading, sx, sy, w.gm))
+      emit_line(out, kLineWidthUnit, 1.0f, s.a, s.b, colour);
+    return;
+  }
   if (!shown || !model) return;
   draw_model_part(out, *model, 0, world, draw_colour);
   if (killer_type == 0xB) draw_model_part(out, *model, 1, world, draw_colour);
@@ -73,6 +96,20 @@ void replace_killer(World& w, Entity& killer) {
       const float tint[4] = {e.colour[0], e.colour[1], e.colour[2], e.colour[3]};
       w.add(std::make_unique<KillerGhost>(w, e, tint));
       w.remove(e);
+    }
+    return;
+  }
+  if (killer.type == 0x18) {
+    // Both ends, and the beam between them ((0.55875, 0.97, 2.85, 1),
+    // dat_82001844 / 82001840 / 8200183C).
+    auto& end = static_cast<GateEnd&>(killer);
+    w.add(std::make_unique<KillerGhost>(w, killer, white));
+    w.remove(killer);
+    if (GateEnd* p = end.partner) {
+      w.add(std::make_unique<KillerGhost>(w, *p, white));
+      w.remove(*p);
+      const float beam[4] = {0.558749974f, 0.970000029f, 2.8499999f, 1.0f};
+      w.add(std::make_unique<KillerGhost>(w, end.x, end.y, p->x, p->y, beam));
     }
     return;
   }

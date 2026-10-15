@@ -10,6 +10,7 @@
 #include "game/camera.h"
 #include "game/display_gamma.h"
 #include "game/enemies.h"
+#include "game/gate.h"
 #include "game/grid.h"
 #include "game/light_map.h"
 #include "game/line_quads.h"
@@ -561,7 +562,47 @@ static void test_enemies() {
   }
 }
 
+static void test_gate() {
+  // A player crossing the beam between a gate's ends sets off two blasts
+  // and destroys both ends: chain 1, 100 points an end at x1 / 4 = 25.
+  GameRng rng;
+  rng.seed(11);
+  Units units;
+  World w(kMath, rng, units);
+  w.players.resize(1);
+  w.players[0].radius = 5.0f;
+  Entity* a = spawn_gate(w, 100.0f, 0.0f);
+  expect(a && w.entities.size() == 2 && w.enemy_count == 2, "gate of two ends");
+  auto& ga = static_cast<GateEnd&>(*a);
+  GateEnd& gb = *ga.partner;
+  const float d = std::sqrt((gb.x - ga.x) * (gb.x - ga.x) + (gb.y - ga.y) * (gb.y - ga.y));
+  expect(near(d, 65.0f), "ends 65 apart");
+  const float mx = (ga.x + gb.x) * 0.5f, my = (ga.y + gb.y) * 0.5f;
+  const float ux = (gb.x - ga.x) / d, uy = (gb.y - ga.y) / d;
+  PlayerTarget& p = w.players[0];
+  p.prev_x = mx + uy * 20.0f;
+  p.prev_y = my - ux * 20.0f;
+  p.x = mx - uy * 20.0f;
+  p.y = my + ux * 20.0f;
+  gate_crossings(w);
+  int blasts = 0;
+  for (auto& e : w.entities)
+    if (e->type == 0xF) ++blasts;
+  expect((ga.flags & kEntityRemoved) && (gb.flags & kEntityRemoved) && blasts == 2 && w.gate_chain == 1 &&
+             w.score == 50,
+         "gate set off by crossing");
+  // Shots only flash the ends.
+  rng.seed(12);
+  World w2(kMath, rng, units);
+  Entity* c = spawn_gate(w2, 0.0f, 0.0f);
+  Killer shot;
+  shot.kind = 1;
+  c->hit_by_shot(w2, shot);
+  expect(!(c->flags & kEntityRemoved) && static_cast<GateEnd&>(*c).flash == 1.0f, "shots flash gates");
+}
+
 int main() {
+  test_gate();
   test_enemies();
   test_shot_kills();
   test_world();

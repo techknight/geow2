@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "game/gate.h"
+
 namespace geow2 {
 namespace {
 
@@ -35,6 +37,7 @@ void sweep(World& w, Bullet& b) {
     k.vy = b.vy;
     k.kind = 1;
     k.object_type = 5;
+    k.shot_bounces = b.bounces;
     o.hit_by_shot(w, k);
     // The shot's slot 6 (sub_82051E58): gone, unless what it hit bounces
     // it (type codes 0x11 and 0x1F, not ported yet).
@@ -46,8 +49,11 @@ void sweep(World& w, Bullet& b) {
 }  // namespace
 
 void shot_collisions(World& w, std::vector<Bullet>& shots) {
-  for (Bullet& b : shots)
-    if (!b.removed) sweep(w, b);
+  for (Bullet& b : shots) {
+    if (b.removed) continue;
+    bounce_off_beams(w, b);  // sub_82051B18
+    sweep(w, b);
+  }
 }
 
 }  // namespace geow2

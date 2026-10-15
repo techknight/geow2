@@ -10,6 +10,9 @@ namespace geow2 {
 class KillerGhost : public Entity {
  public:
   KillerGhost(World& w, Entity& killer, const float tint[4]);
+  // sub_82044D28: a gate's beam, from a to b, in `colour` (no model: drawn
+  // as its one-segment shape table).
+  KillerGhost(World& w, float ax, float ay, float bx, float by, const float colour[4]);
   void update(World& w) override;                 // sub_82044820
   void draw(World& w, LineBatch& out) override;   // sub_82044918
 
@@ -22,12 +25,13 @@ class KillerGhost : public Entity {
   int blink = 0;                // +0x88
   bool shown = false;           // +0x40 holds the shape table (drawn) or 0
   int killer_points = 0;        // +0x60: the copied shape table's size
+  std::vector<Vec2> segment;    // +0x5C: the beam's segment (beam ghosts)
 };
 
 // sub_82044FA8: the killer gives way to its ghost and is removed. A snake
 // (head or attached segment) leaves the whole snake, a detached segment
-// nothing. (Types 3, 0x14/0x15 and 0x18 have their own cases: they come
-// with those enemies.)
+// nothing; a gate both ends and its beam. (Types 3 and 0x14/0x15 have
+// their own cases: they come with those enemies.)
 void replace_killer(World& w, Entity& killer);
 
 }  // namespace geow2
