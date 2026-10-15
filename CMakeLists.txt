@@ -71,7 +71,8 @@ if(GEOW2_BUILD_GAME)
   set(SPIRV)
   foreach(shader line.vert line_body.frag line_cap.frag fullscreen.vert downsample.frag blur.frag combine.frag
           composite.frag grid.vert grid.frag light_warp.vert light_warp.frag light_sprite.vert light_sprite.frag
-          light_combine.frag light_feedback.frag star.vert star.frag)
+          light_combine.frag light_feedback.frag star.vert star.frag
+          wall.vert wall.frag)
     set(out ${SHADER_OUT}/${shader}.spv)
     add_custom_command(OUTPUT ${out}
       COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADER_OUT}

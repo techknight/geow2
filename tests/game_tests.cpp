@@ -387,7 +387,25 @@ static void test_display_gamma() {
   expect(b[0] == 0.0f && b[255] == 1.0f && std::fabs(b[128] - 0.4526f) < 0.002f, "BT.709 ramp");
 }
 
+static void test_walls() {
+  // Four sides, each an inner and an outer quad: the left side runs from
+  // (-300, -200) up to (-300, 200), 1.5 either side, 0.5 past the ends.
+  std::vector<GridVertex> w;
+  wall_quads(300.0f, 200.0f, -6.0f, 1.01f, w);
+  expect(w.size() == 32, "wall vertex count");
+  if (w.size() != 32) return;
+  expect(w[0].x == -301.5f && w[0].y == -200.5f && w[1].x == -298.5f && w[2].y == 200.5f && w[3].x == -301.5f,
+         "left wall quad");
+  expect(w[0].side == -1.0f && w[1].side == 1.0f && w[2].side == 1.0f && w[3].side == -1.0f && w[0].z == -6.0f,
+         "wall sides and depth");
+  // Light-map coordinates: v0 reads 200 units inside, clamped to the map.
+  expect(near(w[0].u, 1.0f / 3.0f) && w[0].v == 1.0f && w[1].u == 0.0f && w[2].u == 0.0f, "wall light coordinates");
+  // The outer copy sits 3 units further out on both axes.
+  expect(near(w[4].x, -304.5f) && near(w[4].y, -203.5f), "outer wall");
+}
+
 int main() {
+  test_walls();
   test_grid_lines();
   test_light_sprites();
   test_display_gamma();

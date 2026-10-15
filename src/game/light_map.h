@@ -46,6 +46,15 @@ std::vector<uint16_t> grid_warp_indices();
 float grid_fade_step(float fade, bool in_game);
 constexpr float kGridVisible = 0.01f;  // dat_820011B0
 
+// The arena walls (sub_8205CF20): for each of the four sides
+// (sub_8205B000 adds them clockwise from the left one) a quad along the
+// wall and one more scaled outward by Render.Wall.OuterScale, each a
+// strip 1.5 either side of the line and 0.5 past its ends, carrying
+// light-map coordinates up to 200 units across the wall (sub_8205CC70).
+// Vertices as the grid's: (x, y, depth, u, v, 1, side).
+constexpr float kWallOuterScale = 1.01f;  // Render.Wall.OuterScale 0x821A1B7C, dat_820028A0
+void wall_quads(float half_x, float half_y, float depth, float outer_scale, std::vector<GridVertex>& out);
+
 // sub_8205FA98: a light sprite, a square of half-size `size` around
 // (x, y) with texture coordinates 0..1, colour times 1.5.
 void emit_light(std::vector<LightVertex>& out, float size, float x, float y, const float colour[3]);

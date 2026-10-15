@@ -93,6 +93,72 @@ std::vector<uint16_t> grid_warp_indices() {
   return idx;
 }
 
+namespace {
+
+// fsel(a, c, b): a >= 0 ? c : b.
+double fsel(double a, double c, double b) { return a >= 0.0 ? c : b; }
+
+// The light-map coordinate clamp of sub_8205CC70: max(0, ...), min(1, ...)
+// as two fsel, then rounded.
+float clamp01(double t) {
+  const double lo = fsel(-t, 0.0, t);
+  return float(fsel(t - 1.0, 1.0, lo));
+}
+
+// sub_8205CC70(a, b, 1.5, 0.5, 200, 0, out): one wall quad, from the
+// disassembly (fused operations in double, each coordinate rounded once).
+void wall_quad(std::vector<GridVertex>& out, float ax, float ay, float bx, float by, float depth) {
+  constexpr double p5 = 1.5, p6 = 0.5, p7 = 200.0, p8 = 0.0;  // dat_82000C90, dat_82000724, dat_82000CF0, dat_820006CC
+  constexpr double sx = 300.0, sy = 200.0;                    // dat_821825B4, dat_821825B8
+  constexpr double w2 = 600.0, h2 = 400.0;                    // fmuls by 2.0 (dat_820006FC)
+  const double x0 = ax, y0 = ay, x1 = bx, y1 = by;
+  const double dx = double(bx - ax), dy = double(by - ay);  // fsubs
+  const double r = 1.0 / std::sqrt(std::fma(dy, dy, dx * dx) + kLengthEpsilon);  // frsqrte in the original
+  const double ux = r * dx, uy = r * dy, nux = ux * -1.0;  // dat_82000C80 (f64)
+  auto fnmsub = [](double a, double c, double b) { return -std::fma(a, c, -b); };  // b - a * c
+
+  // v0: a + 1.5 * left normal - 0.5 * direction; light at a + 200 * right normal.
+  const float v0x = float(fnmsub(p6, ux, fnmsub(p5, uy, x0)));
+  const float v0y = float(fnmsub(p6, uy, fnmsub(p5, nux, y0)));
+  const float v0u = clamp01((fnmsub(p8, ux, std::fma(p7, uy, x0)) + sx) / w2);
+  const float v0v = clamp01((sy - fnmsub(p8, uy, std::fma(p7, nux, y0))) / h2);
+  // v1: a + 1.5 * right normal - 0.5 * direction; light at v0's position.
+  const float v1x = float(fnmsub(p6, ux, std::fma(p5, uy, x0)));
+  const float v1y = float(fnmsub(p6, uy, std::fma(p5, nux, y0)));
+  const float v1u = clamp01((fnmsub(p6, ux, fnmsub(p5, uy, x0)) + sx) / w2);
+  const float v1v = clamp01((sy - fnmsub(p6, uy, fnmsub(p5, nux, y0))) / h2);
+  // v2: b + 1.5 * right normal + 0.5 * direction; light at b - 200 * right normal.
+  const float v2x = float(std::fma(p5, uy, p6 * ux) + x1);
+  const float v2y = float(std::fma(p5, nux, p6 * uy) + y1);
+  const float v2u = clamp01((std::fma(p8, ux, fnmsub(p7, uy, x1)) + sx) / w2);
+  const float v2v = clamp01((sy - std::fma(p8, uy, fnmsub(p7, nux, y1))) / h2);
+  // v3: b + 1.5 * left normal + 0.5 * direction; light at b + 200 * right normal.
+  const float v3x = float(std::fma(p6, ux, fnmsub(p5, uy, x1)));
+  const float v3y = float(std::fma(p6, uy, fnmsub(p5, nux, y1)));
+  const float v3u = clamp01((std::fma(p7, uy, p8 * ux) + x1 + sx) / w2);
+  const float v3v = clamp01((sy - (std::fma(p7, nux, p8 * uy) + y1)) / h2);
+
+  out.push_back({v0x, v0y, depth, v0u, v0v, 1.0f, -1.0f});
+  out.push_back({v1x, v1y, depth, v1u, v1v, 1.0f, 1.0f});
+  out.push_back({v2x, v2y, depth, v2u, v2v, 1.0f, 1.0f});
+  out.push_back({v3x, v3y, depth, v3u, v3v, 1.0f, -1.0f});
+}
+
+}  // namespace
+
+void wall_quads(float half_x, float half_y, float depth, float outer_scale, std::vector<GridVertex>& out) {
+  out.clear();
+  const float hx = half_x, hy = half_y;
+  const float sides[4][4] = {{-hx, -hy, -hx, hy}, {-hx, hy, hx, hy}, {hx, hy, hx, -hy}, {hx, -hy, -hx, -hy}};
+  // The outer copy: x times the scale, y times 1 + (300 / 200) * (scale - 1)
+  // (fdivs, fsubs, fmadds), so both offsets come out the same.
+  const float ys = std::fmaf(300.0f / 200.0f, outer_scale - 1.0f, 1.0f);
+  for (const auto& s : sides) {
+    wall_quad(out, s[0], s[1], s[2], s[3], depth);
+    wall_quad(out, outer_scale * s[0], ys * s[1], s[2] * outer_scale, ys * s[3], depth);
+  }
+}
+
 float grid_fade_step(float fade, bool in_game) {
   // fmadds(target - fade, 0.05 (dat_82000D60), fade).
   const float delta = in_game ? 1.0f - fade : -fade;

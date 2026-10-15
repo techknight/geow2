@@ -100,6 +100,7 @@ struct Game {
   GameRng rng;
   StarField stars;
   std::vector<StarVertex> star_vertices;  // this step's stars
+  std::vector<GridVertex> walls;          // the arena walls (fixed)
 };
 
 bool load(Game& g, const fs::path& cache) {
@@ -140,6 +141,7 @@ bool load(Game& g, const fs::path& cache) {
   // (sub_82037C20), then the starfield draws from it (sub_82075318).
   g.rng.seed_from_ticks(SDL_GetTicksNS() / 1000000);
   g.stars.init(g.rng);
+  wall_quads(kArenaHalfX, kArenaHalfY, g.grid_tuning.depth, kWallOuterScale, g.walls);
   // Player constructor sub_82051448: radius +0x20 = 5.0 (dat_820006F0),
   // heading +0x14 = -pi/2 (dat_820010F4). Spawn position: the arena centre
   // for now (the spawn point argument is not traced yet).
@@ -234,7 +236,7 @@ void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_
   static LineBatch front;
   foreground(g, front);
   r.draw(cmd, target, format, w, h, camera_view_projection(g.camera, *g.gm), g.star_vertices,
-         g.grid_visible ? &g.grid_lines : nullptr, front);
+         g.grid_visible ? &g.grid_lines : nullptr, g.walls, front);
 }
 
 // One simulation step and its light map update (one per step, as the
