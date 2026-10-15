@@ -1,14 +1,16 @@
 // geow2: the game.
 //
-//   geow2 [--data <cache-dir>] [--profile <dir>]
+//   geow2 [--data <cache-dir>] [--profile <dir>] [--fullscreen | --windowed] [--720p | --native]
+//         [--vsync | --no-vsync]
 //   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> [--size <w> <h>] [--mode <n>] [--level <n>]
 //         [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--spawn <type> <x> <y>]...
 //         [--player <pad> <team> <role>]... [--versus] [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>]
 //   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
 //
-// The first form opens the window at the front end; the profile and the
-// local score boards are kept in --profile (default: the user's
-// preferences folder). The second runs n simulation steps of a game of
+// The first form opens the window at the front end; the profile, the
+// local score boards and the display settings (display.txt: fullscreen,
+// exact 720p render, vsync; F11 toggles fullscreen) are kept in --profile
+// (default: the user's preferences folder). The second runs n simulation steps of a game of
 // --mode (0 Deadline, 1 Evolved, 2 Sequence, 3 Waves, 4 Pacifism, 5 King)
 // without a window, with a fixed raw stick value (XInput convention),
 // --bomb pulling the trigger on one step and --spawn adding enemies at the
@@ -171,8 +173,51 @@ void keyboard_pad(PadState& p, bool playing) {
   p.connected = true;
 }
 
+// The frame into `target` (w x h): rendered at that size, or with
+// `exact_720p` at 1280 x 720 into `frame720` (made on first use) and scaled
+// (bilinear) into the 16:9 area of the target.
+void draw_frame(SDL_GPUDevice* dev, Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target,
+                SDL_GPUTextureFormat format, uint32_t w, uint32_t h, const Game& g, const UiCanvas& ui,
+                bool exact_720p, SDL_GPUTexture*& frame720) {
+  if (!exact_720p) {
+    render(r, cmd, target, format, w, h, g, ui);
+    return;
+  }
+  if (!frame720) {
+    SDL_GPUTextureCreateInfo tci{};
+    tci.type = SDL_GPU_TEXTURETYPE_2D;
+    tci.format = format;
+    tci.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    tci.width = 1280;
+    tci.height = 720;
+    tci.layer_count_or_depth = 1;
+    tci.num_levels = 1;
+    frame720 = SDL_CreateGPUTexture(dev, &tci);
+    if (!frame720) return;
+  }
+  render(r, cmd, frame720, format, 1280, 720, g, ui);
+  uint32_t pw = w, ph = uint32_t(float(w) * 9.0f / 16.0f + 0.5f);
+  if (ph > h) {
+    ph = h;
+    pw = uint32_t(float(h) * 16.0f / 9.0f + 0.5f);
+  }
+  SDL_GPUBlitInfo blit{};
+  blit.source.texture = frame720;
+  blit.source.w = 1280;
+  blit.source.h = 720;
+  blit.destination.texture = target;
+  blit.destination.x = (w - pw) / 2;
+  blit.destination.y = (h - ph) / 2;
+  blit.destination.w = pw;
+  blit.destination.h = ph;
+  blit.load_op = SDL_GPU_LOADOP_CLEAR;
+  blit.clear_color = {0, 0, 0, 1};
+  blit.filter = SDL_GPU_FILTER_LINEAR;
+  SDL_BlitGPUTexture(cmd, &blit);
+}
+
 int capture(SDL_GPUDevice* dev, Renderer& r, const Game& g, const UiCanvas& ui, const fs::path& out, uint32_t w,
-            uint32_t h) {
+            uint32_t h, bool exact_720p = false) {
   SDL_GPUTextureCreateInfo tci{};
   tci.type = SDL_GPU_TEXTURETYPE_2D;
   tci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
@@ -189,7 +234,8 @@ int capture(SDL_GPUDevice* dev, Renderer& r, const Game& g, const UiCanvas& ui, 
     return 1;
   }
   SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
-  render(r, cmd, tex, tci.format, w, h, g, ui);
+  SDL_GPUTexture* frame720 = nullptr;
+  draw_frame(dev, r, cmd, tex, tci.format, w, h, g, ui, exact_720p, frame720);
   SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
   SDL_GPUTextureRegion src{};
   src.texture = tex;
@@ -207,11 +253,13 @@ int capture(SDL_GPUDevice* dev, Renderer& r, const Game& g, const UiCanvas& ui, 
   SDL_UnmapGPUTransferBuffer(dev, down);
   SDL_ReleaseGPUTransferBuffer(dev, down);
   SDL_ReleaseGPUTexture(dev, tex);
+  if (frame720) SDL_ReleaseGPUTexture(dev, frame720);
   return 0;
 }
 
 int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std::array<Sticks, 4>& sticks,
-                 int bomb_step, const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h) {
+                 int bomb_step, const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h,
+                 bool exact_720p) {
   for (const DevSpawn& d : spawns) spawn_enemy(*g.world, d.type, 0.0f, d.x, d.y);
   for (int i = 0; i < frames; ++i) {
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
@@ -228,7 +276,7 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
   fe.watch_game();
   UiCanvas ui;
   fe.draw(ui);
-  if (capture(dev, r, g, ui, out, w, h)) return 1;
+  if (capture(dev, r, g, ui, out, w, h, exact_720p)) return 1;
   SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets, "
           "%zu entities, score %lld x%d, %zu particles, %zu debris, %zu linger quads, %d deaths, %d bombs left, "
           "%d bomb kills, %d lives%s; sequence phase %d level %d",
@@ -292,12 +340,48 @@ int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, 
   return 0;
 }
 
-int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& cache, const fs::path& profile_dir) {
-  SDL_Window* window = SDL_CreateWindow("geow2", 1280, 720, SDL_WINDOW_RESIZABLE);
+// The display settings (display.txt in the profile folder): one
+// "name value" per line.
+struct Display {
+  bool fullscreen = false;
+  bool exact_720p = false;  // render at 1280 x 720 and scale to the window
+  bool vsync = true;
+};
+
+Display load_display(const fs::path& dir) {
+  Display d;
+  std::ifstream f(dir / "display.txt");
+  std::string name;
+  int value = 0;
+  while (f >> name >> value) {
+    if (name == "fullscreen") d.fullscreen = value != 0;
+    else if (name == "exact720p") d.exact_720p = value != 0;
+    else if (name == "vsync") d.vsync = value != 0;
+  }
+  return d;
+}
+
+void save_display(const fs::path& dir, const Display& d) {
+  std::error_code ec;
+  fs::create_directories(dir, ec);
+  std::ofstream f(dir / "display.txt", std::ios::trunc);
+  f << "fullscreen " << int(d.fullscreen) << "\nexact720p " << int(d.exact_720p) << "\nvsync " << int(d.vsync) << '\n';
+}
+
+int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& cache, const fs::path& profile_dir,
+               Display display) {
+  SDL_Window* window =
+      SDL_CreateWindow("geow2", 1280, 720, SDL_WINDOW_RESIZABLE | (display.fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
   if (!window || !SDL_ClaimWindowForGPUDevice(dev, window)) {
     SDL_Log("cannot open the window: %s", SDL_GetError());
     return 1;
   }
+  // Vsync (the default), or immediate presentation when the driver has it.
+  if (!display.vsync &&
+      SDL_WindowSupportsGPUPresentMode(dev, window, SDL_GPU_PRESENTMODE_IMMEDIATE))
+    SDL_SetGPUSwapchainParameters(dev, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, SDL_GPU_PRESENTMODE_IMMEDIATE);
+  // The exact 720p render target, scaled into the window.
+  SDL_GPUTexture* frame720 = nullptr;
   Profile profile = load_profile(profile_dir);
   std::array<LocalBoard, 6> boards;
   load_boards(profile_dir, boards);
@@ -359,6 +443,13 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& cache, 
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
       if (e.type == SDL_EVENT_QUIT) running = false;
+      if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat &&
+          (e.key.scancode == SDL_SCANCODE_F11 ||
+           (e.key.scancode == SDL_SCANCODE_RETURN && (e.key.mod & SDL_KMOD_ALT)))) {
+        display.fullscreen = !display.fullscreen;
+        SDL_SetWindowFullscreen(window, display.fullscreen);
+        save_display(profile_dir, display);
+      }
       if (e.type == SDL_EVENT_GAMEPAD_ADDED) {
         for (auto& p : pads)
           if (!p) {
@@ -423,9 +514,10 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& cache, 
     SDL_GPUTexture* swap = nullptr;
     uint32_t w = 0, h = 0;
     if (SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window, &swap, &w, &h) && swap)
-      render(r, cmd, swap, format, w, h, g, ui);
+      draw_frame(dev, r, cmd, swap, format, w, h, g, ui, display.exact_720p, frame720);
     SDL_SubmitGPUCommandBuffer(cmd);
   }
+  if (frame720) SDL_ReleaseGPUTexture(dev, frame720);
   for (auto& p : pads)
     if (p) SDL_CloseGamepad(p);
   SDL_ReleaseWindowFromGPUDevice(dev, window);
@@ -464,6 +556,7 @@ int main(int argc, char** argv) {
   int mode = 0;
   int start_level = -1;
   bool frontend = false;
+  int fullscreen = -1, exact_720p = -1, vsync = -1;  // -1: as saved
   std::vector<DevSpawn> spawns;
   std::vector<Press> presses;
   for (int i = 1; i < argc; ++i) {
@@ -476,6 +569,9 @@ int main(int argc, char** argv) {
     else if (a == "--mode" && i + 1 < argc) mode = std::clamp(std::atoi(argv[++i]), 0, 5);
     else if (a == "--level" && i + 1 < argc) start_level = std::clamp(std::atoi(argv[++i]), 0, 19);
     else if (a == "--frontend") frontend = true;
+    else if (a == "--fullscreen" || a == "--windowed") fullscreen = a == "--fullscreen";
+    else if (a == "--720p" || a == "--native") exact_720p = a == "--720p";
+    else if (a == "--vsync" || a == "--no-vsync") vsync = a == "--vsync";
     else if (a == "--press" && i + 2 < argc) {
       // <button>[:<pad>]
       const int f = std::atoi(argv[++i]);
@@ -520,7 +616,8 @@ int main(int argc, char** argv) {
       }
     } else {
       std::fprintf(stderr,
-                   "usage: geow2 [--data <cache>] [--profile <dir>] [--seed <n>] [--frames <n> --screenshot <png>"
+                   "usage: geow2 [--data <cache>] [--profile <dir>] [--fullscreen|--windowed] [--720p|--native]"
+                   " [--vsync|--no-vsync] [--seed <n>] [--frames <n> --screenshot <png>"
                    " [--size <w> <h>] [--mode <0-5>] [--level <0-19>] [--stick <x> <y>] [--fire <x> <y>]"
                    " [--bomb <step>] [--spawn <type> <x> <y>]... [--player <pad> <team> <role>]... [--versus]"
                    " [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] | --frontend [--press <frame> <button>]...]\n");
@@ -563,9 +660,15 @@ int main(int argc, char** argv) {
   } else if (headless) {
     std::array<Sticks, 4> per_pad{};
     for (size_t p = 0; p < 4; ++p) per_pad[p] = pad_sticks[p] ? *pad_sticks[p] : sticks;
-    rc = run_headless(dev, renderer, game, frames, per_pad, bomb_step, spawns, screenshot, shot_w, shot_h);
+    rc = run_headless(dev, renderer, game, frames, per_pad, bomb_step, spawns, screenshot, shot_w, shot_h,
+                      exact_720p == 1);
   } else {
-    rc = run_window(dev, renderer, game, cache, profile_dir);
+    Display d = load_display(profile_dir);
+    if (fullscreen >= 0) d.fullscreen = fullscreen != 0;
+    if (exact_720p >= 0) d.exact_720p = exact_720p != 0;
+    if (vsync >= 0) d.vsync = vsync != 0;
+    if (fullscreen >= 0 || exact_720p >= 0 || vsync >= 0) save_display(profile_dir, d);
+    rc = run_window(dev, renderer, game, cache, profile_dir, d);
   }
   renderer.release();
   SDL_DestroyGPUDevice(dev);

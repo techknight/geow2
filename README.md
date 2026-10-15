@@ -54,6 +54,14 @@ swapped in Help and options), or the keyboard: WASD move, the arrow keys
 fire (and move through menus), Space bombs, Enter selects, Escape goes
 back in menus and pauses a game. "Return to arcade" quits.
 
+Multiplayer takes up to four pads (the keyboard counts as the first):
+choose Multiplayer in the main menu, and the others join with A or START.
+
+Display: F11 (or Alt+Enter) toggles fullscreen. `--720p` renders exactly
+1280x720 and scales it to the window (`--native` goes back to rendering
+at the window's size), `--no-vsync` / `--vsync` choose the presentation;
+these choices are remembered in `display.txt`.
+
 Your settings, unlocked modes, local scores and achievements are kept in
 your user folder (`%APPDATA%\geow2\geow2` on Windows), or in the folder
 given with `--profile`.
