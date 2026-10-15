@@ -39,6 +39,9 @@ class Effects {
   // sub_82030678: `colour` as a point among the wheel's six colours
   // (inverse-square weights), turned by `t` and the wheel's phase.
   void wheel(float t, const float colour[4], float out[4]) const;
+  // sub_82030270: a random point in the cube of half side `s`: z, y, x
+  // drawn in that order, each (r * 2^-31 - 1) * s; w = 0.
+  void random_cube(float s, float out[4]);
   // sub_82030168: a random point in a ball of radius `r` (4 components).
   void random_in_ball(float r, float out[4]);
   // sub_82030C58: a burst of particles at (x, y).

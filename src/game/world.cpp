@@ -94,10 +94,14 @@ void Entity::post_move(World& w) {
 Mat4 Entity::custom_placement(World& w) { return placement_style_none(w.gm, x, y, heading); }
 
 void Entity::kill(World& w, const Killer& k) {
-  // sub_82046010 with no flags: the unit's killed effect, line debris (not
-  // ported yet), a kill marker, the score, geoms, sound 2, and removal.
+  // sub_82046010 with no flags: the unit's killed effect, line debris in
+  // white, a kill marker, the score, geoms, sound 2, and removal.
   if (flags & kEntityRemoved) return;
-  if (unit) w.effects.trigger(unit->killed, x, y);
+  if (unit) {
+    w.effects.trigger(unit->killed, x, y);
+    const float white[4] = {1, 1, 1, 1};  // dat_820006C4
+    w.shatter(unit, placement(w), x, y, radius, k, white);
+  }
   w.death_markers.push_back({x, y});
   w.award(*this, k);
   if (w.geom_shapes) drop_geoms(w, *this, k);
@@ -128,6 +132,20 @@ Entity* World::add(std::unique_ptr<Entity> e) {
 }
 
 void World::remove(Entity& e) { e.flags |= kEntityRemoved; }
+
+void World::shatter(const UnitInfo* u, const Mat4& m, float px, float py, float radius, const Killer& k,
+                    const float colour[4]) {
+  if (!u || !u->has_model || u->model.parts.empty()) return;
+  float ix = k.x, iy = k.y;
+  const float dx = ix - px, dy = iy - py;
+  const float d = std::sqrt(dy * dy + dx * dx);
+  const float inv = 1.0f / d;
+  if (0.1f < d) {  // dat_82000714
+    ix = px + ((inv * dx) * radius) * 0.9f;  // dat_82000D70
+    iy = py + ((inv * dy) * radius) * 0.9f;
+  }
+  debris.smash(effects, rng, 1.0f, u->model.parts[0], m, ix, iy, k.vx, k.vy, colour);
+}
 
 void World::purge() {
   for (auto it = entities.begin(); it != entities.end();) {

@@ -114,6 +114,7 @@ struct Game {
   std::vector<StarVertex> star_vertices;  // this step's stars
   std::vector<GridVertex> walls;          // the arena walls (fixed)
   std::vector<LineVertex> particle_quads;  // this step's particle streaks
+  LineBatch debris_lines;                  // this step's line debris
   // Enemies: the units of Data.bin, the playfield and Deadline's spawner.
   std::unique_ptr<Units> units;
   std::unique_ptr<World> world;
@@ -140,9 +141,19 @@ void kill_player(Game& g, Entity& killer) {
   ++p.deaths;
   // The killer gives way to its ghost (sub_82044FA8), then
   // sub_82046010(player, killer, 0x1E): the player's killed effect, line
-  // debris (not ported yet) and a kill marker; no score, no sound 2.
+  // debris in the player's colour and a kill marker; no score, no sound 2.
+  Killer k;
+  k.x = killer.x;
+  k.y = killer.y;
+  k.vx = killer.vx;
+  k.vy = killer.vy;
+  k.kind = 2;
   replace_killer(w, killer);
-  if (g.player_unit) w.effects.trigger(g.player_unit->killed, g.player.x, g.player.y);
+  if (g.player_unit) {
+    w.effects.trigger(g.player_unit->killed, g.player.x, g.player.y);
+    const Mat4 m = placement_style_none(*g.gm, g.player.x, g.player.y, g.player.heading);
+    w.shatter(g.player_unit, m, g.player.x, g.player.y, g.player.radius, k, g.tint);
+  }
   w.death_markers.push_back({g.player.x, g.player.y});
   // (In Deadline, dat_8219CEF0 between 11 and 74 sets dat_8219CEF4 to 4:
   // with the HUD.)
@@ -467,6 +478,12 @@ void step(Game& g, const Sticks& s) {
   w.particles.step(w.particle_tuning, kStep, w.half_x, w.half_y, w.attractors, w.repulsors, g.particle_quads,
                    g.lights);
 
+  // The line debris: drawn by the render set-up (sub_82074600), then
+  // stepped on the render worker (sub_82074B28) with the stars.
+  g.debris_lines.clear();
+  w.debris.draw(g.debris_lines, g.lights);
+  w.debris.step(w.smash, kStep, w.half_x, w.half_y);
+
   // The stars' step (sub_82075548, on the render worker each frame).
   g.stars.update(*g.gm, 1.0f, g.star_vertices);
 
@@ -514,6 +531,9 @@ void foreground(const Game& g, LineBatch& out) {
     for (const Segment& s : bullet_segments(b, g.bullet_shape, *g.gm))
       emit_line(out, kLineWidthUnit, kShapeCapSize, s.a, s.b, b.colour);
   draw_player(g, out);
+  // The debris batches (drawn with the same presets, before the objects).
+  out.body.insert(out.body.end(), g.debris_lines.body.begin(), g.debris_lines.body.end());
+  out.caps.insert(out.caps.end(), g.debris_lines.caps.begin(), g.debris_lines.caps.end());
 }
 
 void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format,
@@ -573,10 +593,10 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sti
   write_png(out, w, h, {px, size_t(w) * h * 4});
   SDL_UnmapGPUTransferBuffer(dev, down);
   SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets, "
-          "%zu entities, score %lld x%d, %zu particles, %d deaths, %d bombs left, %d bomb kills",
+          "%zu entities, score %lld x%d, %zu particles, %zu debris, %d deaths, %d bombs left, %d bomb kills",
           out.string().c_str(), frames, g.player.x, g.player.y, g.player.heading, g.camera.x, g.camera.y,
           g.camera.zoom, g.bullets.size(), g.world->entities.size(), (long long)g.world->score, g.world->multiplier, g.world->particles.size(),
-          g.life.deaths, g.life.bombs, g.world->bomb_kills);
+          g.world->debris.size(), g.life.deaths, g.life.bombs, g.world->bomb_kills);
   SDL_ReleaseGPUTransferBuffer(dev, down);
   SDL_ReleaseGPUTexture(dev, tex);
   return 0;

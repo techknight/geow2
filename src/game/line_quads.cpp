@@ -11,15 +11,17 @@ constexpr float kSideMinus = -1.0f;                       // dat_82000C88
 constexpr float kSidePlus = 1.0f;                         // dat_820006C4
 constexpr float kTipAlpha = 0.0f;                         // dat_820006CC
 
-}  // namespace
+struct Rgb {
+  float r, g, b;
+};
 
-void emit_line(LineBatch& out, float width, float cap_size, const Vec4& p0, const Vec4& p1, const float colour[4]) {
-  // Colour: (r * a) * 18 per channel, in single precision (fmuls).
-  const float a = colour[3];
-  const float r = (a * colour[0]) * kColourScale;
-  const float g = (colour[1] * a) * kColourScale;
-  const float b = (colour[2] * a) * kColourScale;
+// Colour: (r * a) * 18 per channel, in single precision (fmuls).
+Rgb folded(const float c[4]) {
+  const float a = c[3];
+  return {(a * c[0]) * kColourScale, (c[1] * a) * kColourScale, (c[2] * a) * kColourScale};
+}
 
+void emit(LineBatch& out, float width, float cap_size, const Vec4& p0, const Vec4& p1, Rgb c0, Rgb c1) {
   const float dx = p1.x - p0.x, dy = p1.y - p0.y, dz = p1.z - p0.z;
   // Lengths in double: the 2D one for the perpendicular, the 3D one for
   // the cap direction. The original takes frsqrte (a hardware estimate) of
@@ -34,15 +36,19 @@ void emit_line(LineBatch& out, float width, float cap_size, const Vec4& p0, cons
   const double w = width;
   const double x0 = p0.x, y0 = p0.y, z0 = p0.z, x1 = p1.x, y1 = p1.y, z1 = p1.z;
   auto f = [](double v) { return float(v); };  // frsp
+  // The vertices at p0 take the first colour, those at p1 the second.
+  Rgb col = c0;
   auto vertex = [&](double x, double y, double z, float side, float alpha) {
-    return LineVertex{f(x), f(y), f(z), side, r, g, b, alpha};
+    return LineVertex{f(x), f(y), f(z), side, col.r, col.g, col.b, alpha};
   };
 
   // Body quad: both ends offset by +/- width along the perpendicular.
   out.body.push_back(vertex(std::fma(-w, px, x0), std::fma(-w, py, y0), z0, kSideMinus, 1.0f));
   out.body.push_back(vertex(std::fma(w, px, x0), std::fma(w, py, y0), z0, kSidePlus, 1.0f));
+  col = c1;
   out.body.push_back(vertex(std::fma(w, px, x1), std::fma(w, py, y1), z1, kSidePlus, 1.0f));
   out.body.push_back(vertex(std::fma(-w, px, x1), std::fma(-w, py, y1), z1, kSideMinus, 1.0f));
+  col = c0;
 
   // End caps: from each end outward along the 3D direction, width * cap
   // long, fading to alpha 0 at the tip. The tip coordinates chain a second
@@ -54,12 +60,25 @@ void emit_line(LineBatch& out, float width, float cap_size, const Vec4& p0, cons
                             std::fma(-w, cz, z0), kSidePlus, kTipAlpha));
   out.caps.push_back(vertex(std::fma(-w, cx, std::fma(-w, px, x0)), std::fma(-w, cy, std::fma(-w, py, y0)),
                             std::fma(-w, cz, z0), kSideMinus, kTipAlpha));
+  col = c1;
   out.caps.push_back(vertex(std::fma(-w, px, x1), std::fma(-w, py, y1), z1, kSideMinus, 1.0f));
   out.caps.push_back(vertex(std::fma(w, px, x1), std::fma(w, py, y1), z1, kSidePlus, 1.0f));
   out.caps.push_back(
       vertex(std::fma(px + cx, w, x1), std::fma(py + cy, w, y1), std::fma(w, cz, z1), kSidePlus, kTipAlpha));
   out.caps.push_back(vertex(std::fma(w, cx, std::fma(-w, px, x1)), std::fma(w, cy, std::fma(-w, py, y1)),
                             std::fma(w, cz, z1), kSideMinus, kTipAlpha));
+}
+
+}  // namespace
+
+void emit_line(LineBatch& out, float width, float cap_size, const Vec4& p0, const Vec4& p1, const float colour[4]) {
+  const Rgb c = folded(colour);
+  emit(out, width, cap_size, p0, p1, c, c);
+}
+
+void emit_line2(LineBatch& out, float width, const Vec4& p0, const Vec4& p1, const float colour0[4],
+                const float colour1[4]) {
+  emit(out, width, 1.0f, p0, p1, folded(colour0), folded(colour1));
 }
 
 }  // namespace geow2

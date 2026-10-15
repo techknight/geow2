@@ -38,6 +38,7 @@ add_library(geow2_game STATIC
   src/game/bullets.cpp
   src/game/camera.cpp
   src/game/deadline.cpp
+  src/game/debris.cpp
   src/game/display_gamma.cpp
   src/game/effects.cpp
   src/game/game_math.cpp

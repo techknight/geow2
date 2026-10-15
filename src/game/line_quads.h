@@ -35,4 +35,9 @@ constexpr float kLineWidthUnit = 1.1f;
 // rounded once on store). `width` is Render.LineWidth.Unit.
 void emit_line(LineBatch& out, float width, float cap_size, const Vec4& p0, const Vec4& p1, const float colour[4]);
 
+// sub_8205F6B8(p0, p1, colour0, colour1): the same quads with a colour per
+// end and cap size 1 (the line debris, Render.Layer.Smash).
+void emit_line2(LineBatch& out, float width, const Vec4& p0, const Vec4& p1, const float colour0[4],
+                const float colour1[4]);
+
 }  // namespace geow2

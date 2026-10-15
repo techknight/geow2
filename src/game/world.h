@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 
+#include "game/debris.h"
 #include "game/effects.h"
 #include "game/game_math.h"
 #include "game/particles.h"
@@ -151,6 +152,12 @@ class World {
   void separate(Entity& e, float radius, float strength);
   // sub_82035A40: flag for removal (deleted at the end of the step).
   void remove(Entity& e);
+  // The debris part of sub_82046010: the unit's model (part 0, through
+  // `m`) shatters from where the killer `k` struck the circle of `radius`
+  // around (x, y): 0.9 of the radius toward the killer, or the killer's
+  // position when closer than 0.1.
+  void shatter(const UnitInfo* unit, const Mat4& m, float x, float y, float radius, const Killer& k,
+               const float colour[4]);
   // Delete the removed entities (the deferred list at dat_8219D278).
   void purge();
   // sub_820408D0: the score for killing `victim`.
@@ -188,6 +195,9 @@ class World {
   Effects effects;
   std::vector<ParticleAttractor> attractors;
   std::vector<ParticleRepulsor> repulsors;
+  // Line debris (Render.Layer.Smash).
+  Debris debris;
+  SmashTuning smash;
   bool king_mode = false;               // mode 5 doubles the score
   int mode = 0;                         // dat_8219D254 (0 Deadline)
   // Geoms: their shapes (from the user's image; none, no geoms) and tuning.

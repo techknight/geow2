@@ -54,14 +54,19 @@ void Effects::wheel(float t, const float c[4], float out[4]) const {
   out[3] = d[0] + d[1] + d[2] + d[3] + d[4] + d[5];
 }
 
+void Effects::random_cube(float s, float out[4]) {
+  out[2] = std::fmaf(float(rng_.next()), kTwoPow31, -1.0f) * s;
+  out[1] = std::fmaf(float(rng_.next()), kTwoPow31, -1.0f) * s;
+  out[0] = std::fmaf(float(rng_.next()), kTwoPow31, -1.0f) * s;
+  out[3] = 0.0f;
+}
+
 void Effects::random_in_ball(float r, float out[4]) {
-  // sub_82030270(1.0) until inside the unit ball: z, y, x drawn in that
-  // order, w = 0; then scaled.
+  // sub_82030270(1.0) until inside the unit ball; then scaled.
   for (;;) {
-    const float z = std::fmaf(float(rng_.next()), kTwoPow31, -1.0f) * 1.0f;
-    const float y = std::fmaf(float(rng_.next()), kTwoPow31, -1.0f) * 1.0f;
-    const float x = std::fmaf(float(rng_.next()), kTwoPow31, -1.0f) * 1.0f;
-    const float w = 0.0f;
+    float v[4];
+    random_cube(1.0f, v);
+    const float x = v[0], y = v[1], z = v[2], w = v[3];
     if (1.0 < double(((w * w + z * z) + x * x) + y * y)) continue;
     out[0] = float(double(x) * r);
     out[1] = float(double(y) * r);
