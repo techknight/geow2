@@ -27,6 +27,7 @@ class World;
 struct Killer {
   float x = 0, y = 0, vx = 0, vy = 0;  // the shot's position and velocity
   int kind = 0;
+  int object_type = 0;                 // the killer object's type code (5: a player shot)
   int shot_bounces = 0;                // the shot's +0xA0
 };
 

@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "game/enemies.h"
 #include "game/wanderer.h"
 
 namespace geow2 {
@@ -12,6 +13,12 @@ Entity* spawn_enemy(World& w, int type, float angle, float x, float y, bool flag
   switch (type) {
     case 1:
       return w.add(std::make_unique<Wanderer>(w, x, y));
+    case 2:
+      return w.add(std::make_unique<Grunt>(w, x, y));
+    case 4:
+      return w.add(std::make_unique<Spinner>(w, x, y));
+    case 22:
+      return w.add(std::make_unique<Duck>(w, x, y));
     default:
       return nullptr;
   }
