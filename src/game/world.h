@@ -192,6 +192,9 @@ class World {
   static int cell_of(float x, float y);
   template <class F>
   void for_each_near(float x, float y, float r, F f);
+  // The same walk over cells x0..x1, y0..y1 (each wrapping at 32).
+  template <class F>
+  void for_each_cell(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, F f);
 
   const GameMath& gm;
   GameRng& rng;
@@ -233,6 +236,7 @@ class World {
   Popups popups;
   std::string bonus_multiplier_text = "Bonus multiplier";  // ID_X_BONUS_MULTIPLIER (0x79)
   int kills = 0;                        // dat_8219D0A0
+  int zones_captured = 0;               // dat_8219D0CC: King's zones touched
   // Particles and the effects that make them.
   Particles particles;
   ParticleTuning particle_tuning;
@@ -261,6 +265,11 @@ template <class F>
 void World::for_each_near(float x, float y, float r, F f) {
   const uint32_t x0 = uint32_t(int(double(x) - r) >> 5) & 0x1F, y0 = uint32_t(int(double(y) - r) >> 5) & 0x1F;
   const uint32_t x1 = uint32_t(int(double(x) + r) >> 5) & 0x1F, y1 = uint32_t(int(double(y) + r) >> 5) & 0x1F;
+  for_each_cell(x0, y0, x1, y1, f);
+}
+
+template <class F>
+void World::for_each_cell(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, F f) {
   uint32_t cx = (x0 - 1) & 0x1F, cy = y0;
   for (;;) {
     if (cx == x1) {

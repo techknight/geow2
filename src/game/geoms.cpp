@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "game/bullets.h"
+#include "game/hill.h"
 
 namespace geow2 {
 namespace {
@@ -152,8 +153,8 @@ void Geom::update(World& w) {
     vy = vy * 0.985f;
   }
   heading = std::fmaf(w.step, 5.0f, heading);  // dat_820006F0
-  // (sub_8204D2E8 then pushes it out of King's zones, list 0x8218143C:
-  // with that mode.)
+  // Out of King's zones (sub_8204D2E8 with 1.0).
+  hill_push_geom(w, *this);
 }
 
 void Geom::wall(World& w, Vec2 n) {
@@ -165,7 +166,14 @@ void Geom::wall(World& w, Vec2 n) {
 }
 
 void Geom::collect(World& w, size_t p) {
-  (void)p;
+  // sub_8204D118: collected inside a King's zone, it is lost.
+  const PlayerTarget& t = w.players[p];
+  if (in_hill(w, t.radius, t.x, t.y)) {
+    vx = 0.0f;
+    vy = 0.0f;
+    w.remove(*this);
+    return;
+  }
   // The player's multiplier (dat_8219D0A8) grows by the value, with a
   // pop-up of it ("x%s", 0.75, dat_82001D68), or at each milestone
   // (dat_8219D0AC: +10 below 100, +50 below 1000, else +100) a bigger one
@@ -227,7 +235,8 @@ void collect_geoms(World& w) {
   // Up to four players in the game (none in King's zones).
   std::vector<size_t> players;
   for (size_t i = 0; i < w.players.size() && players.size() < 4; ++i)
-    if (!w.players[i].removed) players.push_back(i);
+    if (!w.players[i].removed && !in_hill(w, w.players[i].radius, w.players[i].x, w.players[i].y))
+      players.push_back(i);
   for (size_t gi = 0; gi < w.entities.size(); ++gi) {
     Entity& e = *w.entities[gi];
     if (e.type != 0x22 || (e.flags & kEntityRemoved)) continue;

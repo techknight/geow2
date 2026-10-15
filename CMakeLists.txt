@@ -48,6 +48,7 @@ add_library(geow2_game STATIC
   src/game/gate.cpp
   src/game/geoms.cpp
   src/game/grid.cpp
+  src/game/hill.cpp
   src/game/hud.cpp
   src/game/gravity_well.cpp
   src/game/killer_ghost.cpp

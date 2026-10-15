@@ -41,6 +41,7 @@
 #include "game/geoms.h"
 #include "game/gravity_well.h"
 #include "game/grid.h"
+#include "game/hill.h"
 #include "game/hud.h"
 #include "game/killer_ghost.h"
 #include "game/light_map.h"
@@ -137,6 +138,7 @@ struct Game {
   WaveSpawner waves;     // the other modes' spawner (0x8219DDA0)
   float elapsed = 0.0f;  // dat_8219CE68
   bool over = false;     // dat_8219CE73: game over
+  bool first_spawn = true;  // dat_8219CE70
   // The player's life and the mode's rules.
   PlayerLife life;
   ModeRules rules;
@@ -320,6 +322,19 @@ void respawn(Game& g) {
   if (!spawn) return;
   spawn_player(g);  // sound event 3
   g.field_live = true;
+  // King's first three zones come with the game's first spawn
+  // (dat_8219CE70): at the centre, then two placed clear of the rest.
+  if (g.first_spawn) {
+    g.first_spawn = false;
+    if (g.rules.mode == 5) {
+      World& w = *g.world;
+      w.add(std::make_unique<Hill>(w, 0.0f, 0.0f));
+      for (int i = 0; i < 2; ++i) {
+        const Vec2 at = hill_position(w);
+        w.add(std::make_unique<Hill>(w, at.x, at.y));
+      }
+    }
+  }
 }
 
 // A player starting to fade in, single player (sub_820366A0): 40 rounds of
@@ -475,9 +490,9 @@ void update_player(Game& g, const Sticks& s) {
     const Vec2 fire = stick_vector(stick_axis(s.fire_x, false), stick_axis(s.fire_y, true));
     if (player_thrust(g.player, move, *g.gm)) player_exhaust(w, g.player);
     const size_t fired = g.bullets.size();
-    // sub_8204EFD0: never in Pacifism; in King only inside a zone (zones
-    // not ported yet, so never).
-    const bool may_fire = g.rules.mode != 4 && g.rules.mode != 5;
+    // sub_8204EFD0: never in Pacifism; in King only inside a zone.
+    const bool may_fire =
+        g.rules.mode == 5 ? in_hill(w, g.player.radius, g.player.x, g.player.y) : g.rules.mode != 4;
     player_fire_step(g.player, g.weapon, fire, kStep, *g.gm, may_fire, g.bullets);
     for (size_t i = fired; i < g.bullets.size(); ++i) w.enlist(g.bullets[i]);
     // The larger trigger (axes 8 and 9) sets off a bomb: a blast from the
@@ -582,6 +597,9 @@ void step(Game& g, const Sticks& s) {
       in.special = Vec2{e->x, e->y};
       break;
     }
+  // King's zones: radius, strength 4.
+  in.pushes.emplace_back();
+  hill_grid_pushes(w, in.pushes.back());
   in.pushes.emplace_back();
   for (const Bullet& b : g.bullets) in.pushes.back().push_back({b.x, b.y, b.grid_radius, 2.0f});
   // Kill markers: radius 32 (dat_82001140), strength 6 (dat_82001414).
