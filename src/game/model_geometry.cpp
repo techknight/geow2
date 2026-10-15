@@ -11,8 +11,10 @@ namespace {
 float game_sin(float a) { return std::sin(a); }
 float game_cos(float a) { return std::cos(a); }
 
-constexpr float kTwoPi = 6.28318548f;                    // dat_821825F8
-constexpr double kDegToRad = double(0.0174532924f);        // dat_82000F7C, an f32 widened to double
+// All of the model build is single precision; fused multiply-adds are
+// written with std::fmaf where the disassembly has fmadds/fmsubs.
+constexpr float kTwoPi = 6.28318548f;     // dat_821825F8
+constexpr float kDegToRad = 0.0174532924f;  // dat_82000F7C
 constexpr int kMaxDepth = 9;                // sub_82062460 stops at depth 9
 
 const FlaskStruct* as_struct(const FlaskValue* v) {
@@ -55,30 +57,30 @@ Mat4 euler(float a, float b, float c) {
   r.m[0] = cc * cb;
   r.m[1] = sc * cb;
   r.m[2] = -sb;
-  // Products are rounded to float, the final multiply-add is done in double
-  // and rounded once, as in the decompile.
-  r.m[4] = float(double(sb * sa) * double(cc) - double(sc * ca));
-  r.m[5] = float(double(sb * sa) * double(sc) + double(cc * ca));
+  // fmsubs/fmadds at 0x820319D4..0x820319FC.
+  r.m[4] = std::fmaf(sb * sa, cc, -(sc * ca));
+  r.m[5] = std::fmaf(sb * sa, sc, cc * ca);
   r.m[6] = cb * sa;
-  r.m[8] = float(double(sb * ca) * double(cc) + double(sc * sa));
-  r.m[9] = float(double(sb * ca) * double(sc) - double(cc * sa));
+  r.m[8] = std::fmaf(sb * ca, cc, sc * sa);
+  r.m[9] = std::fmaf(sb * ca, sc, -(cc * sa));
   r.m[10] = cb * ca;
   return r;
 }
 
 // sub_82041600: rotation about a unit axis.
 Mat4 axis_angle(float angle, float x, float y, float z) {
-  const float c = game_cos(angle), s = game_sin(angle), t = float(1.0 - double(c));
+  // All nine elements are fused (0x820416A0..0x82041768).
+  const float c = game_cos(angle), s = game_sin(angle), t = 1.0f - c;
   Mat4 r = Mat4::identity();
-  r.m[0] = float(double(x * x) * double(t) + double(c));
-  r.m[1] = (t * x) * y + z * s;
-  r.m[2] = (z * t) * x - s * y;
-  r.m[4] = (t * x) * y - z * s;
-  r.m[5] = float(double(y * y) * double(t) + double(c));
-  r.m[6] = (z * t) * y + x * s;
-  r.m[8] = (z * t) * x + s * y;
-  r.m[9] = (z * t) * y - x * s;
-  r.m[10] = float(double(z * z) * double(t) + double(c));
+  r.m[0] = std::fmaf(x * x, t, c);
+  r.m[1] = std::fmaf(t * x, y, z * s);
+  r.m[2] = std::fmaf(z * t, x, -(s * y));
+  r.m[4] = std::fmaf(t * x, y, -(z * s));
+  r.m[5] = std::fmaf(y * y, t, c);
+  r.m[6] = std::fmaf(z * t, y, x * s);
+  r.m[8] = std::fmaf(z * t, x, s * y);
+  r.m[9] = std::fmaf(z * t, y, -(x * s));
+  r.m[10] = std::fmaf(z * z, t, c);
   return r;
 }
 
@@ -100,11 +102,11 @@ Mat4 compose(const FlaskList* transforms, const Mat4& parent) {
         }
       } else if (t->type == "TransformRotate") {
         const Vec4 r = vector3(as_struct(t->find("rotation")), 0.0f);
-        local = mul(local, euler(float(r.x * kDegToRad), float(r.y * kDegToRad), float(r.z * kDegToRad)));
+        local = mul(local, euler(r.x * kDegToRad, r.y * kDegToRad, r.z * kDegToRad));
       } else if (t->type == "TransformAxisAngle") {
         const Vec4 a = vector3(as_struct(t->find("axis")), 0.0f);
-        const float inv = 1.0f / std::sqrt(a.z * a.z + a.y * a.y + a.x * a.x);
-        local = mul(local, axis_angle(float(as_float(t->find("angle")) * kDegToRad), a.x * inv, a.y * inv, a.z * inv));
+        const float inv = 1.0f / std::sqrt((a.y * a.y + a.z * a.z) + a.x * a.x);  // fsqrts, fdivs
+        local = mul(local, axis_angle(as_float(t->find("angle")) * kDegToRad, a.x * inv, a.y * inv, a.z * inv));
       } else if (t->type == "TransformTranslate") {
         const Vec4 d = vector3(as_struct(t->find("translation")), 0.0f);
         local.m[12] += d.x;
@@ -151,13 +153,14 @@ struct Walker {
       const float radius = as_float(s->find("radius"));
       const int sides = as_int(s->find("sides"));
       const float slip = as_float(s->find("slip"));
+      const float slip_rad = slip * kDegToRad;  // fmuls
       for (int k = as_int(s->find("gap")); k < sides; ++k) {
-        auto angle = [&](int i) {
-          return float(double(i) / double(sides)) * kTwoPi + float(double(slip) * kDegToRad);
-        };
+        // fdivs of the converted ints, then fmadds (0x820626EC..0x820626F8);
+        // points are fmadds of radius with sin/cos (0x82062730..0x8206278C).
+        auto angle = [&](int i) { return std::fmaf(float(i) / float(sides), kTwoPi, slip_rad); };
         const float a0 = angle(k), a1 = angle(k + 1);
-        const Vec4 p0{radius * game_cos(a0) + c.x, radius * game_sin(a0) + c.y, c.z, 1.0f};
-        const Vec4 p1{radius * game_cos(a1) + c.x, radius * game_sin(a1) + c.y, c.z, 1.0f};
+        const Vec4 p0{std::fmaf(radius, game_cos(a0), c.x), std::fmaf(radius, game_sin(a0), c.y), c.z, 1.0f};
+        const Vec4 p1{std::fmaf(radius, game_cos(a1), c.x), std::fmaf(radius, game_sin(a1), c.y), c.z, 1.0f};
         emit(p0, p1, colour, m);
       }
     } else if (s->type == "SectionTransform") {

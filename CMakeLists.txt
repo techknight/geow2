@@ -6,7 +6,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(MSVC)
-  add_compile_options(/W4 /permissive- /utf-8)
+  # Float results must match the original's instruction by instruction:
+  # no reassociation and no implicit contraction into FMAs (fused
+  # operations are written explicitly with std::fmaf where the original
+  # uses them).
+  add_compile_options(/W4 /permissive- /utf-8 /fp:precise /fp:contract-)
   add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX)
 endif()
 
@@ -31,6 +35,7 @@ target_link_libraries(geow2_data PUBLIC geow2_extract)
 # Game logic and content built from the original data (no rendering, no platform code).
 add_library(geow2_game STATIC
   src/game/model_geometry.cpp
+  src/game/player_motion.cpp
 )
 target_link_libraries(geow2_game PUBLIC geow2_data)
 

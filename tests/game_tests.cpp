@@ -6,6 +6,7 @@
 #include <string>
 
 #include "game/model_geometry.h"
+#include "game/player_motion.h"
 
 using namespace geow2;
 
@@ -98,7 +99,61 @@ static void test_scale_prepended() {
   expect(g.parts[0].size() == 1 && near(g.parts[0][0].p0.x, 7), "scale is prepended to the composition");
 }
 
+static void test_stick() {
+  // Full deflection right: x = (32767 - 0.5) / 32767.5 ~ 1; Y inverted.
+  expect(near(stick_axis(32767, false), 1.0f), "stick x full");
+  expect(stick_axis(32767, true) < 0.0f, "stick y inverted");
+  // Dead zone 0.25 on the clamped magnitude.
+  const Vec2 small = stick_vector(0.2f, 0.0f);
+  expect(small.x == 0.0f && small.y == 0.0f, "dead zone");
+  const Vec2 big = stick_vector(2.0f, 0.0f);
+  expect(near(big.x, 1.0f), "magnitude clamped to 1");
+}
+
+static void test_thrust_and_integrate() {
+  // One frame of full thrust right from rest: v = 50 * 1 * 0.8 = 40;
+  // x += 40 / 60.
+  PlayerMotion p;
+  player_thrust(p, {1.0f, 0.0f});
+  expect(near(p.vx, 40.0f) && near(p.vy, 0.0f), "thrust then damping");
+  expect(near(p.thrust_level, 1.0f), "thrust level");
+  integrate(p, 1.0f / 60.0f);
+  expect(near(p.x, 40.0f / 60.0f), "integrate");
+  // Heading eases a tenth of the way: target atan2(0, 1) = 0 from 0.
+  expect(near(p.heading, 0.0f), "heading toward 0");
+  PlayerMotion q;
+  q.heading = 3.0f;
+  player_thrust(q, {-1.0f, 0.0f});  // target pi: shortest turn is +0.14159
+  expect(near(q.heading, 3.0f + 0.1f * (3.14159265f - 3.0f)), "heading shortest turn");
+  PlayerMotion w;
+  w.heading = -3.0f;
+  player_thrust(w, {-1.0f, 0.0f});  // target pi from -3: the short way is -0.14159 (through -pi)
+  expect(near(w.heading, -3.0f - 0.1f * 0.14159265f), "heading wraps through -pi");
+}
+
+static void test_arena() {
+  // Radius 5 in a 300 x 200 half-extent arena: x = 299 is past 295.
+  float x = 299.0f, y = 0.0f;
+  Vec2 n;
+  expect(arena_contact(5.0f, 300.0f, 200.0f, x, y, n), "arena contact");
+  expect(near(x, 295.0f) && near(n.x, -1.0f) && near(n.y, 0.0f), "arena clamp and normal");
+  float cx = 299.0f, cy = 199.0f;
+  arena_contact(5.0f, 300.0f, 200.0f, cx, cy, n);
+  expect(near(n.x, -0.707f) && near(n.y, -0.707f), "corner normal 0.707");
+  float ix = 0.0f, iy = 0.0f;
+  expect(!arena_contact(5.0f, 300.0f, 200.0f, ix, iy, n), "inside");
+  // Wall slide keeps the tangential part of the velocity.
+  PlayerMotion p;
+  p.vx = 10.0f;
+  p.vy = 3.0f;
+  const bool sound = player_wall(p, {-1.0f, 0.0f});
+  expect(near(p.vx, 0.0f) && near(p.vy, 3.0f) && sound && p.wall_sound_frames == 2, "wall slide");
+}
+
 int main() {
+  test_stick();
+  test_thrust_and_integrate();
+  test_arena();
   test_mesh();
   test_circle();
   test_scale_prepended();
