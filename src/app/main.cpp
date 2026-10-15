@@ -1,7 +1,7 @@
 // geow2: the game.
 //
 //   geow2 [--data <cache-dir>]
-//   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> [--stick <x> <y>]
+//   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> [--stick <x> <y>] [--fire <x> <y>]
 //
 // The second form runs n simulation steps without a window (input: a fixed
 // raw stick value, XInput convention) and saves the final frame.
@@ -24,6 +24,7 @@
 #include "app/png.h"
 #include "data/flask.h"
 #include "extract/bytes.h"
+#include "game/bullets.h"
 #include "game/camera.h"
 #include "game/game_math.h"
 #include "game/model_geometry.h"
@@ -80,6 +81,9 @@ struct Game {
   float tint[4] = {1, 1, 1, 1};  // player colour (constructor: unit tint, rgb times alpha)
   PlayerMotion player;
   CameraState camera;
+  PlayerWeapon weapon;
+  std::vector<Bullet> bullets;
+  BulletShape bullet_shape;
 };
 
 bool load(Game& g, const fs::path& cache) {
@@ -115,16 +119,33 @@ bool load(Game& g, const fs::path& cache) {
   }
   const FlaskValue model = g.db->decode(ref->record);
   if (const FlaskStruct* m = as_struct(&model)) g.ship = build_model_geometry(*m, *g.gm);
+  try {
+    g.bullet_shape = BulletShape::from_image(read_file(cache / "xex" / "image.bin"));
+  } catch (const std::exception& e) {
+    SDL_Log("cannot read the bullet shape: %s", e.what());
+    return false;
+  }
   return true;
 }
 
 // One simulation step with a raw (XInput convention) left stick value.
-void step(Game& g, int16_t raw_x, int16_t raw_y) {
-  const Vec2 move = stick_vector(stick_axis(raw_x, false), stick_axis(raw_y, true));
+struct Sticks {
+  int16_t move_x = 0, move_y = 0, fire_x = 0, fire_y = 0;  // raw, XInput convention
+};
+
+void step(Game& g, const Sticks& s) {
+  // The player's update (sub_8204FF00): thrust, then firing; then the
+  // common update integrates its position.
+  const Vec2 move = stick_vector(stick_axis(s.move_x, false), stick_axis(s.move_y, true));
+  const Vec2 fire = stick_vector(stick_axis(s.fire_x, false), stick_axis(s.fire_y, true));
   player_thrust(g.player, move, *g.gm);
+  player_fire_step(g.player, g.weapon, fire, kStep, *g.gm, g.bullets);
   integrate(g.player, kStep);
   Vec2 n;
   if (arena_contact(g.player.radius, kArenaHalfX, kArenaHalfY, g.player.x, g.player.y, n)) player_wall(g.player, n);
+  // Then the other entities, bullets included (the player list is updated
+  // first, so bullets fired this step already move: to verify in the oracle).
+  std::erase_if(g.bullets, [](Bullet& b) { return !bullet_step(b, kStep, kArenaHalfX, kArenaHalfY); });
   // The camera follows after the entity updates (sub_820366A0).
   camera_follow_single(g.camera, &g.player.x, &g.player.y, 1, kArenaHalfX, kArenaHalfY);
 }
@@ -140,6 +161,14 @@ std::vector<Vertex> ship_vertices(const Game& g) {
     const float r = l.r * g.tint[0], gg = l.g * g.tint[1], bl = l.b * g.tint[2], al = l.a * g.tint[3];
     out.push_back({a.x, a.y, a.z, 1.0f, r, gg, bl, al});
     out.push_back({b.x, b.y, b.z, 1.0f, r, gg, bl, al});
+  }
+  // Bullets: their line shape in their colour (sub_82061908); the glow
+  // sprite is not drawn yet.
+  for (const Bullet& b : g.bullets) {
+    for (const Segment& s : bullet_segments(b, g.bullet_shape, *g.gm)) {
+      out.push_back({s.a.x, s.a.y, s.a.z, 1.0f, b.colour[0], b.colour[1], b.colour[2], b.colour[3]});
+      out.push_back({s.b.x, s.b.y, s.b.z, 1.0f, b.colour[0], b.colour[1], b.colour[2], b.colour[3]});
+    }
   }
   return out;
 }
@@ -253,8 +282,8 @@ void draw(Gpu& gpu, SDL_GPUCommandBuffer* cmd, SDL_GPUGraphicsPipeline* pipe, SD
   SDL_EndGPURenderPass(pass);
 }
 
-int run_headless(Gpu& gpu, Game& g, int frames, int16_t sx, int16_t sy, const fs::path& out) {
-  for (int i = 0; i < frames; ++i) step(g, sx, sy);
+int run_headless(Gpu& gpu, Game& g, int frames, const Sticks& sticks, const fs::path& out) {
+  for (int i = 0; i < frames; ++i) step(g, sticks);
   const uint32_t w = 1280, h = 720;
   SDL_GPUTextureCreateInfo tci{};
   tci.type = SDL_GPU_TEXTURETYPE_2D;
@@ -289,9 +318,9 @@ int run_headless(Gpu& gpu, Game& g, int frames, int16_t sx, int16_t sy, const fs
   const auto* px = static_cast<const uint8_t*>(SDL_MapGPUTransferBuffer(gpu.device, down, false));
   write_png(out, w, h, {px, size_t(w) * h * 4});
   SDL_UnmapGPUTransferBuffer(gpu.device, down);
-  SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f",
+  SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets",
           out.string().c_str(), frames, g.player.x, g.player.y, g.player.heading, g.camera.x, g.camera.y,
-          g.camera.zoom);
+          g.camera.zoom, g.bullets.size());
   SDL_ReleaseGPUTransferBuffer(gpu.device, down);
   SDL_ReleaseGPUGraphicsPipeline(gpu.device, pipe);
   SDL_ReleaseGPUTexture(gpu.device, tex);
@@ -317,24 +346,32 @@ int run_window(Gpu& gpu, Game& g) {
       if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad = SDL_OpenGamepad(e.gdevice.which);
       if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) running = false;
     }
-    // Left stick in the XInput convention (SDL's Y axis points down).
-    int sx = 0, sy = 0;
+    // Sticks in the XInput convention (SDL's Y axes point down): left
+    // moves, right fires (the original's default, as its rules screens show).
+    int mx = 0, my = 0, fx = 0, fy = 0;
     if (pad) {
-      sx = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
-      sy = -int(SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY));
+      mx = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
+      my = -int(SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY));
+      fx = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHTX);
+      fy = -int(SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHTY));
     }
     const bool* keys = SDL_GetKeyboardState(nullptr);
-    if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT]) sx = -32768;
-    if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) sx = 32767;
-    if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP]) sy = 32767;
-    if (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN]) sy = -32768;
+    if (keys[SDL_SCANCODE_A]) mx = -32768;
+    if (keys[SDL_SCANCODE_D]) mx = 32767;
+    if (keys[SDL_SCANCODE_W]) my = 32767;
+    if (keys[SDL_SCANCODE_S]) my = -32768;
+    if (keys[SDL_SCANCODE_LEFT]) fx = -32768;
+    if (keys[SDL_SCANCODE_RIGHT]) fx = 32767;
+    if (keys[SDL_SCANCODE_UP]) fy = 32767;
+    if (keys[SDL_SCANCODE_DOWN]) fy = -32768;
+    const Sticks sticks{clamp16(mx), clamp16(my), clamp16(fx), clamp16(fy)};
 
     // Fixed 1/60 s steps from real time; the picture shows the latest step.
     const uint64_t now = SDL_GetTicksNS();
     pending += double(now - last) / 1e9;
     last = now;
     for (int n = 0; pending >= kStep && n < 8; ++n) {
-      step(g, clamp16(sx), clamp16(sy));
+      step(g, sticks);
       pending -= kStep;
     }
     if (pending > kStep) pending = 0.0;
@@ -356,7 +393,7 @@ int run_window(Gpu& gpu, Game& g) {
 int main(int argc, char** argv) {
   fs::path cache = fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "cache";
   int frames = -1;
-  int16_t sx = 0, sy = 0;
+  Sticks sticks;
   fs::path screenshot;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -364,10 +401,14 @@ int main(int argc, char** argv) {
     else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
     else if (a == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
     else if (a == "--stick" && i + 2 < argc) {
-      sx = clamp16(std::atoi(argv[++i]));
-      sy = clamp16(std::atoi(argv[++i]));
+      sticks.move_x = clamp16(std::atoi(argv[++i]));
+      sticks.move_y = clamp16(std::atoi(argv[++i]));
+    } else if (a == "--fire" && i + 2 < argc) {
+      sticks.fire_x = clamp16(std::atoi(argv[++i]));
+      sticks.fire_y = clamp16(std::atoi(argv[++i]));
     } else {
-      std::fprintf(stderr, "usage: geow2 [--data <cache>] [--frames <n> --screenshot <png> [--stick <x> <y>]]\n");
+      std::fprintf(stderr,
+                   "usage: geow2 [--data <cache>] [--frames <n> --screenshot <png> [--stick <x> <y>] [--fire <x> <y>]]\n");
       return 2;
     }
   }
@@ -389,7 +430,7 @@ int main(int argc, char** argv) {
   gpu.vs = load_shader(gpu.device, shaders / "line.vert.spv", SDL_GPU_SHADERSTAGE_VERTEX);
   gpu.fs = load_shader(gpu.device, shaders / "line.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT);
   if (!gpu.vs || !gpu.fs) return 1;
-  const int rc = headless ? run_headless(gpu, game, frames, sx, sy, screenshot) : run_window(gpu, game);
+  const int rc = headless ? run_headless(gpu, game, frames, sticks, screenshot) : run_window(gpu, game);
   if (gpu.vertices) SDL_ReleaseGPUBuffer(gpu.device, gpu.vertices);
   if (gpu.upload) SDL_ReleaseGPUTransferBuffer(gpu.device, gpu.upload);
   SDL_ReleaseGPUShader(gpu.device, gpu.vs);

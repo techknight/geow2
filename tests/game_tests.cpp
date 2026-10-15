@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 
+#include "game/bullets.h"
 #include "game/camera.h"
 #include "game/grid.h"
 #include "game/model_geometry.h"
@@ -271,7 +272,37 @@ static void test_grid() {
   expect(g.position(0, 66).x == g.rest(0, 66).x && g.position(0, 66).y == g.rest(0, 66).y, "grid border fixed");
 }
 
+static void test_firing() {
+  // Fire right from rest: three bullets (side, centre, side) at 520 / 600 /
+  // 520 units per second, cooldown 0.1; then the cooldown counts down (six
+  // steps of 1/60 bring it to ~0) and the next volley comes on the step
+  // after, so volleys are 7 steps apart.
+  PlayerMotion p;
+  PlayerWeapon w;
+  std::vector<Bullet> out;
+  player_fire_step(p, w, {1.0f, 0.0f}, 1.0f / 60.0f, kMath, out);
+  expect(out.size() == 3 && near(w.cooldown, 0.1f), "three bullets and cooldown");
+  if (out.size() == 3) {
+    expect(near(out[1].vx, 600.0f) && near(out[1].vy, 0.0f), "centre bullet speed 600");
+    const float side = std::sqrt(out[0].vx * out[0].vx + out[0].vy * out[0].vy);
+    expect(near(side, 520.0f) && out[0].type == 0 && out[1].type == 2, "side bullet speed 520");
+  }
+  int steps = 0;
+  while (out.size() == 3 && steps < 20) {
+    player_fire_step(p, w, {1.0f, 0.0f}, 1.0f / 60.0f, kMath, out);
+    ++steps;
+  }
+  expect(steps == 7, "next volley 7 steps later");
+  // A bullet leaving the arena is marked on contact and removed next step.
+  Bullet b;
+  b.x = 296.0f;
+  b.vx = 600.0f;
+  expect(bullet_step(b, 1.0f / 60.0f, 300.0f, 200.0f) && b.hit && near(b.x, 298.0f), "bullet wall contact");
+  expect(!bullet_step(b, 1.0f / 60.0f, 300.0f, 200.0f), "bullet removed after contact");
+}
+
 int main() {
+  test_firing();
   test_grid();
   test_camera_follow();
   test_camera_pieces();

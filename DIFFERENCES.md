@@ -31,10 +31,11 @@ Format for each entry:
 - **Original**: Xbox 360 pads only, read through `XamInputGetState`; the
   left stick's raw value is mapped as (raw - 0.5) / 32767.5 with Y
   inverted (`sub_82037EA0`), then a 0.25 dead zone (`sub_8204EE28`).
-- **Port**: any pad SDL supports, with SDL's Y axis turned into the
-  XInput convention so the same mapping applies. Keyboard: WASD or the
-  arrow keys give full deflection on the move stick (fire and bomb
-  bindings to come with those features).
+- **Port**: any pad SDL supports, with SDL's Y axes turned into the
+  XInput convention so the same mapping applies (left stick moves, right
+  stick fires, the original's default). Keyboard: WASD give full
+  deflection on the move stick, the arrow keys on the fire stick (bomb
+  binding to come with that feature).
 - **Decided**: 2026-10-15.
 
 ### Resolution
