@@ -5,7 +5,9 @@
 #include <memory>
 #include <vector>
 
+#include "game/effects.h"
 #include "game/game_math.h"
+#include "game/particles.h"
 #include "game/light_map.h"
 #include "game/line_quads.h"
 #include "game/math.h"
@@ -98,7 +100,8 @@ struct PlayerTarget {
 // the players.
 class World {
  public:
-  World(const GameMath& gm, GameRng& rng, const Units& units) : gm(gm), rng(rng), units(units) {}
+  World(const GameMath& gm, GameRng& rng, const Units& units)
+      : gm(gm), rng(rng), units(units), effects(gm, rng, particles) {}
 
   Entity* add(std::unique_ptr<Entity> e);
   // One step of every entity (sub_820366A0 step 4, sub_820453E0 each).
@@ -151,6 +154,12 @@ class World {
   int64_t score = 0;
   int multiplier = 1;
   int kills = 0;                        // dat_8219D0A0
+  // Particles and the effects that make them.
+  Particles particles;
+  ParticleTuning particle_tuning;
+  Effects effects;
+  std::vector<ParticleAttractor> attractors;
+  std::vector<ParticleRepulsor> repulsors;
   bool king_mode = false;               // mode 5 doubles the score
 };
 

@@ -50,6 +50,15 @@ Units Units::load(const Flask& db, const GameMath& gm) {
     colour(s->find("tint"), info.tint);
     colour(s->find("glowColour"), info.glow);
     info.glow_size = as_float(s->find("glowSize"));
+    if (const FlaskStruct* k = as_struct(s->find("killed"))) {
+      if (k->type == "EffectExplosion") info.killed.kind = UnitEffect::kExplosion;
+      if (k->type == "EffectRandomExplosion") info.killed.kind = UnitEffect::kRandomExplosion;
+      const FlaskValue* count = k->find("count");
+      if (auto* c = count ? std::get_if<int64_t>(&count->v) : nullptr) info.killed.count = int(*c);
+      info.killed.radius = as_float(k->find("radius"));
+      colour(k->find("colour0"), info.killed.colour0);
+      colour(k->find("colour1"), info.killed.colour1);
+    }
     const FlaskValue* model_ref = s->find("model");
     if (auto* ref = model_ref ? std::get_if<FlaskRef>(&model_ref->v) : nullptr) {
       const FlaskValue model = db.decode(ref->record);

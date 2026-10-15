@@ -63,7 +63,8 @@ class Renderer {
   // letterboxed. `grid` is null while the grid is faded out.
   void draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextureFormat format, uint32_t out_w,
             uint32_t out_h, const Mat4& view_projection, const std::vector<StarVertex>& stars,
-            const std::vector<GridVertex>* grid, const std::vector<GridVertex>& walls, const LineBatch& foreground);
+            const std::vector<GridVertex>* grid, const std::vector<GridVertex>& walls,
+            const std::vector<LineVertex>& particles, const LineBatch& foreground);
 
   RenderTuning tuning;
 
@@ -107,6 +108,7 @@ class Renderer {
   SDL_GPUGraphicsPipeline* sprites_ = nullptr;
   SDL_GPUGraphicsPipeline* stars_ = nullptr;
   SDL_GPUGraphicsPipeline* walls_ = nullptr;
+  SDL_GPUGraphicsPipeline* particles_ = nullptr;
   SDL_GPUGraphicsPipeline* downsample_ = nullptr;
   SDL_GPUGraphicsPipeline* blur_ = nullptr;
   SDL_GPUGraphicsPipeline* combine_ = nullptr;
@@ -119,7 +121,7 @@ class Renderer {
   SDL_GPUTexture* sprite_ = nullptr;          // dat_821A1D60
   SDL_GPUTexture* star_sprite_ = nullptr;     // dat_821B4768
 
-  Buffer lines_, grid_vertices_, wall_vertices_, warp_vertices_, sprite_vertices_, star_vertices_, quad_index_,
+  Buffer lines_, particle_vertices_, grid_vertices_, wall_vertices_, warp_vertices_, sprite_vertices_, star_vertices_, quad_index_,
       warp_index_;
   uint32_t quad_index_quads_ = 0;
   uint32_t warp_index_count_ = 0;

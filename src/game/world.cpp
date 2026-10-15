@@ -92,10 +92,11 @@ void Entity::post_move(World& w) {
 Mat4 Entity::custom_placement(World& w) { return placement_style_none(w.gm, x, y, heading); }
 
 void Entity::kill(World& w, const Killer& k) {
-  // sub_82046010 with no flags: explosion and line debris (not ported
-  // yet), a kill marker, the score, geoms (not ported yet), sound 2, and
-  // removal.
+  // sub_82046010 with no flags: the unit's killed effect, line debris (not
+  // ported yet), a kill marker, the score, geoms (not ported yet), sound
+  // 2, and removal.
   if (flags & kEntityRemoved) return;
+  if (unit) w.effects.trigger(unit->killed, x, y);
   w.death_markers.push_back({x, y});
   w.award(*this, k);
   w.remove(*this);

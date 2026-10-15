@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "data/flask.h"
+#include "game/effects.h"
 #include "game/game_math.h"
 #include "game/math.h"
 #include "game/model_geometry.h"
@@ -26,6 +27,7 @@ struct UnitInfo {
   float tint[4] = {1, 1, 1, 1};
   float glow[4] = {0, 0, 0, 0};
   float glow_size = 0.0f;
+  UnitEffect killed;  // +0x40: triggered on death (sub_82030658)
 };
 
 class Units {

@@ -105,6 +105,7 @@ struct Game {
   StarField stars;
   std::vector<StarVertex> star_vertices;  // this step's stars
   std::vector<GridVertex> walls;          // the arena walls (fixed)
+  std::vector<LineVertex> particle_quads;  // this step's particle streaks
   // Enemies: the units of Data.bin, the playfield and Deadline's spawner.
   std::unique_ptr<Units> units;
   std::unique_ptr<World> world;
@@ -112,7 +113,7 @@ struct Game {
   float elapsed = 0.0f;  // dat_8219CE68
 };
 
-bool load(Game& g, const fs::path& cache) {
+bool load(Game& g, const fs::path& cache, int64_t seed) {
   try {
     g.db = std::make_unique<Flask>(read_file(cache / "files" / "Data.bin"));
     g.gm = std::make_unique<GameMath>(GameMath::from_image(read_file(cache / "xex" / "image.bin")));
@@ -148,7 +149,10 @@ bool load(Game& g, const fs::path& cache) {
   g.grid.reset(kArenaHalfX, kArenaHalfY);
   // The generator is seeded from the tick count at start-up
   // (sub_82037C20), then the starfield draws from it (sub_82075318).
-  g.rng.seed_from_ticks(SDL_GetTicksNS() / 1000000);
+  if (seed >= 0)
+    g.rng.seed(uint32_t(seed));  // --seed, for reproducible captures
+  else
+    g.rng.seed_from_ticks(SDL_GetTicksNS() / 1000000);
   g.stars.init(g.rng);
   g.units = std::make_unique<Units>(Units::load(*g.db, *g.gm));
   g.world = std::make_unique<World>(*g.gm, g.rng, *g.units);
@@ -242,6 +246,13 @@ void step(Game& g, const Sticks& s) {
   }
   emit_light(g.lights, g.glow_size, g.player.x, g.player.y, g.glow);
 
+  // The colour wheel turns (sub_82030A98); the particles step on the
+  // render workers (sub_82063A38), after the entities' lights.
+  w.effects.step(kStep);
+  g.particle_quads.clear();
+  w.particles.step(w.particle_tuning, kStep, w.half_x, w.half_y, w.attractors, w.repulsors, g.particle_quads,
+                   g.lights);
+
   // The stars' step (sub_82075548, on the render worker each frame).
   g.stars.update(*g.gm, 1.0f, g.star_vertices);
 
@@ -275,7 +286,7 @@ void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_
   static LineBatch front;
   foreground(g, front);
   r.draw(cmd, target, format, w, h, camera_view_projection(g.camera, *g.gm), g.star_vertices,
-         g.grid_visible ? &g.grid_lines : nullptr, g.walls, front);
+         g.grid_visible ? &g.grid_lines : nullptr, g.walls, g.particle_quads, front);
 }
 
 // One simulation step and its light map update (one per step, as the
@@ -325,9 +336,9 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sti
   write_png(out, w, h, {px, size_t(w) * h * 4});
   SDL_UnmapGPUTransferBuffer(dev, down);
   SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets, "
-          "%zu enemies, score %lld",
+          "%zu enemies, score %lld, %zu particles",
           out.string().c_str(), frames, g.player.x, g.player.y, g.player.heading, g.camera.x, g.camera.y,
-          g.camera.zoom, g.bullets.size(), g.world->entities.size(), (long long)g.world->score);
+          g.camera.zoom, g.bullets.size(), g.world->entities.size(), (long long)g.world->score, g.world->particles.size());
   SDL_ReleaseGPUTransferBuffer(dev, down);
   SDL_ReleaseGPUTexture(dev, tex);
   return 0;
@@ -401,11 +412,13 @@ int main(int argc, char** argv) {
   Sticks sticks;
   fs::path screenshot;
   uint32_t shot_w = 1280, shot_h = 720;
+  int64_t seed = -1;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--data" && i + 1 < argc) cache = argv[++i];
     else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
     else if (a == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
+    else if (a == "--seed" && i + 1 < argc) seed = std::atoll(argv[++i]);
     else if (a == "--size" && i + 2 < argc) {
       shot_w = uint32_t(std::atoi(argv[++i]));
       shot_h = uint32_t(std::atoi(argv[++i]));
@@ -417,8 +430,8 @@ int main(int argc, char** argv) {
       sticks.fire_y = clamp16(std::atoi(argv[++i]));
     } else {
       std::fprintf(stderr,
-                   "usage: geow2 [--data <cache>] [--frames <n> --screenshot <png> [--size <w> <h>] [--stick <x> <y>]"
-                   " [--fire <x> <y>]]\n");
+                   "usage: geow2 [--data <cache>] [--seed <n>] [--frames <n> --screenshot <png> [--size <w> <h>]"
+                   " [--stick <x> <y>] [--fire <x> <y>]]\n");
       return 2;
     }
   }
@@ -429,7 +442,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   Game game;
-  if (!load(game, cache)) return 1;
+  if (!load(game, cache, seed)) return 1;
   SDL_GPUDevice* dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
   if (!dev) {
     SDL_Log("no GPU device: %s", SDL_GetError());

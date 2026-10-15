@@ -39,11 +39,13 @@ add_library(geow2_game STATIC
   src/game/camera.cpp
   src/game/deadline.cpp
   src/game/display_gamma.cpp
+  src/game/effects.cpp
   src/game/game_math.cpp
   src/game/grid.cpp
   src/game/light_map.cpp
   src/game/line_quads.cpp
   src/game/model_geometry.cpp
+  src/game/particles.cpp
   src/game/player_motion.cpp
   src/game/rotation.cpp
   src/game/shots.cpp
@@ -78,7 +80,7 @@ if(GEOW2_BUILD_GAME)
   foreach(shader line.vert line_body.frag line_cap.frag fullscreen.vert downsample.frag blur.frag combine.frag
           composite.frag grid.vert grid.frag light_warp.vert light_warp.frag light_sprite.vert light_sprite.frag
           light_combine.frag light_feedback.frag star.vert star.frag
-          wall.vert wall.frag)
+          wall.vert wall.frag particle.frag)
     set(out ${SHADER_OUT}/${shader}.spv)
     add_custom_command(OUTPUT ${out}
       COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADER_OUT}
