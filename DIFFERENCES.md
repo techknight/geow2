@@ -191,7 +191,7 @@ Format for each entry:
   (`sub_820EC910`).
 - **Port**: the same 5.1 mix goes to SDL as six float channels and SDL
   folds it down to the device's layout (stereo on most PCs).
-- **Decided**: 2026-10-15 (pending the user's confirmation).
+- **Decided**: 2026-10-15 (user).
 
 ### Hardware estimates in the audio
 
