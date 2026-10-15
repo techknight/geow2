@@ -9,11 +9,12 @@ your own copy of the Xbox Live Arcade release (title ID 584108FF). The
 port reads that package and extracts what it needs; nothing from the game
 is stored here.
 
-Status: early work. Deadline mode plays with all of its enemies, the
-grid, particles, line debris, geoms and the multiplier, bombs, the HUD
-and the floating score numbers. Not in yet: sound, menus (the game starts
-straight into Deadline and does not end), saved high scores, the other
-modes, multiplayer.
+Status: all six single-player modes play (Deadline, King, Evolved,
+Pacifism, Waves, Sequence) with their enemies, the grid, particles,
+debris, geoms and the multiplier, bombs, lives, the HUD, sound and music,
+the front end (menus, rules screens, options, results, unlocking the
+modes), local score boards and local achievements. Not in yet: local
+multiplayer, Sequence's between-levels screen, Pacifism's edge marks.
 
 ## What you need
 
@@ -48,8 +49,14 @@ Run the game (it looks for `cache` next to the executable, or pass
     build\geow2 --data cache
 
 Controls: a gamepad (left stick moves, right stick fires, either trigger
-sets off a bomb), or the keyboard (WASD move, arrow keys fire, Space
-bombs). Esc quits.
+sets off a bomb, START pauses; the sticks and bomb buttons can be
+swapped in Help and options), or the keyboard: WASD move, the arrow keys
+fire (and move through menus), Space bombs, Enter selects, Escape goes
+back in menus and pauses a game. "Return to arcade" quits.
+
+Your settings, unlocked modes, local scores and achievements are kept in
+your user folder (`%APPDATA%\geow2\geow2` on Windows), or in the folder
+given with `--profile`.
 
 The build needs network access the first time (CMake fetches SDL3) and
 the Vulkan SDK's `glslc` for the shaders. Configure with
