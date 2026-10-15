@@ -10,9 +10,9 @@ struct Placement {
 };
 
 // sub_8203BEE8(angle, type, &pos, flag): creates an enemy of a spawn type
-// (1 wanderer, 2 grunt, 3 weaver, 4 spinner, 5 gravity well, 8 snake,
-// 12/13 rocket, 16 gate, 22 duck, ...). Returns null for types not ported
-// yet.
+// (1 wanderer, 2 grunt, 3 weaver, 4 spinner, 5 gravity well, 6 repulsar,
+// 8 snake, 11 amoeba, 12/13 rocket, 14 proton, 16 gate, 22 duck). Returns
+// null for types not ported yet.
 Entity* spawn_enemy(World& w, int type, float angle, float x, float y, bool flag = false);
 
 // sub_8203BC08: a random arena position at least `dist` from every

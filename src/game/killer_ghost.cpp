@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "game/amoeba.h"
 #include "game/bullets.h"
 #include "game/gate.h"
 #include "game/snake.h"
@@ -98,6 +99,20 @@ void replace_killer(World& w, Entity& killer) {
       w.remove(e);
     }
     return;
+  }
+  if (killer.type == 0x15) {
+    // An amoeba's cell: every cell of its nucleus, then the nucleus.
+    if (Nucleus* n = static_cast<Cytoplasm&>(killer).nucleus) {
+      for (size_t i = 0; i < w.entities.size(); ++i) {
+        Entity& e = *w.entities[i];
+        if (e.type != 0x15 || (e.flags & kEntityRemoved) || static_cast<Cytoplasm&>(e).nucleus != n) continue;
+        w.add(std::make_unique<KillerGhost>(w, e, white));
+        w.remove(e);
+      }
+      w.add(std::make_unique<KillerGhost>(w, *n, white));
+      w.remove(*n);
+      return;
+    }
   }
   if (killer.type == 3) {
     // A gravity well: in its colour times 0.35 (dat_82000704).

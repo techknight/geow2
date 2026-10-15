@@ -35,6 +35,7 @@ target_link_libraries(geow2_data PUBLIC geow2_extract)
 
 # Game logic and content built from the original data (no rendering, no platform code).
 add_library(geow2_game STATIC
+  src/game/amoeba.cpp
   src/game/bloom_weights.cpp
   src/game/bullets.cpp
   src/game/camera.cpp
@@ -59,6 +60,7 @@ add_library(geow2_game STATIC
   src/game/player.cpp
   src/game/popups.cpp
   src/game/player_motion.cpp
+  src/game/repulsar.cpp
   src/game/rotation.cpp
   src/game/shockwave.cpp
   src/game/shots.cpp

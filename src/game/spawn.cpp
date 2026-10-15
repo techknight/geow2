@@ -2,9 +2,11 @@
 
 #include <cmath>
 
+#include "game/amoeba.h"
 #include "game/enemies.h"
 #include "game/gate.h"
 #include "game/gravity_well.h"
+#include "game/repulsar.h"
 #include "game/snake.h"
 #include "game/wanderer.h"
 
@@ -24,6 +26,13 @@ Entity* spawn_enemy(World& w, int type, float angle, float x, float y, bool flag
     case 5:
       // (Unless Game.DontSpawnGravityWells, dat_8219DBB0.)
       return w.add(std::make_unique<GravityWell>(w, x, y));
+    case 6:
+      return w.add(std::make_unique<Repulsar>(w, x, y));
+    case 11: {
+      auto* n = static_cast<Nucleus*>(w.add(std::make_unique<Nucleus>(w, x, y)));
+      n->start(w);
+      return n;
+    }
     case 14: {
       Entity* p = w.add(std::make_unique<Proton>(w, angle, 90.0f, x, y));  // dat_82001100
       p->flags |= kEntityFadingIn;
