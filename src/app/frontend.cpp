@@ -321,6 +321,15 @@ void Frontend::finish() {
       if (last_row_ >= 0 && hooks_.save_boards) hooks_.save_boards();
     }
     if (profile_.game_ended(mode, g_.world->kills, g_.world->score) && hooks_.save_profile) hooks_.save_profile();
+    // Millionaire (every mode over 1,000,000) and Unlocked All Modes, then
+    // the game's silent achievements are written.
+    if (profile_.millions == 0x3F) award_achievement(g_, 0x020, 3);
+    if (profile_.mode_unlocked(2)) award_achievement(g_, 0x010, 3);
+  }
+  if (g_.earned & ~g_.achieved) {
+    const uint32_t fresh = g_.earned & ~g_.achieved;
+    g_.achieved |= fresh;
+    if (g_.unlocked) g_.unlocked(fresh);
   }
   g_.end_reason = 0;
   g_.flow = 0;

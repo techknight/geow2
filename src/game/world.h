@@ -224,6 +224,12 @@ class World {
   // The rest of sub_820408D0 after the score rises (extra lives and bombs
   // by score): the game handles it here.
   std::function<void()> scored;
+  // sub_82034CA0(slot 0, bit, flags): an achievement earned.
+  std::function<void(uint32_t bit, int flags)> achieve;
+  // Deadline's kills by shots that bounced off a gate (dat_8219CEF0) and
+  // the HUD hint's timer (dat_8219CEF4).
+  int bounce_kills = 0;
+  float bounce_hint = 0.0f;
   // The C runtime's rand() (Evolved's spawner).
   CrtRand crt;
   // The player's gate chain (slot record +0x34 / +0x30).

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -65,6 +66,7 @@ class Sequence {
   float wait = 0.0f;       // dat_8219D3F0
   std::vector<SequenceCommand> commands;  // dat_8219D53C
   int outcome[20] = {};    // dat_8219D548 + 0x14 * level: 1 complete, 2 died, 3 out of time
+  std::function<void(uint32_t bit, int flags)> achieve;  // sub_82034CA0
   int test_level = -1;       // Level.TestLevel (0x8219D404): -1, or the script every level loads
   float level_timer = 0.0f;  // dat_8219CE6C
   bool force_over = false;   // dat_8219CE71

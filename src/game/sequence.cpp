@@ -238,8 +238,19 @@ void Sequence::next_level(World& w) {
   } else {
     phase = 5;
     shown_level = level;
-    // (Achievements: sub_82034CA0(0, 4, 3), and (0, 8, 3) for one pattern
-    // of outcomes.)
+    // Game Over (bit 4); Smile (bit 8) when exactly the levels marked here
+    // were not completed (the table at sub_820397E8).
+    static const int kSmile[20] = {0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0};
+    if (achieve) {
+      achieve(0x004, 3);
+      bool smile = true;
+      for (int i = 0; i < 20; ++i)
+        if ((outcome[i] == 1) != (kSmile[i] == 0)) {
+          smile = false;
+          break;
+        }
+      if (smile) achieve(0x008, 3);
+    }
   }
   reset_screen(w);
 }

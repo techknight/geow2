@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -137,6 +138,12 @@ struct Game {
   std::vector<std::pair<int, std::string>> credits;
   // The CharMap record's models (mode icons, intermission marks), by field.
   std::map<std::string, ModelGeometry> charmap;
+  // Achievements (the bits of sub_82080CB0): those already unlocked
+  // (user record +0x2C; kept with the profile) and those earned this game
+  // (dat_8219CEBC); `unlocked` runs when a bit is first earned.
+  uint32_t achieved = 0;
+  uint32_t earned = 0;
+  std::function<void(uint32_t bit)> unlocked;
   // The single-player score tables, by mode (sub_82034C50).
   std::array<ScoreTable, 6> tables{};
   bool first_spawn = true;  // dat_8219CE70
@@ -160,6 +167,10 @@ void start_game(Game& g, int mode);
 inline bool in_game(const Game& g) { return g.flow == 2 || g.flow == 3; }
 inline bool ending(const Game& g) { return g.flow == 4 || 0.0f < g.end_timer; }
 inline bool frozen(const Game& g) { return g.flow == 3; }
+// sub_82034CA0(0, bit, flags): an achievement earned this game; unless
+// flags & 2 it is unlocked at once (else at the game's end); unless
+// flags & 1 sound event 0x24.
+void award_achievement(Game& g, uint32_t bit, int flags);
 // sub_8207CA48: the single-player HUD into `out`.
 void draw_game_hud(const Game& g, LineBatch& out);
 // One simulation step (sub_820366A0) with this step's input.

@@ -271,6 +271,18 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& profile
   hooks.save_boards = [&]() { save_boards(profile_dir, boards); };
   hooks.quit = [&]() { running = false; };
   Frontend fe(g, g.text, profile, boards, hooks);
+  // The unlocked achievements, kept beside the profile.
+  {
+    std::ifstream f(profile_dir / "achievements.txt");
+    unsigned long bits = 0;
+    if (f >> std::hex >> bits) g.achieved = uint32_t(bits);
+  }
+  g.unlocked = [&](uint32_t) {
+    std::error_code ec;
+    fs::create_directories(profile_dir, ec);
+    std::ofstream f(profile_dir / "achievements.txt", std::ios::trunc);
+    f << std::hex << g.achieved << '\n';
+  };
   fe.boot();
   const SDL_GPUTextureFormat format = SDL_GetGPUSwapchainTextureFormat(dev, window);
   std::array<SDL_Gamepad*, 4> pads{};

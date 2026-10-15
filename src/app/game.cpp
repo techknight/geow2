@@ -418,6 +418,8 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
     g.sequence.scripts.emplace_back(index, std::get<std::string>(script->v));
   }
   g.world->scored = [&g]() { score_awards(g); };
+  g.world->achieve = [&g](uint32_t bit, int flags) { award_achievement(g, bit, flags); };
+  g.sequence.achieve = [&g](uint32_t bit, int flags) { award_achievement(g, bit, flags); };
   const FlaskValue* model_ref = unit->s->find("model");
   const auto* ref = model_ref ? std::get_if<FlaskRef>(&model_ref->v) : nullptr;
   if (!ref) {
@@ -499,6 +501,7 @@ void start_game(Game& g, int mode) {
   g.end_timer = 0.0f;
   g.end_reason = 0;
   g.hint_pending = false;
+  g.earned = 0;
   g.life = PlayerLife{};
   // sub_82032FF8: lives and bombs into the player record.
   g.life.lives = g.rules.start_lives;
@@ -525,6 +528,17 @@ void start_game(Game& g, int mode) {
   g.sequence.allow_end = g.rules.mode != 2;
   g.sequence.level_timer = 0.0f;
   g.flow = 2;
+}
+
+void award_achievement(Game& g, uint32_t bit, int flags) {
+  if (g.earned & bit) return;
+  g.earned |= bit;
+  if (g.achieved & bit) return;
+  // (Sound event 0x24 unless flags & 1.)
+  if (!(flags & 2)) {
+    g.achieved |= bit;
+    if (g.unlocked) g.unlocked(bit);
+  }
 }
 
 void ScoreTable::insert(int64_t score, int multiplier, const std::string& name) {
@@ -694,6 +708,23 @@ void step(Game& g, const Sticks& s) {
   // Entities removed this step are deleted, the player object with them.
   w.purge();
   if (g.life.removed) g.life.present = false;
+
+  // The achievements checked every step of a game (0x82037B0C..):
+  // Treaty (King: 30 zones, no bomb, no shield hit), Surf (Waves: 8 rocket
+  // walls likewise), Phobia (Waves: 1000 points at multiplier 1), Rebound
+  // (Deadline: 75 bounced-shot kills), Magpie (multiplier 500).
+  if (in_game(g)) {
+    const PlayerLife& p = g.life;
+    if (g.rules.mode == 5) {
+      if (!p.bomb_used && !p.shield_hit && w.zones_captured > 29) award_achievement(g, 0x002, 0);
+    } else if (g.rules.mode == 3) {
+      if (!p.bomb_used && !p.shield_hit && g.waves.walls > 7) award_achievement(g, 0x040, 0);
+      if (w.score > 999 && w.multiplier == 1) award_achievement(g, 0x100, 0);
+    } else if (g.rules.mode == 0 && w.bounce_kills > 0x4A) {
+      award_achievement(g, 0x200, 0);
+    }
+    if (w.multiplier > 499) award_achievement(g, 0x080, 0);
+  }
 }
 
 void draw_game_hud(const Game& g, LineBatch& ui) {

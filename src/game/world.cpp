@@ -157,6 +157,8 @@ void World::new_game() {
   multiplier_milestone = 10;
   kills = 0;
   zones_captured = 0;
+  bounce_kills = 0;
+  bounce_hint = 0.0f;
 }
 
 void World::shatter(const UnitInfo* u, const Mat4& m, float px, float py, float radius, const Killer& k,
@@ -208,6 +210,8 @@ void World::award(const Entity& victim, const Killer& k) {
     case 0x1B: base = 75; break;
     default: base = victim.special_points(*this); break;  // types 3, 0x16, 0x18
   }
+  // A gate end killed with the chain past 4: Slalom (bit 1).
+  if (victim.type == 0x18 && gate_chain > 4 && achieve) achieve(0x001, 0);
   // sub_8203BAC8: the spawners' kill weight.
   switch (victim.type) {
     case 2: case 0x16: spawn_kills += 2; break;
@@ -229,6 +233,11 @@ void World::award(const Entity& victim, const Killer& k) {
   if ((k.object_type == 3 || k.object_type == 0x18) || (k.object_type == 0xF && (k.blast_kind == 1 || k.blast_kind == 2)) ||
       (k.object_type == 5 && k.shot_bounces > 0))
     points = fives * 25;
+  if (k.object_type == 5 && k.shot_bounces > 0 && mode == 0) {
+    // Deadline counts these for Rebound, the hint showing while below 76.
+    ++bounce_kills;
+    if (bounce_kills < 0x4C) bounce_hint = 4.0f;  // dat_820006F4
+  }
   score += points;
   if (scored) scored();
   // The points linger where the victim was (size 1, the player's colour:
