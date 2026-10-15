@@ -34,3 +34,17 @@ vec4 sample_linear(sampler2D t, vec2 uv, vec2 offset) {
   const vec4 bottom = mix(texel(t, i0 + ivec2(0, 1)), texel(t, i0 + ivec2(1, 1)), f.x);
   return mix(top, bottom, f.y);
 }
+
+// Bilinear read with the address mode "clamp to edge" (mode 2), as the
+// light map is read by the grid and by its own warp pass.
+vec4 sample_linear_clamp(sampler2D t, vec2 uv) {
+  const ivec2 size = textureSize(t, 0);
+  const vec2 c = uv * vec2(size) - 0.5;
+  const vec2 i = floor(c);
+  const vec2 f = c - i;
+  const ivec2 i0 = clamp(ivec2(i), ivec2(0), size - 1);
+  const ivec2 i1 = clamp(ivec2(i) + 1, ivec2(0), size - 1);
+  const vec4 top = mix(texel(t, i0), texel(t, ivec2(i1.x, i0.y)), f.x);
+  const vec4 bottom = mix(texel(t, ivec2(i0.x, i1.y)), texel(t, i1), f.x);
+  return mix(top, bottom, f.y);
+}

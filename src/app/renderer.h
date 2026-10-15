@@ -6,6 +6,8 @@
 #include <filesystem>
 #include <vector>
 
+#include "game/display_gamma.h"
+#include "game/light_map.h"
 #include "game/line_quads.h"
 #include "game/math.h"
 
@@ -28,19 +30,39 @@ struct RenderTuning {
   // dat_821D39F0: scales both blooms; 0 at boot, 1.0 once the intro
   // sequence (sub_8207E9F0) is over.
   float bloom_level = 1.0f;
+  // MapLight.* (light map, sub_82065930).
+  float light_feedback_mul = 0.75f;  // 0x821B3CD8, dat_82000718
+  float light_feedback_add = 0.5f;   // 0x821B3D0C, dat_82000724
+  float light_contrast = 0.25f;      // 0x821B3D40, dat_82000720
+  float light_bloom = 0.75f;         // 0x821B3D74, dat_82000718
+  float light_precision = 1.0f;      // 0x821B3DA8, dat_820006C4
+  float light_radius = 2.0f;         // MapLight.BloomRadius 0x821B3DDC, dat_820006FC
+  // The display the console's output gamma ramp is built for
+  // (VdGetCurrentDisplayGamma; DIFFERENCES.md).
+  DisplayGamma display = DisplayGamma::kBt709;
+  float display_power = 2.22222233f;
 };
 
-// The frame of sub_820653C8: two line layers drawn into high-range
+// The frame of sub_820653C8: the light map the grid is lit by, two layers
+// (background with the grid, foreground lines) drawn into high-range
 // targets, each blurred into a five-level bloom, then composited.
 class Renderer {
  public:
   bool init(SDL_GPUDevice* device, const std::filesystem::path& shader_dir);
   void release();
 
+  // The light map's update for one simulation step (sub_82065930): warp
+  // last step's map along the grid, add this step's light sprites, bloom,
+  // feed back. The original renders one frame per step; the port runs
+  // this once per step whatever the display rate.
+  void update_light_map(SDL_GPUCommandBuffer* cmd, const std::vector<GridVertex>& warp_mesh,
+                        const std::vector<LightVertex>& sprites);
+
   // Draws into `out` (out_w x out_h, `format`), the 16:9 picture
-  // letterboxed. Layer A is the background, layer B the foreground.
+  // letterboxed. `grid` is null while the grid is faded out.
   void draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextureFormat format, uint32_t out_w,
-            uint32_t out_h, const Mat4& view_projection, const LineBatch& layer_a, const LineBatch& layer_b);
+            uint32_t out_h, const Mat4& view_projection, const std::vector<GridVertex>* grid,
+            const LineBatch& foreground);
 
   RenderTuning tuning;
 
@@ -54,42 +76,58 @@ class Renderer {
     std::array<Target, 5> level{};  // each level's blurred result
     std::array<Target, 5> temp{};   // the horizontal blur pass; temp[0] ends up holding the bloom
   };
+  struct Buffer {
+    SDL_GPUBuffer* buf = nullptr;
+    SDL_GPUTransferBuffer* staging = nullptr;
+    uint32_t capacity = 0;
+  };
 
   void resize(uint32_t w, uint32_t h);
   Target make_target(uint32_t w, uint32_t h);
   void free_target(Target& t);
+  void make_chain(Chain& c, uint32_t w, uint32_t h, bool extra);
+  void free_chain(Chain& c);
+  void blur_levels(SDL_GPUCommandBuffer* cmd, const Target& src, Chain& chain, float radius, float precision);
   void bloom(SDL_GPUCommandBuffer* cmd, const Target& layer, Chain& chain);
   void pass(SDL_GPUCommandBuffer* cmd, const Target& dst, SDL_GPUGraphicsPipeline* pipe,
             std::initializer_list<SDL_GPUTexture*> textures, const void* uniforms, uint32_t uniform_size);
-  void draw_lines(SDL_GPUCommandBuffer* cmd, const Target& dst, const Mat4& view_projection, uint32_t body_first,
-                  uint32_t body_count, uint32_t caps_first, uint32_t caps_count);
-  void upload(SDL_GPUCommandBuffer* cmd, const std::vector<LineVertex>& v);
+  void upload(SDL_GPUCommandBuffer* cmd, Buffer& b, SDL_GPUBufferUsageFlags usage, const void* data, uint32_t size);
+  void quad_indices(SDL_GPUCommandBuffer* cmd, uint32_t quads);
   SDL_GPUGraphicsPipeline* composite_pipeline(SDL_GPUTextureFormat format);
 
   SDL_GPUDevice* device_ = nullptr;
-  SDL_GPUShader* line_vs_ = nullptr;
-  SDL_GPUShader* body_fs_ = nullptr;
-  SDL_GPUShader* cap_fs_ = nullptr;
+  std::vector<SDL_GPUShader*> shaders_;
   SDL_GPUShader* full_vs_ = nullptr;
-  SDL_GPUShader* downsample_fs_ = nullptr;
-  SDL_GPUShader* blur_fs_ = nullptr;
-  SDL_GPUShader* combine_fs_ = nullptr;
   SDL_GPUShader* composite_fs_ = nullptr;
   SDL_GPUGraphicsPipeline* body_ = nullptr;
   SDL_GPUGraphicsPipeline* caps_ = nullptr;
+  SDL_GPUGraphicsPipeline* grid_ = nullptr;
+  SDL_GPUGraphicsPipeline* warp_ = nullptr;
+  SDL_GPUGraphicsPipeline* sprites_ = nullptr;
   SDL_GPUGraphicsPipeline* downsample_ = nullptr;
   SDL_GPUGraphicsPipeline* blur_ = nullptr;
   SDL_GPUGraphicsPipeline* combine_ = nullptr;
+  SDL_GPUGraphicsPipeline* light_combine_ = nullptr;
+  SDL_GPUGraphicsPipeline* feedback_ = nullptr;
   SDL_GPUGraphicsPipeline* composite_ = nullptr;
   SDL_GPUTextureFormat composite_format_ = SDL_GPU_TEXTUREFORMAT_INVALID;
-  SDL_GPUSampler* sampler_ = nullptr;
-  SDL_GPUBuffer* vertices_ = nullptr;
-  SDL_GPUTransferBuffer* staging_ = nullptr;
-  uint32_t capacity_ = 0;
+  SDL_GPUSampler* sampler_ = nullptr;         // reads go through texelFetch
+  SDL_GPUSampler* sprite_sampler_ = nullptr;  // bilinear, clamped
+  SDL_GPUTexture* sprite_ = nullptr;          // dat_821A1D60
+
+  Buffer lines_, grid_vertices_, warp_vertices_, sprite_vertices_, quad_index_, warp_index_;
+  uint32_t quad_index_quads_ = 0;
+  uint32_t warp_index_count_ = 0;
 
   uint32_t width_ = 0, height_ = 0;
   Target layer_a_, layer_b_;
   Chain chain_a_, chain_b_;
+  // Light map (150 x 100): the final map (0x821B3520) kept from step to
+  // step, the warped previous map (0x821B3524), this step's sprites and
+  // their combined bloom, and the bloom chain (table 0x821B3730).
+  Target light_, light_warped_, light_new_, light_combined_;
+  Chain light_chain_;
+  bool light_cleared_ = false;
 };
 
 }  // namespace geow2

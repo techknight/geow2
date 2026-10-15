@@ -8,7 +8,9 @@
 #include "game/bloom_weights.h"
 #include "game/bullets.h"
 #include "game/camera.h"
+#include "game/display_gamma.h"
 #include "game/grid.h"
+#include "game/light_map.h"
 #include "game/line_quads.h"
 #include "game/model_geometry.h"
 #include "game/player_motion.h"
@@ -339,7 +341,56 @@ static void test_bloom_weights() {
   expect(near(k2[0], 0.25f) && near(k2[4], 1.0f / 1024.0f), "level weights: precision powers");
 }
 
+static void test_grid_lines() {
+  // A grid at rest: interior lines only, 87 * 132 horizontal and 88 * 131
+  // vertical quads; every 8th line uses alpha level 0.
+  Grid g;
+  g.reset(300.0f, 200.0f);
+  GridTuning t;
+  std::vector<GridVertex> v;
+  grid_lines(g, t, 1.0f, v);
+  expect(v.size() == size_t(23012) * 4, "grid line quad count");
+  if (v.size() < 8) return;
+  // The first quad: the row 0 -> 1 vertical at column 1, width 0.84375.
+  const float x = g.rest(0, 1).x;
+  expect(near(v[0].x, x - 0.84375f) && near(v[1].x, x + 0.84375f), "vertical quad offsets across");
+  expect(v[0].side == -1.125f && v[1].side == 1.125f && v[2].side == 1.125f && v[3].side == -1.125f, "grid sides");
+  expect(near(v[0].alpha, t.alpha[1] * t.brightness) && v[0].z == -6.0f, "column alpha and depth");
+  std::vector<GridVertex> w;
+  grid_warp_mesh(g, t, w);
+  expect(w.size() == size_t(Grid::kRows) * Grid::kCols && w[5].x == 0.0f && w[5].y == 0.0f, "warp mesh at rest");
+  const std::vector<uint16_t> idx = grid_warp_indices();
+  expect(idx.size() == 46464 && idx[2] == Grid::kCols + 1 && idx[3] == Grid::kCols, "warp mesh indices");
+  // The fade eases by 5% of the remaining distance per step.
+  expect(near(grid_fade_step(0.0f, true), 0.05f) && near(grid_fade_step(1.0f, false), 0.95f), "grid fade");
+}
+
+static void test_light_sprites() {
+  std::vector<LightVertex> v;
+  const float c[3] = {1.0f, 2.0f, 4.0f};
+  emit_light(v, 30.0f, 10.0f, -5.0f, c);
+  expect(v.size() == 4 && v[0].x == -20.0f && v[0].y == -35.0f && v[2].x == 40.0f && v[2].y == 25.0f,
+         "light sprite square");
+  expect(v[1].u == 1.0f && v[1].v == 0.0f && v[3].u == 0.0f && v[3].v == 1.0f && v[0].g == 3.0f,
+         "light sprite uv and colour * 1.5");
+  const std::vector<uint8_t> tex = light_sprite_texture();
+  // Peak: the normal density at 0 (0.3989) * 255, truncated.
+  expect(tex.size() == 31 * 31 && tex[15 * 31 + 15] == 101 && tex[0] == 0, "light sprite texture");
+}
+
+static void test_display_gamma() {
+  // sRGB display: decode then encode, close to identity.
+  const auto s = display_gamma_table(DisplayGamma::kSrgb, 2.2f);
+  expect(s[0] == 0 && s[1023] == 1023 && std::abs(int(s[512]) - 512) <= 1, "sRGB ramp is identity");
+  // BT.709: 8-bit 128 (table entry 514) comes out at 463 / 1023.
+  const auto b = display_gamma_ramp(DisplayGamma::kBt709, 2.2f);
+  expect(b[0] == 0.0f && b[255] == 1.0f && std::fabs(b[128] - 0.4526f) < 0.002f, "BT.709 ramp");
+}
+
 int main() {
+  test_grid_lines();
+  test_light_sprites();
+  test_display_gamma();
   test_line_quads();
   test_bloom_weights();
   test_firing();

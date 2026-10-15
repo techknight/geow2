@@ -41,4 +41,15 @@ std::array<float, 5> combine_weights(float precision, float falloff) {
   return w;
 }
 
+std::array<float, 5> light_combine_weights(float contrast, float bloom, float precision, float falloff) {
+  // k_n = float(float(float(1 / float(falloff^n)) * contrast) * bloom) /
+  // float(precision^2n), n = 1..5 (single-precision products and fdivs).
+  std::array<float, 5> w{};
+  for (int k = 1; k <= 5; ++k) {
+    const float fall = 1.0f / float(std::pow(double(falloff), double(k)));
+    w[k - 1] = ((fall * contrast) * bloom) / float(std::pow(double(precision), double(2 * k)));
+  }
+  return w;
+}
+
 }  // namespace geow2

@@ -78,3 +78,26 @@ Format for each entry:
   capping every read at 31.875 as the original's storage does. Rounding
   of faint values differs slightly.
 - **Decided**: 2026-10-15.
+
+### Display gamma
+
+- **What**: the output gamma ramp the picture passes through.
+- **Original**: the Direct3D runtime asks the system which display is
+  attached (`VdGetCurrentDisplayGamma`: sRGB, BT.709 or a power) and sets
+  the display hardware's ramp to re-encode the image, taken as sRGB, for
+  that display (`sub_820AAE20`, `sub_820AAFB0`, set at device creation by
+  `sub_820AE1A0`; the game sets no ramp of its own). Oracle captures
+  (Xenia, which reports an HDTV) match this ramp.
+- **Port**: applies the same ramp at the end of the composite, built for
+  BT.709 (a high-definition TV, the usual connection), since a PC reports
+  no such setting. The display type is a renderer setting.
+- **Decided**: 2026-10-15.
+
+### Light map timing
+
+- **What**: when the grid's light map is updated.
+- **Original**: once per rendered frame (`sub_82065930`), which is once
+  per simulation step since the game renders one frame per step.
+- **Port**: once per simulation step, whatever the display's refresh
+  rate, so its feedback fades at the original's speed.
+- **Decided**: 2026-10-15.

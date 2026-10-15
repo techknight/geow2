@@ -10,4 +10,8 @@ namespace geow2 {
 std::array<float, 8> blur_weights(float radius, float precision);
 std::array<float, 5> combine_weights(float precision, float falloff);
 
+// The light map's level weights (sub_82064C90): each level also scaled
+// by MapLight.Contrast and MapLight.Bloom.
+std::array<float, 5> light_combine_weights(float contrast, float bloom, float precision, float falloff);
+
 }  // namespace geow2

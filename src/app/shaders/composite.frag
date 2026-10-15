@@ -7,6 +7,8 @@
 // is raised to 1 / Render.Exposure.
 //   c0 = (C, BloomBg * X * C), c1 = (Fc * C, BloomFg * X * Fc * C),
 //   c2.x = 1 / Exposure, c3 = (ShadowFactor, ShadowAdd, ShadowFudge).
+// The result is then stored as 8 bits and passed through the console's
+// output gamma ramp (display_gamma.cpp), as the display hardware does.
 
 #include "sampling.glsl"
 
@@ -20,6 +22,7 @@ layout(set = 3, binding = 0) uniform Pass {
   vec4 c1;
   vec4 c2;
   vec4 c3;
+  vec4 ramp[64];  // 256 entries, four per vector
 };
 layout(location = 0) out vec4 out_colour;
 
@@ -46,7 +49,10 @@ void main() {
   // exp2(log2(|v|) / Exposure); log2(0) is -infinity there, so 0 stays 0.
   const vec3 m = abs(mixed);
   const vec3 graded = exp2(log2(max(m, vec3(1e-30))) * c2.x);
+  const vec3 rgb = mix(vec3(0.0), graded, greaterThan(m, vec3(0.0)));
+  const ivec3 k = ivec3(round(clamp(rgb, 0.0, 1.0) * 255.0));
+  const vec3 shown = vec3(ramp[k.r >> 2][k.r & 3], ramp[k.g >> 2][k.g & 3], ramp[k.b >> 2][k.b & 3]);
   // The original writes alpha 0; the port writes 1 so screenshots are
   // opaque (the window ignores alpha).
-  out_colour = vec4(mix(vec3(0.0), graded, greaterThan(m, vec3(0.0))), 1.0);
+  out_colour = vec4(shown, 1.0);
 }

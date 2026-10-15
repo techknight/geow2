@@ -27,6 +27,8 @@
 #include "game/bullets.h"
 #include "game/camera.h"
 #include "game/game_math.h"
+#include "game/grid.h"
+#include "game/light_map.h"
 #include "game/line_quads.h"
 #include "game/model_geometry.h"
 #include "game/player_motion.h"
@@ -80,6 +82,18 @@ struct Game {
   PlayerWeapon weapon;
   std::vector<Bullet> bullets;
   BulletShape bullet_shape;
+  // The player's light: unit glowColour (rgb times alpha) and glowSize
+  // (sub_82050D00).
+  float glow[3] = {0, 0, 0};
+  float glow_size = 0.0f;
+  // The background grid and what each step produces for drawing.
+  Grid grid;
+  GridTuning grid_tuning;
+  float grid_fade = 0.0f;                // dat_821A170C
+  bool grid_visible = false;
+  std::vector<GridVertex> grid_lines;    // this step's line quads
+  std::vector<GridVertex> warp_mesh;     // this step's light map warp
+  std::vector<LightVertex> lights;       // this step's light sprites
 };
 
 bool load(Game& g, const fs::path& cache) {
@@ -107,6 +121,15 @@ bool load(Game& g, const fs::path& cache) {
     g.tint[2] = as_float(tint->find("b")) * a;
     g.tint[3] = 1.0f;
   }
+  if (const FlaskStruct* glow = as_struct(unit->s->find("glowColour"))) {
+    const float a = as_float(glow->find("a"));
+    g.glow[0] = a * as_float(glow->find("r"));
+    g.glow[1] = as_float(glow->find("g")) * a;
+    g.glow[2] = as_float(glow->find("b")) * a;
+  }
+  g.glow_size = as_float(unit->s->find("glowSize"));
+  // The grid at rest over the arena (sub_8205B000 from sub_82036250).
+  g.grid.reset(kArenaHalfX, kArenaHalfY);
   // Player constructor sub_82051448: radius +0x20 = 5.0 (dat_820006F0),
   // heading +0x14 = -pi/2 (dat_820010F4). Spawn position: the arena centre
   // for now (the spawn point argument is not traced yet).
@@ -149,6 +172,30 @@ void step(Game& g, const Sticks& s) {
   std::erase_if(g.bullets, [](Bullet& b) { return !bullet_step(b, kStep, kArenaHalfX, kArenaHalfY); });
   // The camera follows after the entity updates (sub_820366A0).
   camera_follow_single(g.camera, &g.player.x, &g.player.y, 1, kArenaHalfX, kArenaHalfY);
+
+  // The grid (sub_8205C8F8, then sub_8205B880 on worker threads): pushes
+  // gathered from the entities, the spring step, and the line pass from
+  // the positions the step read. Bullets push with radius +0x8C and
+  // strength 2.0 (sub_8205B578).
+  GridInputs in;
+  in.pushes.emplace_back();
+  for (const Bullet& b : g.bullets) in.pushes.back().push_back({b.x, b.y, b.grid_radius, 2.0f});
+  g.grid.step(in, kArenaHalfX, kArenaHalfY);
+  grid_lines(g.grid, g.grid_tuning, g.grid_fade, g.grid_lines);
+  grid_warp_mesh(g.grid, g.grid_tuning, g.warp_mesh);
+  // The draw then eases the fade in (sub_8205CAF0; in game, so toward 1).
+  g.grid_fade = grid_fade_step(g.grid_fade, true);
+  g.grid_visible = g.grid_fade > kGridVisible;
+
+  // Light sprites (sub_82065E38 walks the lists; bullets come before the
+  // player): bullets size radius * Unit.Projectile.LightFactor (6.0),
+  // colour * 8 (sub_82051DB8); the player its glow (sub_82050D00).
+  g.lights.clear();
+  for (const Bullet& b : g.bullets) {
+    const float c[3] = {b.colour[0] * 8.0f, b.colour[1] * 8.0f, b.colour[2] * 8.0f};
+    emit_light(g.lights, b.radius * 6.0f, b.x, b.y, c);
+  }
+  emit_light(g.lights, g.glow_size, g.player.x, g.player.y, g.glow);
 }
 
 // The foreground lines: the ship's body (part 0), each line coloured as
@@ -171,13 +218,25 @@ void foreground(const Game& g, LineBatch& out) {
 
 void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format,
             uint32_t w, uint32_t h, const Game& g) {
-  static LineBatch background, front;
+  static LineBatch front;
   foreground(g, front);
-  r.draw(cmd, target, format, w, h, camera_view_projection(g.camera, *g.gm), background, front);
+  r.draw(cmd, target, format, w, h, camera_view_projection(g.camera, *g.gm), g.grid_visible ? &g.grid_lines : nullptr,
+         front);
+}
+
+// One simulation step and its light map update (one per step, as the
+// original renders one frame per step).
+void tick(Game& g, const Sticks& s, Renderer& r, SDL_GPUCommandBuffer* cmd) {
+  step(g, s);
+  r.update_light_map(cmd, g.warp_mesh, g.lights);
 }
 
 int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sticks& sticks, const fs::path& out) {
-  for (int i = 0; i < frames; ++i) step(g, sticks);
+  for (int i = 0; i < frames; ++i) {
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
+    tick(g, sticks, r, cmd);
+    SDL_SubmitGPUCommandBuffer(cmd);
+  }
   const uint32_t w = 1280, h = 720;
   SDL_GPUTextureCreateInfo tci{};
   tci.type = SDL_GPU_TEXTURETYPE_2D;
@@ -262,13 +321,13 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g) {
     const uint64_t now = SDL_GetTicksNS();
     pending += double(now - last) / 1e9;
     last = now;
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     for (int n = 0; pending >= kStep && n < 8; ++n) {
-      step(g, sticks);
+      tick(g, sticks, r, cmd);
       pending -= kStep;
     }
     if (pending > kStep) pending = 0.0;
 
-    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     SDL_GPUTexture* swap = nullptr;
     uint32_t w = 0, h = 0;
     if (SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window, &swap, &w, &h) && swap) render(r, cmd, swap, format, w, h, g);

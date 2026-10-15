@@ -35,6 +35,9 @@ class Grid {
   void step(const GridInputs& in, float half_x, float half_y);
 
   Vec2 position(int row, int col) const { return pos_[cur_][index(row, col)]; }
+  // The buffer the last step read from: what the original's line pass and
+  // warp mesh use (they run while other threads write the new positions).
+  Vec2 previous_position(int row, int col) const { return pos_[1 - cur_][index(row, col)]; }
   Vec2 rest(int row, int col) const { return rest_[index(row, col)]; }
   Vec2 uv(int row, int col) const { return uv_[index(row, col)]; }
 
