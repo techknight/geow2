@@ -1004,8 +1004,9 @@ void step(Game& g, std::span<const Sticks> pads) {
   g.grid_visible = g.grid_fade > kGridVisible;
 
   // Light sprites (sub_82065E38 walks the lists; bullets come before the
-  // player): bullets size radius * Unit.Projectile.LightFactor (6.0),
-  // colour * 8 (sub_82051DB8); the player its glow (sub_82050D00).
+  // players): bullets size radius * Unit.Projectile.LightFactor (6.0),
+  // colour * 8 (sub_82051DB8); the players their colour unit's glow
+  // (sub_82050D00).
   g.lights.clear();
   w.light_entities(g.lights);
   for (const Bullet& b : g.bullets) {
@@ -1015,7 +1016,16 @@ void step(Game& g, std::span<const Sticks> pads) {
   for (const size_t k : g.player_list) {
     const Ship& sh = g.ships[k];
     const ShipLook& look = g.looks[size_t(sh.colour_look)];
-    if (sh.life.alive()) emit_light(g.lights, look.glow_size, sh.motion.x, sh.motion.y, look.glow);
+    if (!sh.life.alive()) continue;
+    // sub_82050D00: while fading in, the glow is scaled by 1 + half the
+    // ghosts' phase (fmod(fade * 3, 1) * 0.5 + 1; dat_820006F8,
+    // dat_82000724).
+    float glow[3] = {look.glow[0], look.glow[1], look.glow[2]};
+    if (sh.life.fading) {
+      const float k = float(double(float(std::fmod(double(sh.life.fade * 3.0f), 1.0))) * 0.5 + 1.0);
+      for (float& c : glow) c = c * k;
+    }
+    emit_light(g.lights, look.glow_size, sh.motion.x, sh.motion.y, glow);
   }
 
   // The colour wheel turns (sub_82030A98); the particles step on the
