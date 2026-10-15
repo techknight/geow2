@@ -41,7 +41,7 @@ void sweep(World& w, Bullet& b) {
     k.player = b.owner;
     o.hit_by_shot(w, k);
     // The shot's slot 6 (sub_82051E58): gone, unless what it hit bounces
-    // it (type codes 0x11 and 0x1F, not ported yet).
+    // it (type codes 0x11 bacteria and 0x1F pin, which no mode spawns).
     b.removed = true;
     done = true;
   });

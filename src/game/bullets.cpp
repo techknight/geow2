@@ -107,7 +107,7 @@ bool bullet_step(Bullet& b, float step, float half_x, float half_y, Effects& fx)
   b.x = b.x + b.vx * step;
   b.y = dy + b.y;
   // Arena contact (sub_8205C5D8) → the bullet's wall handler (sub_82051AF0):
-  // first contact marks it (sound event 0x23, not ported yet).
+  // first contact marks it (sound event 0x23, played by the world's walk).
   float x = b.x, y = b.y;
   Vec2 n;
   if (arena_contact(b.radius, half_x, half_y, x, y, n)) {

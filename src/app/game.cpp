@@ -1378,9 +1378,9 @@ void ScoreTable::insert(int64_t score, int multiplier, const std::string& name) 
 void step(Game& g, std::span<const Sticks> pads) {
   World& w = *g.world;
   w.bomb_kills = 0;
-  // The spawner (sub_8203E7E8) runs while a player is in the game:
-  // Deadline's own, the others' shared one (Sequence's is not ported);
-  // then the clock (sub_820366A0).
+  // The spawner (sub_8203E7E8): the multiplayer power-ups, then Sequence's
+  // levels, or while a player is in the game Deadline's own or the others'
+  // shared one; then the clock (sub_820366A0).
   if (frozen(g)) return;
   if (!ending(g)) power_up_timer(g);
   if (ending(g)) {
