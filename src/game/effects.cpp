@@ -25,6 +25,7 @@ void EffectColours::random(GameRng& rng, float alpha, float out[4]) {
 }
 
 void Effects::wheel(float t, const float c[4], float out[4]) const {
+  // c: the point (r4 in sub_82030678).
   // Six points on a circle (cos * R, sin * R + O) at k * 2pi/6 + phase + t
   // (sin/cos the game's own; sin * R + O fused).
   const float step = kTwoPi * 0.166666672f;  // dat_82000700
@@ -76,13 +77,14 @@ void Effects::random_in_ball(float r, float out[4]) {
   }
 }
 
-void Effects::explosion(float radius, float x, float y, int count, const float colour[4]) {
+void Effects::explosion(float radius, float x, float y, int count) {
   if (particles_.full()) return;
-  // Two neighbouring wheel colours around a random turn.
+  // Two neighbouring wheel colours at the position, around a random turn.
   const float t = std::fmaf(float(rng_.next()), kTwoPow31, -1.0f) * 0.75f;  // dat_82000718
+  const float pos[4] = {x, y, 0.0f, 0.0f};
   float a[4], b[4];
-  wheel(float(double(t) - double(0.1f)), colour, a);  // dat_82000714
-  wheel(float(double(t) + double(0.1f)), colour, b);
+  wheel(float(double(t) - double(0.1f)), pos, a);  // dat_82000714
+  wheel(float(double(t) + double(0.1f)), pos, b);
   const float speed = float(double(tuning.size) * radius);
   const int groups = int(float(count) * tuning.factor) / 12;
   float d[4];
@@ -116,18 +118,15 @@ void Effects::explosion(float radius, float x, float y, int count, const float c
 
 void Effects::trigger(const UnitEffect& e, float x, float y) {
   switch (e.kind) {
-    case UnitEffect::kExplosion: {
-      // sub_82031788: colour0 rgb times its alpha, alpha 1.
-      const float a = e.colour0[3];
-      const float c[4] = {e.colour0[0] * a, e.colour0[1] * a, e.colour0[2] * a, 1.0f};
-      explosion(e.radius, x, y, e.count, c);
+    case UnitEffect::kExplosion:
+      // sub_82031788: also passes colour0 rgb times its alpha, unused.
+      explosion(e.radius, x, y, e.count);
       break;
-    }
     case UnitEffect::kRandomExplosion: {
-      // sub_82031820: a random wheel colour.
+      // sub_82031820: draws a random wheel colour first (passed, unused).
       float c[4];
       EffectColours::random(rng_, 1.0f, c);
-      explosion(e.radius, x, y, e.count, c);
+      explosion(e.radius, x, y, e.count);
       break;
     }
     default:

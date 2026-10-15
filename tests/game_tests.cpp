@@ -301,12 +301,18 @@ static void test_firing() {
     ++steps;
   }
   expect(steps == 7, "next volley 7 steps later");
-  // A bullet leaving the arena is marked on contact and removed next step.
+  // A bullet leaving the arena is marked on contact and removed next step,
+  // in a spark of 20 * 0.8 / 12 = 1 group of 12 particles.
+  GameRng rng;
+  rng.seed(1);
+  Particles particles;
+  Effects fx(kMath, rng, particles);
   Bullet b;
   b.x = 296.0f;
   b.vx = 600.0f;
-  expect(bullet_step(b, 1.0f / 60.0f, 300.0f, 200.0f) && b.hit && near(b.x, 298.0f), "bullet wall contact");
-  expect(!bullet_step(b, 1.0f / 60.0f, 300.0f, 200.0f), "bullet removed after contact");
+  expect(bullet_step(b, 1.0f / 60.0f, 300.0f, 200.0f, fx) && b.hit && near(b.x, 298.0f), "bullet wall contact");
+  expect(!bullet_step(b, 1.0f / 60.0f, 300.0f, 200.0f, fx), "bullet removed after contact");
+  expect(particles.size() == 12, "wall spark");
 }
 
 static void test_line_quads() {

@@ -411,7 +411,7 @@ void step(Game& g, const Sticks& s) {
   target.vy = g.player.vy;
   // Then the other entities, bullets included (the player list is updated
   // first, so bullets fired this step already move: to verify in the oracle).
-  std::erase_if(g.bullets, [](Bullet& b) { return !bullet_step(b, kStep, kArenaHalfX, kArenaHalfY); });
+  std::erase_if(g.bullets, [&w](Bullet& b) { return !bullet_step(b, kStep, kArenaHalfX, kArenaHalfY, w.effects); });
   w.update_entities();
   // Shots against enemies (sub_820523B0).
   shot_collisions(w, g.bullets);

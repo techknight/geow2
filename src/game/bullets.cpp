@@ -80,10 +80,14 @@ void player_fire_step(const PlayerMotion& p, PlayerWeapon& w, Vec2 fire, float s
   }
 }
 
-bool bullet_step(Bullet& b, float step, float half_x, float half_y) {
+bool bullet_step(Bullet& b, float step, float half_x, float half_y, Effects& fx) {
   // Update (sub_82052418): a bullet that hit a wall last step is removed
-  // now (with a spark effect, not ported yet).
-  if (b.hit || b.removed) return false;
+  // now with a spark: sub_82030C58(1.5, &pos, 20, ...) (dat_82000C90).
+  if (b.removed) return false;
+  if (b.hit) {
+    fx.explosion(1.5f, b.x, b.y, 20);
+    return false;
+  }
   b.prev_x = b.x;
   b.prev_y = b.y;
   // Common update: position += velocity * step.

@@ -4,6 +4,7 @@
 #include <span>
 #include <vector>
 
+#include "game/effects.h"
 #include "game/game_math.h"
 #include "game/math.h"
 #include "game/player_motion.h"
@@ -44,7 +45,7 @@ void player_fire_step(const PlayerMotion& p, PlayerWeapon& w, Vec2 fire, float s
 // Per step for one bullet: returns false when it is removed this step (it
 // hit a wall on the previous step). Otherwise moves it and handles the
 // arena contact (sets `hit`).
-bool bullet_step(Bullet& b, float step, float half_x, float half_y);
+bool bullet_step(Bullet& b, float step, float half_x, float half_y, Effects& fx);
 
 // World-space segments of a bullet (sub_82061908 with its shape).
 struct Segment {
