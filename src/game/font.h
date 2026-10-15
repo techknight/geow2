@@ -37,6 +37,9 @@ class Font {
   static Font from_image(std::span<const uint8_t> image);
   // dat_821825F4: the line width factor text is drawn with.
   void set_line_factor(float f) const { line_factor_ = f; }
+  // dat_821D1E30: set, the kerning pairs are skipped (every pair gets the
+  // default gap).
+  void set_kerning(bool on) const { kerning_ = on; }
 
   // sub_82075AD8: the advance after character c (followed by `next`), in
   // units of the width scale; codes 4 and 7 toggle raised and half-height
@@ -73,6 +76,7 @@ class Font {
   std::array<uint8_t, 256> map_{};
   std::array<uint8_t, 256> full_size_{};  // 0: drawn as a small capital
   mutable float line_factor_ = 1.0f;
+  mutable bool kerning_ = true;
 };
 
 // sub_8205D740: a number with thousands separators (',' in English).

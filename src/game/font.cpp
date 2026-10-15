@@ -189,7 +189,7 @@ float Font::advance(int c, int next, int& state) const {
   float gap = 0.375f;  // dat_820022FC
   bool paired = false;
   for (const Kern& k : kKerning)
-    if (k.a == c && k.b == next) {
+    if (kerning_ && k.a == c && k.b == next) {
       gap = k.gap;
       paired = true;
       break;

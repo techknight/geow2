@@ -649,8 +649,10 @@ void Frontend::draw_intro(UiCanvas& c) const {
     c.sprite(std::fmaf(-S, 0.5f, 320.0f), 160.0f - size * 0.5f, S, size, col, kTexRetroBizarre, false);
     const Rgba nf{n[0] * f, n[1] * f, n[2] * f, n[3] * f};
     const float y = ((size * 0.5f) + -38.0f) + 160.0f;
+    g_.font.set_kerning(false);
     g_.font.centre_fit(c.lines, 320.0f, y, 40.0f, 10.0f, 0.663f * S, nf.data(), "Bizarre");
     g_.font.centre_fit(c.lines, 320.0f, y + 17.0f, 40.0f, 10.0f, 0.663f * S, nf.data(), "Creations");
+    g_.font.set_kerning(true);
   }
   // (The ESRB line shows only on North American consoles or with
   // Ui.Intro.ShowEsrb; neither applies here.)
