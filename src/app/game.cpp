@@ -746,6 +746,21 @@ void draw_game_hud(const Game& g, LineBatch& ui) {
   hud.length = g.rules.length;
   hud.lives_mode = g.rules.lives_mode;
   draw_hud(g.font, g.hud_text, hud, ui);
+  // The achievement hints under the field (single player, not paused):
+  // King's zones while no bomb or shield hit (from 10, text 0xA3 / 0xA4)
+  // and Waves' rocket walls likewise (from 4, 0xA5 / 0xA6).
+  if (frozen(g)) return;
+  const PlayerLife& p = g.life;
+  const float* normal = UiPalette::defaults()[kUiNormal].data();
+  std::string hint;
+  if (g.rules.mode == 5 && !p.bomb_used && !p.shield_hit && g.world->zones_captured >= 10) {
+    const int n = g.world->zones_captured;
+    hint = n < 30 ? format("%s - %i / %i", g.text(0xA3).c_str(), n, 30) : format("%s - %i", g.text(0xA4).c_str(), n);
+  } else if (g.rules.mode == 3 && !p.bomb_used && !p.shield_hit && g.waves.walls > 3) {
+    const int n = g.waves.walls;
+    hint = n < 8 ? format("%s - %i / %i", g.text(0xA5).c_str(), n, 8) : format("%s - %i", g.text(0xA6).c_str(), n);
+  }
+  if (!hint.empty()) g.font.centre(ui, 320.0f, 334.0f, 8.0f, 8.0f, normal, hint);  // dat_82004994
 }
 
 void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format,
