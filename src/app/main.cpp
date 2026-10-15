@@ -23,7 +23,8 @@
 // step by step from a CSV with a step column and raw lx, ly, rx, ry, lt,
 // rt columns for pad 0 and p1_lx .. p3_rt for the others (a step without
 // a row keeps the previous one; a pad without columns keeps its
-// --stick / --fire); --positions writes every unit after each step. With
+// --stick / --fire; a <rng-state>-spawner.txt next to the --rng-state
+// file loads the spawner state with it); --positions writes every unit after each step. With
 // a seq_phase column (Sequence's phase in the
 // recorded game) the music's TransitionSwitch, which the original reads
 // from its audio thread, is raised on the steps where that phase went
@@ -37,6 +38,7 @@
 #include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -396,6 +398,40 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
       for (auto& wd : words) f >> std::hex >> wd;
       if (f) g.rng.load(words, index);
       else SDL_Log("cannot read the generator state %s", rng_path.string().c_str());
+      // With it, the spawner state the game drew before that step
+      // (0x8219DDA0, 0x30 bytes in hex, big-endian), when the file exists.
+      fs::path sp = rng_path;
+      sp.replace_filename(rng_path.stem().string() + "-spawner.txt");
+      if (std::ifstream sf(sp); sf) {
+        uint8_t b[0x30] = {};
+        for (auto& v : b) {
+          unsigned x = 0;
+          sf >> std::hex >> x;
+          v = uint8_t(x);
+        }
+        if (sf) {
+          auto u32 = [&](int o) { return uint32_t(b[o]) << 24 | uint32_t(b[o + 1]) << 16 | uint32_t(b[o + 2]) << 8 | b[o + 3]; };
+          auto f32 = [&](int o) {
+            const uint32_t v = u32(o);
+            float r;
+            std::memcpy(&r, &v, 4);
+            return r;
+          };
+          WaveSpawner& ws = g.waves;
+          for (int k = 0; k < 4; ++k) {
+            ws.side[k] = int(u32(4 * k));
+            ws.full[k] = b[0x10 + k] != 0;
+          }
+          ws.index = int(u32(0x14));
+          ws.flip = b[0x18] != 0;
+          ws.current_full = b[0x19] != 0;
+          ws.progress = f32(0x1C);
+          ws.timer = f32(0x20);
+          ws.state = int(u32(0x24));
+          ws.group_type = int(u32(0x28));
+          ws.group_count = int(u32(0x2C));
+        }
+      }
     }
     // --dump: every unit (creation order) after that step: type, x, y.
     if (!dump_path.empty() && i + 1 == dump_step) {
@@ -413,6 +449,14 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
         if (!e->unit_based || (e->flags & kEntityRemoved)) continue;
         char u[96];
         std::snprintf(u, sizeof(u), " %d:%.9g:%.9g", e->type, double(e->x), double(e->y));
+        positions << u;
+      }
+      // Then the shots: x:y:vx:vy.
+      positions << " |";
+      for (const Bullet& b : g.bullets) {
+        if (b.removed) continue;
+        char u[128];
+        std::snprintf(u, sizeof(u), " %.9g:%.9g:%.9g:%.9g", double(b.x), double(b.y), double(b.vx), double(b.vy));
         positions << u;
       }
       positions << '\n';

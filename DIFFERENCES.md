@@ -162,11 +162,11 @@ Format for each entry:
   console. Snake segments trail their leader by a distance and pull read
   from the estimates, so their positions differ from the console's in
   the low bits, as do shots after bouncing off a gate's beam.
-  Measured against the emulated original in recorded King games, where
-  geoms are pulled all the time: a geom reached the ship a step earlier
-  on the original (multiplier 90 one step before the port's), which
-  changed a kill's points (one game ended 30 points apart) or, in
-  another game, the game itself from a few steps later.
+  In recorded King games, where geoms are pulled all the time, the
+  emulated original picked a geom up a step before the port in two
+  games out of two (changing one kill's points, or the game from
+  there). The emulator rounds some fused operations differently from
+  the console itself, so not every such step is this deviation.
 - **Decided**: 2026-10-15.
 
 ### Render target precision
