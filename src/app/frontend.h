@@ -78,6 +78,12 @@ class Frontend {
   // sub_820334A8: the boot screen (the intro is drawn with textures not
   // yet ported, so the main menu comes at once).
   void boot();
+  // The in-game screen (the HUD) for a game started without the menus
+  // (the development captures).
+  void watch_game() {
+    hud_screen();
+    fade_ = 1.0f;
+  }
   // One frame: the menu input and the state's handler (sub_82033E18).
   void frame(const std::array<PadState, 4>& pads);
   // The UI layer (sub_820924A0) into `c`.
@@ -166,6 +172,7 @@ class Frontend {
   void rules_icon(UiCanvas& c, float x, float y, float rot, float scale, Vec2 offset, const ModelGeometry& m, Vec4 up,
                   const Rgba& colour) const;
   void intro(const MenuInput& in);           // sub_8207E9F0
+  void draw_intermission(UiCanvas& c) const;  // sub_82039AA0
   void draw_intro(UiCanvas& c) const;        // sub_8207E628
   void draw_header(UiCanvas& c, int text) const;  // the bar at 18..40 and its title
   void tips_menu(TextLayout& l) const;      // sub_8208F2F8

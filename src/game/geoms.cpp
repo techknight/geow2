@@ -182,6 +182,7 @@ void Geom::collect(World& w, size_t p) {
   w.multiplier += value;
   w.spawn_geoms += value;  // sub_8203BBB8
   w.play(audio::Event::kPickupGeom1);  // the pair alternates behind its gate
+  if (w.geom_collected) w.geom_collected(value);  // sub_820390F0
   if (w.multiplier < w.multiplier_milestone) {
     w.popups.add_small(x, y, 0.75f, 0, "x" + format_number(w.multiplier));  // dat_82000718
   } else {

@@ -74,7 +74,39 @@ bool split_line(const std::string& s, std::string& name, Args& args) {
   return true;
 }
 
+// sub_82038450: geoms per unit by spawn type, times the count.
+int weight(int type, int n) {
+  switch (type) {
+    case 1: case 2: case 3: case 0x14: case 0x16: case 0x18: case 0x19: return n * 2;
+    case 4: case 10: case 0x10: case 0x11: case 0x12: return n * 3;
+    case 5: return n * 5;
+    case 6: case 11: return n * 8;
+    case 7: case 14: return n;
+    case 8: return n * 6;
+    case 12: return n * 4;
+    default: return 0;
+  }
+}
+
 }  // namespace
+
+int sequence_geom_weight(const SequenceCommand& c) {
+  switch (c.kind) {
+    case SequenceCommand::kScatter:
+    case SequenceCommand::kCircle:
+    case SequenceCommand::kClump:
+      return weight(c.type, c.count);
+    case SequenceCommand::kLine: {
+      // Slot 2 (sub_8203ACC0): 14 / 9 on half lines, 29 / 19 on full ones
+      // (north/south, east/west), 0 without a wall.
+      int n = 0;
+      if (c.wall >= 0) n = c.half > 0 ? (c.wall < 2 ? 14 : 9) : (c.wall < 2 ? 29 : 19);
+      return weight(c.type, n);
+    }
+    default:
+      return 0;
+  }
+}
 
 int sequence_type(const std::string& name) {
   static const struct {
@@ -168,6 +200,8 @@ std::vector<SequenceCommand> parse_sequence_script(const std::string& s) {
 
 void Sequence::reset(World& w) {
   for (int& o : outcome) o = 0;
+  geom_target.fill(0);
+  geom_got.fill(0);
   wait = 0.0f;
   level = 0;  // Level.StartLevel (0x8219D438, default 0)
   cursor = 0;
@@ -177,15 +211,43 @@ void Sequence::reset(World& w) {
 }
 
 void Sequence::reset_screen(World& w) {
-  // sub_8203B2C8: the clocks to 0 and the 20 panels' positions, with 20
-  // draws (the panels are not drawn yet).
+  // sub_8203B2C8: everything 0; each panel 400 off to the left (-1) or the
+  // right (+1) (the middle column alternating by row); five draws per row
+  // give the start delays, building outward from the middle panel.
   screen_clock = screen_fade = intro = ending = 0.0f;
-  for (int i = 0; i < 20; ++i) w.rng.next();
+  for (int i = 0; i < 20; ++i) {
+    panel[size_t(i)] = Spring{};
+    const int m = i % 5;
+    panel[size_t(i)].pos = (m > 2 || (m == 2 && (i / 5) % 2 == 1)) ? 1.0f : -1.0f;
+  }
+  constexpr float k = 2.32830644e-10f;  // dat_820006E4
+  for (int row = 0; row < 4; ++row) {
+    const float a = std::fmaf(float(w.rng.next()) * k, 0.05f, 0.075f);  // dat_82000D60, dat_82000D54
+    const float b = std::fmaf(float(w.rng.next()) * k, 0.1f, 0.05f);    // dat_82000714
+    const float c = float(w.rng.next()) * k * 0.2f;                      // dat_82000D5C
+    const float d = std::fmaf(float(w.rng.next()) * k, 0.1f, 0.05f);
+    const float e = std::fmaf(float(w.rng.next()) * k, 0.05f, 0.075f);
+    Spring* p = &panel[size_t(row * 5)];
+    if (row % 2 == 0) {
+      p[0].delay = (c + b) + a;
+      p[1].delay = c + b;
+      p[2].delay = c;
+      p[3].delay = d;
+      p[4].delay = e + d;
+    } else {
+      p[0].delay = b + a;
+      p[1].delay = b;
+      p[2].delay = c;
+      p[3].delay = d + c;
+      p[4].delay = (e + d) + c;
+    }
+  }
 }
 
 void Sequence::start_level(World& w) {
   (void)w;
   wait = 0.0f;
+  if (level >= 0 && level < 20) geom_target[size_t(level)] = 0;
   cursor = 0;
   // sub_8203A2B8: Level.TestLevel (0x8219D404, default -1) would replace
   // the index; the first record with that level.
@@ -196,6 +258,9 @@ void Sequence::start_level(World& w) {
       commands = parse_sequence_script(script);
       break;
     }
+  // The level's geom weight (sub_8203A420), the bar's full height.
+  if (level >= 0 && level < 20)
+    for (const SequenceCommand& c : commands) geom_target[size_t(level)] += sequence_geom_weight(c);
 }
 
 void Sequence::clear(World& w, bool blasts) {
@@ -431,7 +496,20 @@ void Sequence::step(World& w, const Inputs& in) {
       screen_clock = dt + screen_clock;
       const float f = screen_fade + dt;
       screen_fade = 1.0f - f < 0.0f ? 1.0f : f;
-      // (The panels' springs, sub_82039550: with the screen.)
+      // The panels' sideways springs (sub_82039550; Ui.Intermission.RateX
+      // 100, DampX 15.5): a panel waits out its delay (sound 0x49 as it
+      // starts), then two half-step velocity updates around the move.
+      for (Spring& sp : panel) {
+        if (0.0f < sp.delay) {
+          sp.delay = sp.delay - dt;
+          if (0.0f < sp.delay) continue;
+          w.play(audio::Event::kIntermissionEnter);
+        }
+        const float h = dt * 0.5f;
+        const float v1 = std::fmaf(std::fmaf(sp.target - sp.pos, 100.0f, -(sp.vel * 15.5f)), h, sp.vel);
+        sp.pos = std::fmaf(v1, dt, sp.pos);
+        sp.vel = std::fmaf(std::fmaf(sp.target - sp.pos, 100.0f, -(v1 * 15.5f)), h, v1);
+      }
       break;
     }
     case 3:

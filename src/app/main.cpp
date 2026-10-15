@@ -214,8 +214,12 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sti
     tick(g, s, r, cmd);
     SDL_SubmitGPUCommandBuffer(cmd);
   }
+  Profile profile;
+  std::array<LocalBoard, 6> boards;
+  Frontend fe(g, g.text, profile, boards, {});
+  fe.watch_game();
   UiCanvas ui;
-  draw_game_hud(g, ui.lines);
+  fe.draw(ui);
   if (capture(dev, r, g, ui, out, w, h)) return 1;
   SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets, "
           "%zu entities, score %lld x%d, %zu particles, %zu debris, %zu linger quads, %d deaths, %d bombs left, "

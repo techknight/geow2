@@ -5,6 +5,8 @@ namespace fs = std::filesystem;
 namespace geow2 {
 namespace {
 
+void draw_edges(const Game& g, LineBatch& out);
+
 const FlaskStruct* as_struct(const FlaskValue* v) {
   auto* p = v ? std::get_if<std::shared_ptr<FlaskStruct>>(&v->v) : nullptr;
   return p ? p->get() : nullptr;
@@ -107,6 +109,9 @@ void kill_player(Game& g, Entity& killer) {
   // with the HUD.)
   p.removed = true;
   w.players[0].removed = true;
+  // Deadline: the Rebound hint comes back for 4 s after a death between
+  // 11 and 74 bounced-shot kills.
+  if (g.rules.mode == 0 && 10 < w.bounce_kills && w.bounce_kills < 75) w.bounce_hint = 4.0f;  // dat_820006F4
   w.play(audio::Event::kPlayerDie);
   // No player is left (sub_8204E7D8): dat_8219D288 = 1.
   g.after_death = 1;
@@ -342,6 +347,8 @@ void foreground(const Game& g, LineBatch& out) {
     for (const Segment& s : bullet_segments(b, g.bullet_shape, *g.gm))
       emit_line(out, kLineWidthUnit, kShapeCapSize, s.a, s.b, b.colour);
   draw_player(g, out);
+  // Pacifism's edge marks (sub_8204FBA8, after the player's list).
+  draw_edges(g, out);
   // The debris batches (drawn with the same presets, before the objects).
   out.body.insert(out.body.end(), g.debris_lines.body.begin(), g.debris_lines.body.end());
   out.caps.insert(out.caps.end(), g.debris_lines.caps.begin(), g.debris_lines.caps.end());
@@ -350,8 +357,66 @@ void foreground(const Game& g, LineBatch& out) {
 // sub_82034408(reason): the end countdown, 1.5 seconds (dat_82000C90), a
 // second more when an achievement hint is on screen (single player: King
 // with no bomb or shield hit and 10 or more zones; Waves likewise with
-// more than 3 rocket walls; Deadline's and Pacifism's hints need counters
-// not ported yet).
+// more than 3 rocket walls; Deadline's Rebound line showing; Pacifism with
+// 25 or more edge marks while Wax On or Wax Off is still to come).
+// sub_8204F7C8: the ship within 10 of an edge marks that edge's cell (by
+// its position along it); once all 100 are marked, touching a marked cell
+// clears it, counting on to 200.
+void track_edges(Game& g) {
+  World& w = *g.world;
+  const float hx = w.half_x, hy = w.half_y;
+  const float x = g.player.x, y = g.player.y, r = g.player.radius;
+  const float ex = (hx - r) - 10.0f, ey = (hy - r) - 10.0f;  // dat_8200070C
+  const int ix = std::clamp(int(((hx + x) / (hx * 2.0f)) * 30.0f), 0, 29);
+  const int iy = std::clamp(int(((hy + y) / (hy * 2.0f)) * 20.0f), 0, 19);
+  const bool marking = g.edge_count < 100;
+  auto touch = [&](bool& cell) {
+    if (marking) {
+      if (cell) return;
+      ++g.edge_count;
+      cell = true;
+      if (g.edge_count >= 25) w.play(audio::Event::kWaxOnClick);
+    } else {
+      if (!cell) return;
+      ++g.edge_count;
+      cell = false;
+      w.play(audio::Event::kWaxOffClick);
+    }
+  };
+  if (y < -ey) touch(g.edge_top[size_t(ix)]);
+  if (y > ey) touch(g.edge_bottom[size_t(ix)]);
+  if (x < -ex) touch(g.edge_left[size_t(iy)]);
+  if (x > ex) touch(g.edge_right[size_t(iy)]);
+}
+
+// sub_8204FBA8: from 25 marks, a 16-long dash on the arena border for
+// each marked cell (cap size 0.3), in the normal colour, the selection
+// colour times 2 from 100.
+void draw_edges(const Game& g, LineBatch& out) {
+  if (g.rules.mode != 4 || (!in_game(g) && !ending(g)) || (g.achieved & 0xC00) == 0xC00 || g.edge_count < 25) return;
+  const UiPalette p = UiPalette::defaults();
+  const Rgba c = g.edge_count >= 100 ? scaled(p[kUiSelection], 2.0f) : p[kUiNormal];
+  const float hx = g.world->half_x, hy = g.world->half_y;
+  {
+    const float half = std::fmaf(hx, 0.0333333351f, -2.0f);  // dat_82001E90
+    for (int i = 0; i < 30; ++i) {
+      const float m = std::fmaf((hx - -hx) * (float(i) + 0.5f), 0.0333333351f, -hx);
+      const float x0 = m - half, x1 = half + m;
+      if (g.edge_top[size_t(i)]) emit_line(out, kLineWidthUnit, 0.3f, {x0, -hy, 0, 1}, {x1, -hy, 0, 1}, c.data());
+      if (g.edge_bottom[size_t(i)]) emit_line(out, kLineWidthUnit, 0.3f, {x0, hy, 0, 1}, {x1, hy, 0, 1}, c.data());
+    }
+  }
+  {
+    const float half = std::fmaf(hy, 0.05f, -2.0f);  // dat_82000D60
+    for (int i = 0; i < 20; ++i) {
+      const float m = std::fmaf((hy - -hy) * (float(i) + 0.5f), 0.05f, -hy);
+      const float y0 = m - half, y1 = half + m;
+      if (g.edge_left[size_t(i)]) emit_line(out, kLineWidthUnit, 0.3f, {-hx, y0, 0, 1}, {-hx, y1, 0, 1}, c.data());
+      if (g.edge_right[size_t(i)]) emit_line(out, kLineWidthUnit, 0.3f, {hx, y0, 0, 1}, {hx, y1, 0, 1}, c.data());
+    }
+  }
+}
+
 void arm_end(Game& g, int reason) {
   if (!in_game(g) || 0.0f < g.end_timer) return;
   g.end_timer = 1.5f;
@@ -362,6 +427,10 @@ void arm_end(Game& g, int reason) {
     hint = !p.bomb_used && !p.shield_hit && g.world->zones_captured >= 10;
   else if (g.rules.mode == 3)
     hint = !p.bomb_used && !p.shield_hit && g.waves.walls >= 4;
+  else if (g.rules.mode == 0)
+    hint = !(g.achieved & 0x200) && 0.0f < g.world->bounce_hint;
+  else if (g.rules.mode == 4)
+    hint = (!(g.achieved & 0x400) && g.edge_count >= 25) || (!(g.achieved & 0x800) && g.edge_count >= 25);
   g.hint_pending = hint;
   if (hint) g.end_timer = g.end_timer + 1.0f;
 }
@@ -435,6 +504,7 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
   }
   g.world->scored = [&g]() { score_awards(g); };
   g.world->achieve = [&g](uint32_t bit, int flags) { award_achievement(g, bit, flags); };
+  g.world->geom_collected = [&g](int v) { g.sequence.geom_collected(v); };
   g.sequence.achieve = [&g](uint32_t bit, int flags) { award_achievement(g, bit, flags); };
   const FlaskValue* model_ref = unit->s->find("model");
   const auto* ref = model_ref ? std::get_if<FlaskRef>(&model_ref->v) : nullptr;
@@ -561,6 +631,12 @@ void start_game(Game& g, int mode) {
   g.end_reason = 0;
   g.hint_pending = false;
   g.earned = 0;
+  // sub_8204EDD8: Pacifism's edges cleared.
+  g.edge_count = 0;
+  g.edge_top.fill(false);
+  g.edge_bottom.fill(false);
+  g.edge_left.fill(false);
+  g.edge_right.fill(false);
   g.life = PlayerLife{};
   // sub_82032FF8: lives and bombs into the player record.
   g.life.lives = g.rules.start_lives;
@@ -753,6 +829,18 @@ void step(Game& g, const Sticks& s) {
     }
   }
 
+  // The Rebound hint fades (0x82037ABC), then Pacifism's edge tracker
+  // (sub_8204FAD8).
+  {
+    const float t = w.bounce_hint - kStep;
+    w.bounce_hint = t >= 0.0f ? t : 0.0f;
+  }
+  if (g.rules.mode == 4 && (g.achieved & 0xC00) != 0xC00) {
+    if (g.life.alive()) track_edges(g);
+    if (g.edge_count >= 100) award_achievement(g, 0x400, 0);
+    if (g.edge_count >= 200) award_achievement(g, 0x800, 0);
+  }
+
   // The grid (sub_8205C8F8, then sub_8205B880 on worker threads): pushes
   // gathered from the entities, the spring step, and the line pass from
   // the positions the step read. Bullets push with radius +0x8C and
@@ -873,7 +961,22 @@ void draw_game_hud(const Game& g, LineBatch& ui) {
     const int n = g.waves.walls;
     hint = n < 8 ? format("%s - %i / %i", g.text(0xA5).c_str(), n, 8) : format("%s - %i", g.text(0xA6).c_str(), n);
   }
-  if (!hint.empty()) g.font.centre(ui, 320.0f, 334.0f, 8.0f, 8.0f, normal, hint);  // dat_82004994
+  Rgba colour{normal[0], normal[1], normal[2], normal[3]};
+  if (g.rules.mode == 0 && !(g.achieved & 0x200) && 0.0f < g.world->bounce_hint) {
+    // Rebound, fading over its last second.
+    const float a = std::clamp(g.world->bounce_hint, 0.0f, 1.0f);
+    colour = {normal[0] * a, normal[1] * a, normal[2] * a, normal[3]};
+    hint = format("%s - %i / %i", g.text(0xA7).c_str(), std::clamp(g.world->bounce_kills, 0, 75), 75);
+  } else if (g.rules.mode == 4 && g.edge_count >= 25) {
+    // Wax On, then Wax Off, as a percentage.
+    if (!(g.achieved & 0x400))
+      hint = format("%s - %i%%", g.text(0xA8).c_str(),
+                    std::clamp(int((float(g.edge_count) / float(100)) * 100.0f), 0, 100));
+    else if (!(g.achieved & 0x800))
+      hint = format("%s - %i%%", g.text(0xA9).c_str(),
+                    std::clamp(int((float(g.edge_count) / float(200)) * 100.0f), 0, 100));
+  }
+  if (!hint.empty()) g.font.centre(ui, 320.0f, 334.0f, 8.0f, 8.0f, colour.data(), hint);  // dat_82004994
 }
 
 void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format,

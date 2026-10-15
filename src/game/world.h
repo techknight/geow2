@@ -233,6 +233,8 @@ class World {
   void play(audio::Event e) const {
     if (sound) sound(e);
   }
+  // sub_820390F0: a geom's value picked up (Sequence's level statistics).
+  std::function<void(int)> geom_collected;
   // The repulsar's deflection sound has its own 35 ms gate (dat_8219FACC).
   std::function<void()> repulsar_hit;
   // sub_8203BEE8's first-spawn latches (dat_8219DB74, cleared at each game

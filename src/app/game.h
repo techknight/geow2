@@ -163,6 +163,12 @@ struct Game {
     Image icon;
   };
   std::vector<AchievementInfo> achievements;
+  // Pacifism's edge marks (sub_8204F7C8): the count (dat_8219F478) and the
+  // cells of the top, bottom (30 each, by x), left and right (20 each, by
+  // y) edges (dat_8219F4A4, F4C2, F47C, F490).
+  int edge_count = 0;
+  std::array<bool, 30> edge_top{}, edge_bottom{};
+  std::array<bool, 20> edge_left{}, edge_right{};
   // The single-player score tables, by mode (sub_82034C50).
   std::array<ScoreTable, 6> tables{};
   bool first_spawn = true;  // dat_8219CE70

@@ -589,6 +589,61 @@ void Frontend::draw(UiCanvas& c) const {
       font.right(c.lines, x, 346.0f, 6.0f, 6.0f, fc.data(), std::string(1, char(0x11 + k)));
     }
   }
+  // After the menu (sub_82093048): Sequence's between-levels screen.
+  draw_intermission(c);
+}
+
+void Frontend::draw_intermission(UiCanvas& c) const {
+  const Sequence& q = g_.sequence;
+  if (!(in_game(g_) || ending(g_)) || g_.rules.mode != 2) return;
+  if (q.phase == 3 || q.phase == 4) return;
+  const bool sel = q.phase != 5 && q.phase != 6;
+  const float s = std::clamp(q.intro, 0.0f, 1.0f);
+  // The zoom onto the coming level's panel.
+  const float ox = float(q.level % 5 - 2) * 75.0f, oy = (float(q.level / 5) - 1.5f) * 55.0f;  // dat_82000F74, dat_82000F78
+  const float s2 = s * s;
+  const float fade = std::sqrt(1.0f - s);
+  const float zx = -ox * s2, zy = -oy * s2;
+  float z = 1.0f / std::sqrt(1.0f - s2);
+  z = -z >= 0.0f ? 0.0f : z;
+  z = z - 10.0f >= 0.0f ? 10.0f : z;  // dat_8200070C
+  auto X = [&](float a) { return std::fmaf(a, z, 320.0f); };
+  auto Y = [&](float a) { return std::fmaf(a, z, 180.0f); };
+  static const char* kIcon[5] = {"intermissionUnplayed", "intermissionSuccess", "intermissionDied",
+                                 "intermissionOutOfTime", "intermissionSelection"};
+  for (int r = 0; r < 4; ++r) {
+    const float row_y = (float(r) - 1.5f) * 55.0f;
+    for (int col = 0; col < 5; ++col) {
+      const int i = r * 5 + col;
+      const bool selected = i == q.level && sel;
+      const float u = std::clamp(q.panel[size_t(i)].pos, -1.0f, 1.0f);
+      const float px = std::fmaf(u, 400.0f, float(col - 2) * 75.0f);  // dat_82000F88
+      const float py = row_y;  // (the vertical springs never move)
+      const int outcome = q.outcome[i];
+      const int slot = selected ? kUiIntermissionSelection
+                                : outcome == 1   ? kUiIntermissionSuccess
+                                  : outcome == 2 ? kUiIntermissionDied
+                                  : outcome == 3 ? kUiIntermissionOutOfTime
+                                                 : kUiIntermissionUnplayed;
+      const Rgba& K = palette_[slot];
+      const Rgba P = scaled(K, fade);
+      ui_panel(c, X((px - 30.0f) + zx), Y((py - 20.0f) + zy), X((zx + px) + 30.0f), Y((zy + py) + 20.0f), P, 0x20);
+      if (q.geom_target[size_t(i)] > 0) {
+        // The level's geoms collected against its weight, up to 34 high.
+        const float frac = std::clamp(float(q.geom_got[size_t(i)]) / float(q.geom_target[size_t(i)]), 0.0f, 1.0f);
+        ui_panel(c, X((zx + px) + 24.0f), Y(std::fmaf(-frac, 34.0f, py + 17.0f) + zy), X((zx + px) + 27.0f),
+                 Y((zy + py) + 17.0f), P, 0x21);
+      }
+      if (selected)
+        ui_panel(c, X((px - 33.0f) + zx), Y((py - 23.0f) + zy), X((zx + px) + 33.0f), Y((zy + py) + 23.0f), P, 0x21);
+      const char* icon = selected ? kIcon[4] : kIcon[std::clamp(outcome, 0, 3)];
+      const auto m = g_.charmap.find(icon);
+      if (m != g_.charmap.end()) {
+        const Rgba I = scaled(K, std::sqrt(fade));
+        flat_icon(c, (zx + px) * z + 320.0f, (zy + py) * z + 180.0f, z * 1.25f, z * 1.25f, m->second, I);  // dat_82000768
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
