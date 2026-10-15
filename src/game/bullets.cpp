@@ -81,7 +81,9 @@ void player_fire_step(const PlayerMotion& p, PlayerWeapon& w, Vec2 fire, float s
 bool bullet_step(Bullet& b, float step, float half_x, float half_y) {
   // Update (sub_82052418): a bullet that hit a wall last step is removed
   // now (with a spark effect, not ported yet).
-  if (b.hit) return false;
+  if (b.hit || b.removed) return false;
+  b.prev_x = b.x;
+  b.prev_y = b.y;
   // Common update: position += velocity * step.
   const float dy = b.vy * step;
   b.x = b.x + b.vx * step;

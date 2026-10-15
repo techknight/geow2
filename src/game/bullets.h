@@ -18,8 +18,10 @@ struct Bullet {
   float sx = 0.65f, sy = 0.65f;  // +0x18 / +0x1C (0x3F266666)
   float colour[4] = {1.0f, 0.75f, 0.1f, 1.0f};  // types 0 and 2 in single player
   float grid_radius = 6.0f;     // +0x8C (dat_82001414): its push on the grid
+  float prev_x = 0, prev_y = 0;  // +0x90 / +0x94: position at the start of the step
   int type = 0;
   bool hit = false;             // +0x9C
+  bool removed = false;         // flag 1: hit something, gone
 };
 
 // The line shape player bullets draw with (+0x40 / +0x3C when +0x7C != 1):

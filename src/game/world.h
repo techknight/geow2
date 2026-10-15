@@ -17,6 +17,15 @@ namespace geow2 {
 
 class World;
 
+// Who killed an entity (the record passed to vtable slots 7 and 9): the
+// shot, its owner (a player) and the kind of kill (1 a shot; 2 and 4 score
+// nothing).
+struct Killer {
+  float x = 0, y = 0, vx = 0, vy = 0;  // the shot's position and velocity
+  int kind = 0;
+  int shot_bounces = 0;                // the shot's +0xA0
+};
+
 // Entity flags (+0x24), named by what the code does with them.
 enum EntityFlag : uint32_t {
   kEntityRemoved = 0x1,          // skipped by every walk
@@ -54,6 +63,10 @@ class Entity {
   virtual void wall(World&, Vec2) {}
   // Slot 6: the world matrix for style Custom.
   virtual Mat4 custom_placement(World& w);
+  // Slot 7 (sub_820459D8 for units): hit by a shot; kills it.
+  virtual void hit_by_shot(World& w, const Killer& k) { kill(w, k); }
+  // Slot 9 (sub_82046010(self, killer, 0) for units): destroyed.
+  virtual void kill(World& w, const Killer& k);
 
   // sub_82045CF0: the world matrix by the unit's style.
   Mat4 placement(World& w);
@@ -108,6 +121,12 @@ class World {
   Vec2 random_position();
   // sub_82046248: push apart entities of the same type.
   void separate(Entity& e, float radius, float strength);
+  // sub_82035A40: flag for removal (deleted at the end of the step).
+  void remove(Entity& e);
+  // Delete the removed entities (the deferred list at dat_8219D278).
+  void purge();
+  // sub_820408D0: the score for killing `victim`.
+  void award(const Entity& victim, const Killer& k);
   // Hash cell of a position (sub_82046BD8): (int(y) & 0x3E0) | (int(x) >> 5 & 0x1F).
   static int cell_of(float x, float y);
   template <class F>
@@ -124,6 +143,15 @@ class World {
   int enemy_count = 0;                  // dat_8219E828
   bool frozen = false;                  // dat_8219E7BC
   int player_hits = 0;                  // touches reported this step (player slot 12)
+  // Kill markers (sub_82043418, type 0x19, list 0x82181420): they live one
+  // step and push the grid (radius 32, strength 6).
+  std::vector<Vec2> death_markers;
+  // The player's score state (0x8219D068 + 0x78 * player): score (+0x28)
+  // and multiplier (+0x40; the HUD shows x1 at the start).
+  int64_t score = 0;
+  int multiplier = 1;
+  int kills = 0;                        // dat_8219D0A0
+  bool king_mode = false;               // mode 5 doubles the score
 };
 
 // The cells overlapping (x - r .. x + r, y - r .. y + r), walked as

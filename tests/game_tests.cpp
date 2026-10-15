@@ -15,6 +15,7 @@
 #include "game/model_geometry.h"
 #include "game/player_motion.h"
 #include "game/rotation.h"
+#include "game/shots.h"
 #include "game/spawn.h"
 #include "game/wanderer.h"
 #include "game/world.h"
@@ -451,7 +452,38 @@ static void test_world() {
   expect(std::fabs(e->x) <= 300.0f && std::fabs(e->y) <= 200.0f, "wanderer stays in the arena");
 }
 
+static void test_shot_kills() {
+  // A shot sweeping through a faded-in wanderer kills it: removed at the
+  // end of the step, a kill marker, 25 * x1 * 0.25 -> 5 points.
+  GameRng rng;
+  rng.seed(7);
+  Units units;
+  World w(kMath, rng, units);
+  Entity* e = spawn_enemy(w, 1, 0.0f, 50.0f, 0.0f);
+  e->flags &= ~kEntityFadingIn;
+  e->fade = 1.0f;
+  std::vector<Bullet> shots(1);
+  shots[0].prev_x = 30.0f;
+  shots[0].x = 60.0f;
+  shots[0].vx = 600.0f;
+  shot_collisions(w, shots);
+  expect(shots[0].removed && near(shots[0].x, 50.0f), "shot moves to the closest point of its path");
+  expect((e->flags & kEntityRemoved) && w.death_markers.size() == 1 && w.score == 5, "wanderer killed, 5 points");
+  w.purge();
+  expect(w.entities.empty() && w.enemy_count == 0, "killed wanderer deleted");
+  // At x4 the same kill is worth 25.
+  w.multiplier = 4;
+  Entity* f = spawn_enemy(w, 1, 0.0f, 50.0f, 0.0f);
+  f->flags &= ~kEntityFadingIn;
+  std::vector<Bullet> more(1);
+  more[0].prev_x = 30.0f;
+  more[0].x = 60.0f;
+  shot_collisions(w, more);
+  expect(w.score == 30, "x4 wanderer worth 25");
+}
+
 int main() {
+  test_shot_kills();
   test_world();
   test_walls();
   test_grid_lines();

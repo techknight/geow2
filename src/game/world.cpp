@@ -91,6 +91,16 @@ void Entity::post_move(World& w) {
 
 Mat4 Entity::custom_placement(World& w) { return placement_style_none(w.gm, x, y, heading); }
 
+void Entity::kill(World& w, const Killer& k) {
+  // sub_82046010 with no flags: explosion and line debris (not ported
+  // yet), a kill marker, the score, geoms (not ported yet), sound 2, and
+  // removal.
+  if (flags & kEntityRemoved) return;
+  w.death_markers.push_back({x, y});
+  w.award(*this, k);
+  w.remove(*this);
+}
+
 Mat4 Entity::placement(World& w) {
   const UnitStyle style = unit ? unit->style : UnitStyle::kNone;
   switch (style) {
@@ -110,6 +120,53 @@ Entity* World::add(std::unique_ptr<Entity> e) {
   Entity* p = entities.back().get();
   p->post_move(*this);
   return p;
+}
+
+void World::remove(Entity& e) { e.flags |= kEntityRemoved; }
+
+void World::purge() {
+  for (auto it = entities.begin(); it != entities.end();) {
+    Entity& e = **it;
+    if (!(e.flags & kEntityRemoved)) {
+      ++it;
+      continue;
+    }
+    if (e.cell >= 0) {
+      auto& v = cells[size_t(e.cell)];
+      v.erase(std::find(v.begin(), v.end(), &e));
+    }
+    // The unit destructor (sub_82046B08) takes it off the enemy count.
+    if (e.flags & kEntityCounted) --enemy_count;
+    it = entities.erase(it);
+  }
+}
+
+void World::award(const Entity& victim, const Killer& k) {
+  // sub_820408D0. Points by the victim's type code (+0x44).
+  if (k.kind == 0 || k.kind == 2 || k.kind == 4) return;
+  ++kills;
+  int base = 0;
+  switch (victim.type) {
+    case 2: case 4: case 10: case 0x1F: case 0x25: base = 50; break;
+    case 6: case 9: case 0x13: base = 100; break;
+    case 0xB: base = 350; break;
+    case 0xC: case 0x11: base = 10; break;
+    case 0xD: base = 150; break;
+    case 0x12: case 0x21: base = 25; break;
+    case 0x14: base = 500; break;
+    case 0x1B: base = 75; break;
+    default: break;  // types 3, 0x16, 0x18 come with their enemies
+  }
+  // multiplier * points * 0.25 (dat_82000720), doubled in King, rounded
+  // down to a multiple of 5.
+  int64_t fives = int64_t(float(multiplier) * float(base) * 0.25f);
+  if (king_mode) fives <<= 1;
+  fives /= 5;
+  int64_t points = fives * 5;
+  if (points < 1) return;
+  // Shots that bounced off a gate (kind 5's +0xA0 > 0) score five times.
+  if (k.shot_bounces > 0) points = fives * 25;
+  score += points;
 }
 
 int World::cell_of(float x, float y) { return (int(y) & 0x3E0) | (int(x) >> 5 & 0x1F); }

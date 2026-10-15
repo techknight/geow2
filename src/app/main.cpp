@@ -39,6 +39,7 @@
 #include "game/units.h"
 #include "game/world.h"
 #include "game/rotation.h"
+#include "game/shots.h"
 
 namespace fs = std::filesystem;
 using namespace geow2;
@@ -186,6 +187,8 @@ void step(Game& g, const Sticks& s) {
   // Deadline's spawner (sub_8203E7E8), then the clock (sub_820366A0).
   g.spawner.step(w, g.elapsed);
   g.elapsed = kStep + g.elapsed;
+  // Last step's kill markers go (sub_82043368).
+  w.death_markers.clear();
 
   // The player's update (sub_8204FF00): thrust, then firing; then the
   // common update integrates its position.
@@ -205,6 +208,9 @@ void step(Game& g, const Sticks& s) {
   // first, so bullets fired this step already move: to verify in the oracle).
   std::erase_if(g.bullets, [](Bullet& b) { return !bullet_step(b, kStep, kArenaHalfX, kArenaHalfY); });
   w.update_entities();
+  // Shots against enemies (sub_820523B0).
+  shot_collisions(w, g.bullets);
+  std::erase_if(g.bullets, [](const Bullet& b) { return b.removed; });
   // The camera follows after the entity updates (sub_820366A0).
   camera_follow_single(g.camera, &g.player.x, &g.player.y, 1, kArenaHalfX, kArenaHalfY);
 
@@ -215,6 +221,9 @@ void step(Game& g, const Sticks& s) {
   GridInputs in;
   in.pushes.emplace_back();
   for (const Bullet& b : g.bullets) in.pushes.back().push_back({b.x, b.y, b.grid_radius, 2.0f});
+  // Kill markers: radius 32 (dat_82001140), strength 6 (dat_82001414).
+  in.pushes.emplace_back();
+  for (const Vec2& m : w.death_markers) in.pushes.back().push_back({m.x, m.y, 32.0f, 6.0f});
   g.grid.step(in, kArenaHalfX, kArenaHalfY);
   grid_lines(g.grid, g.grid_tuning, g.grid_fade, g.grid_lines);
   grid_warp_mesh(g.grid, g.grid_tuning, g.warp_mesh);
@@ -235,6 +244,9 @@ void step(Game& g, const Sticks& s) {
 
   // The stars' step (sub_82075548, on the render worker each frame).
   g.stars.update(*g.gm, 1.0f, g.star_vertices);
+
+  // Entities removed this step are deleted.
+  w.purge();
 }
 
 // The foreground lines: the enemies' models, the shots' shapes
@@ -313,9 +325,9 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sti
   write_png(out, w, h, {px, size_t(w) * h * 4});
   SDL_UnmapGPUTransferBuffer(dev, down);
   SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets, "
-          "%zu enemies",
+          "%zu enemies, score %lld",
           out.string().c_str(), frames, g.player.x, g.player.y, g.player.heading, g.camera.x, g.camera.y,
-          g.camera.zoom, g.bullets.size(), g.world->entities.size());
+          g.camera.zoom, g.bullets.size(), g.world->entities.size(), (long long)g.world->score);
   SDL_ReleaseGPUTransferBuffer(dev, down);
   SDL_ReleaseGPUTexture(dev, tex);
   return 0;
