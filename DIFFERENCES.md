@@ -277,4 +277,8 @@ Format for each entry:
   random draws, so a game that fills the pool (many enemies destroyed at
   once, as when the ship dies in a crowded Sequence level) goes on
   differently from there, as it would between two runs on the console.
+  Measured against the emulated original in two Sequence games: at the
+  ship's death among 65-76 enemies the port's pool took about 120-160
+  particles more before counting as full (146 and 200 more random
+  draws); everything before matched exactly.
 - **Decided**: 2026-10-15.
