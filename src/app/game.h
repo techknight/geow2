@@ -91,6 +91,7 @@ struct Game {
   float tint[4] = {1, 1, 1, 1};  // player colour (constructor: unit tint, rgb times alpha)
   PlayerMotion player;
   CameraState camera;
+  float camera_idle = 0.0f;  // dat_8219D3CC: time out of a game
   PlayerWeapon weapon;
   std::vector<Bullet> bullets;
   BulletShape bullet_shape;

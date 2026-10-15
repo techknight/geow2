@@ -43,6 +43,15 @@ void camera_follow_single(CameraState& c, const float* xs, const float* ys, int 
   c.y = std::fmaf(ty - c.y, kCentreRate, c.y);
 }
 
+void camera_front_end(CameraState& c, float& idle, float step) {
+  idle = idle + step;
+  c.zoom = std::fmaf(1.0f - c.zoom, kZoomRate, c.zoom);
+  const float t = idle;
+  const float k = fsel(t - 1.0f, 1.0f, fsel(-t, 0.0f, t));
+  c.x = std::fmaf(-(k * c.x), kCentreRate, c.x);
+  c.y = std::fmaf(-(k * c.y), kCentreRate, c.y);
+}
+
 Mat4 camera_view_projection(const CameraState& c, const GameMath& gm) {
   // The shake offset (dat_821A1D88/8C) is zero outside the shake effect.
   const Mat4 basis = look_at_basis({c.x, c.y, kEyeHeight, 1.0f}, {0.0f, 0.0f, -kEyeHeight, 0.0f}, {0.0f, -1.0f, 0.0f, 0.0f});

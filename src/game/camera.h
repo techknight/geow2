@@ -24,6 +24,12 @@ void camera_follow_single(CameraState& c, const float* xs, const float* ys, int 
 // times zoom over Render.Zoom (1.0), aspect 16:9, near 1, far 10000.
 Mat4 camera_view_projection(const CameraState& c, const GameMath& gm);
 
+// The same frame step out of a game (sub_820366A0 with sub_82033610
+// false): the zoom eases to 1 and the centre decays toward the middle,
+// slowly at first (the factor is the time out of a game, dat_8219D3CC,
+// clamped to [0, 1]).
+void camera_front_end(CameraState& c, float& idle, float step);
+
 // The UI transform (sub_82067E40): UI units (640 x 360, y down) to clip
 // space: M (x - 320, y - 180, z, via rows doubled and w = 2) times the view
 // from (0, Ui.PositionY 0, Ui.PositionZ 170) looking down -z with up

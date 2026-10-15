@@ -699,10 +699,16 @@ void step(Game& g, const Sticks& s) {
   g.was_fading = fading;
   // The camera follows after the entity updates (sub_820366A0): the
   // player object while it exists, else the slot's spawn point.
-  if (g.life.present)
-    camera_follow_single(g.camera, &g.player.x, &g.player.y, 1, kArenaHalfX, kArenaHalfY);
-  else
-    camera_follow_single(g.camera, &g.life.spawn_x, &g.life.spawn_y, 1, kArenaHalfX, kArenaHalfY);
+  // Out of a game the view drifts back to the centre.
+  if (!in_game(g)) {
+    camera_front_end(g.camera, g.camera_idle, kStep);
+  } else {
+    if (g.life.present)
+      camera_follow_single(g.camera, &g.player.x, &g.player.y, 1, kArenaHalfX, kArenaHalfY);
+    else
+      camera_follow_single(g.camera, &g.life.spawn_x, &g.life.spawn_y, 1, kArenaHalfX, kArenaHalfY);
+    g.camera_idle = 0.0f;
+  }
   // No player left since one spawned: the field is cleared; then a slot
   // without a player may spawn one.
   if (g.field_live && !g.life.alive()) {
