@@ -17,6 +17,7 @@
 #include "game/line_quads.h"
 #include "game/model_geometry.h"
 #include "game/player_motion.h"
+#include "game/profile.h"
 #include "game/rotation.h"
 #include "game/sequence.h"
 #include "game/shots.h"
@@ -674,7 +675,26 @@ void test_sequence_parser() {
          "script lines, comments cut at ';'");
 }
 
+void test_profile() {
+  Profile p;
+  expect(p.mode_unlocked(0) && !p.mode_unlocked(5) && p.index_new(1), "fresh profile: Deadline only, new");
+  // 10 kills: 30 points; 100 kills: 50 + 25 = 75; past 400 King opens.
+  expect(p.game_ended(0, 10, 500) && p.progress[1] == 30, "progress from 10 kills");
+  p.game_ended(0, 100, 500);
+  expect(p.progress[1] == 105, "progress from 100 kills");
+  for (int i = 0; i < 6; ++i) p.game_ended(0, 1000, 500);
+  expect(p.progress[1] == kKillsToUnlock && p.mode_unlocked(5), "King unlocked at 400");
+  expect(p.game_ended(5, 0, 2000000) && (p.millions & 0x10), "the million bit");
+  const auto b = p.to_bytes();
+  const Profile q = Profile::from_bytes(b);
+  expect(q.unlocked == p.unlocked && q.progress == p.progress && q.millions == p.millions, "profile round trip");
+  SequenceCommand c;
+  parse_sequence_line("line wall(N) type(grunt) half(1)", c);
+  expect(sequence_geom_weight(c) == 28, "line geom weight counts one fewer");
+}
+
 int main() {
+  test_profile();
   test_sequence_parser();
   test_gravity_well();
   test_gate();
