@@ -23,7 +23,10 @@
 // step by step from a CSV with a step column and raw lx, ly, rx, ry, lt,
 // rt columns for pad 0 and p1_lx .. p3_rt for the others (a step without
 // a row keeps the previous one; a pad without columns keeps its
-// --stick / --fire). The third runs the front end instead,
+// --stick / --fire). With a seq_phase column (Sequence's phase in the
+// recorded game) the music's TransitionSwitch, which the original reads
+// from its audio thread, is raised on the steps where that phase went
+// from 1 to 2 or from 5 to 6. The third runs the front end instead,
 // pressing a button (a, b, x, y, start, back, up, down, left, right; pad 0,
 // or another with :<pad>) on the given frames; it never saves.
 
@@ -268,6 +271,7 @@ int capture(SDL_GPUDevice* dev, Renderer& r, const Game& g, const UiCanvas& ui, 
 struct StepInputs {
   std::array<bool, 4> has{};
   std::vector<std::array<Sticks, 4>> steps;
+  std::vector<int> phase;  // Sequence's phase after each step, -1 unknown
 };
 
 StepInputs load_inputs(const fs::path& path) {
@@ -290,6 +294,7 @@ StepInputs load_inputs(const fs::path& path) {
     return it == head.end() ? -1 : int(it - head.begin());
   };
   const int cs = col("step");
+  const int cph = col("seq_phase");
   // Per pad: lx, ly, rx, ry, lt, rt.
   std::array<std::array<int, 6>, 4> cols{};
   for (int p = 0; p < 4; ++p) {
@@ -328,8 +333,19 @@ StepInputs load_inputs(const fs::path& path) {
       out.steps.resize(size_t(step) + 1, hold);
     }
     out.steps[size_t(step)] = row;
+    if (cph >= 0) {
+      if (size_t(step) >= out.phase.size()) out.phase.resize(size_t(step) + 1, -1);
+      out.phase[size_t(step)] = std::atoi(v[size_t(cph)].c_str());
+    }
   }
   return out;
+}
+
+// The recorded game's Sequence phase moved on from 1 or 5 at this step.
+bool transition_at(const StepInputs& in, size_t step) {
+  if (step == 0 || step >= in.phase.size()) return false;
+  const int a = in.phase[step - 1], b = in.phase[step];
+  return (a == 1 && b == 2) || (a == 5 && b == 6);
 }
 
 int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std::array<Sticks, 4>& sticks,
@@ -341,7 +357,7 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
   std::ofstream trace;
   if (!trace_path.empty()) {
     trace.open(trace_path, std::ios::trunc);
-    trace << "step,clock,x,y,vx,vy,rng_index,rng_word0\n";
+    trace << "step,clock,x,y,vx,vy,rng_index,rng_word0,seq_phase,seq_wait,enemies\n";
   }
   // Type 16 (0x10) is a power-up item; the rest are enemies.
   for (const DevSpawn& d : spawns)
@@ -357,6 +373,7 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
       const std::array<Sticks, 4>& row = inputs.steps[std::min(size_t(i) + 1, inputs.steps.size() - 1)];
       for (size_t p = 0; p < 4; ++p)
         if (inputs.has[p]) pads[p] = row[p];
+      if (!inputs.phase.empty()) g.transition_switch = transition_at(inputs, size_t(i) + 1) ? 1.0f : 0.0f;
     }
     std::array<Sticks, 4> s{};
     for (int j = 0; j < g.joined_count && j < 4; ++j) s[size_t(j)] = pads[size_t(g.joined_pad[size_t(j)] & 3)];
@@ -387,8 +404,9 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
     if (trace.is_open()) {
       const PlayerMotion& m = g.ships[0].motion;
       char line[256];
-      std::snprintf(line, sizeof(line), "%d,%.9g,%.9g,%.9g,%.9g,%.9g,%d,%08x\n", i + 1, double(g.elapsed),
-                    double(m.x), double(m.y), double(m.vx), double(m.vy), g.rng.index(), g.rng.word(0));
+      std::snprintf(line, sizeof(line), "%d,%.9g,%.9g,%.9g,%.9g,%.9g,%d,%08x,%d,%.9g,%d\n", i + 1,
+                    double(g.elapsed), double(m.x), double(m.y), double(m.vx), double(m.vy), g.rng.index(),
+                    g.rng.word(0), g.sequence.phase, double(g.sequence.wait), g.world->enemy_count);
       trace << line;
     }
   }

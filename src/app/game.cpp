@@ -1431,7 +1431,6 @@ void step(Game& g, std::span<const Sticks> pads) {
     target.fading = sh.life.fading;
     target.hidden = sh.freeze_time;
     target.magnet = 0.0f < sh.magnet_time;
-    target.push_vx = target.push_vy = 0.0f;
   }
   // Then the other objects, shots included, in creation order (the player
   // list is walked first, so shots fired this step move this step).
@@ -1653,11 +1652,13 @@ void step(Game& g, std::span<const Sticks> pads) {
   // The stars' step (sub_82075548, on the render worker each frame).
   g.stars.update(*g.gm, 1.0f, g.star_vertices);
 
-  // What the wells' pulls and shoves did to the players' velocity.
+  // What the wells' pulls and shoves did to the players' velocity: each
+  // added to it in turn, as the original's go straight into the ship's
+  // +0x0C/+0x10.
   for (int k = 0; k < g.ship_count; ++k) {
     PlayerMotion& m = g.ships[size_t(k)].motion;
-    m.vx = m.vx + w.players[size_t(k)].push_vx;
-    m.vy = m.vy + w.players[size_t(k)].push_vy;
+    m.vx = w.players[size_t(k)].vx;
+    m.vy = w.players[size_t(k)].vy;
   }
 
 

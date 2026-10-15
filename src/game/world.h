@@ -115,7 +115,7 @@ class Entity {
   void draw_unit(World& w, LineBatch& out, const float tint[4]);
 
   float x = 0, y = 0;          // +0x04
-  float vx = 0, vy = 0;        // +0x0C
+  float vx = 0, vy = 0;        // +0x0C (the wells' pulls and shoves add to it)
   float heading = 0;           // +0x14
   float sx = 1, sy = 1;        // +0x18
   float radius = 0;            // +0x20
@@ -137,7 +137,6 @@ class Entity {
 struct PlayerTarget {
   float x = 0, y = 0, vx = 0, vy = 0;
   float prev_x = 0, prev_y = 0;  // +0xBC / +0xC0: position at the start of its update
-  float push_vx = 0, push_vy = 0;  // velocity the entities' pulls added this step
   bool fading = false;             // flag 0x10
   float radius = 0;
   bool removed = false;    // flag 1

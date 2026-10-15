@@ -177,7 +177,7 @@ void GravityWell::pull(World& w) {
     const float dx = x - p.x, dy = y - p.y;
     const float len = std::sqrt(dy * dy + dx * dx);
     if (len > kReach || (len < radius && len < 1.0f)) continue;
-    pull_one(p.x, p.y, p.push_vx, p.push_vy, 1, 0x2);
+    pull_one(p.x, p.y, p.vx, p.vy, 1, 0x2);
   }
   // Shots are bent across their path, by their gravity factor.
   if (w.shots) {
@@ -215,7 +215,7 @@ void GravityWell::shove(World& w) {
   for (auto& e : w.entities)
     if (e.get() != this && !(e->flags & 0x1081) && e->type != 0xE) push(e->x, e->y, e->vx, e->vy);
   for (PlayerTarget& p : w.players)
-    if (!p.removed) push(p.x, p.y, p.push_vx, p.push_vy);
+    if (!p.removed) push(p.x, p.y, p.vx, p.vy);
   if (w.shots)
     for (Bullet& b : *w.shots)
       if (!b.removed) push(b.x, b.y, b.vx, b.vy);

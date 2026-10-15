@@ -273,5 +273,8 @@ Format for each entry:
   lies between about 32,100 and 32,768 particles and depends on how the
   threads were scheduled.
 - **Port**: full at 32,768 live particles. Below about 32,100 the two
-  agree exactly.
+  agree exactly. An explosion skipped for a full pool also skips its
+  random draws, so a game that fills the pool (many enemies destroyed at
+  once, as when the ship dies in a crowded Sequence level) goes on
+  differently from there, as it would between two runs on the console.
 - **Decided**: 2026-10-15.
