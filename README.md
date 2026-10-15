@@ -71,6 +71,14 @@ Your settings, unlocked modes, local scores and achievements are kept in
 your user folder (`%APPDATA%\geow2\geow2` on Windows), or in the folder
 given with `--profile`.
 
+To make a folder you can copy elsewhere (the game, the extractor, the
+shaders and these documents; the C runtime and SDL are linked in):
+
+    cmake --install build --prefix dist
+
+then run `dist\geow2-extract unpack <package> dist\cache` once and start
+`dist\geow2`.
+
 The build needs network access the first time (CMake fetches SDL3) and
 the Vulkan SDK's `glslc` for the shaders. Configure with
 `-DGEOW2_BUILD_GAME=OFF` to build only the extractor and the tests.

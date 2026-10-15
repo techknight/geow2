@@ -99,7 +99,7 @@ static void test_bank() {
   f.resize(wave + 8 + 0x34 + 0x14, 0);
   for (char c : std::string("DATA")) f.push_back(uint8_t(c));
   be32_put(f, 12);
-  for (uint8_t v : {0x12, 0x34, 0x56, 0x78}) f.push_back(v);
+  for (int v : {0x12, 0x34, 0x56, 0x78}) f.push_back(uint8_t(v));
   const Bank bank = parse_bank(f);
   expect(bank.name == "Test" && bank.waves.size() == 1 && bank.waves[0].name == "beep" && bank.waves[0].format == 3 &&
              bank.waves[0].sample_rate == 48000 && bank.waves[0].channels == 1 && bank.waves[0].gain == 1.0f &&

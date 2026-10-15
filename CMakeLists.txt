@@ -4,6 +4,8 @@ project(geow2 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# The C runtime linked in, so a packaged build needs no redistributable.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 if(MSVC)
   # Float results must match the original's instruction by instruction:
@@ -119,7 +121,14 @@ if(GEOW2_BUILD_GAME)
   add_executable(geow2 src/app/frontend.cpp src/app/game.cpp src/app/main.cpp src/app/png.cpp src/app/renderer.cpp)
   target_link_libraries(geow2 PRIVATE geow2_game geow2_audio SDL3::SDL3-static)
   add_dependencies(geow2 geow2_shaders)
+
+  # A playable folder (cmake --install build --prefix <dir>): the game, the
+  # extractor, the shaders and the documents. The user adds the cache.
+  install(TARGETS geow2 RUNTIME DESTINATION .)
+  install(FILES ${SPIRV} DESTINATION shaders)
 endif()
+install(TARGETS geow2-extract RUNTIME DESTINATION .)
+install(FILES README.md LICENSE DIFFERENCES.md DESTINATION .)
 
 enable_testing()
 add_executable(extract_tests tests/extract_tests.cpp)
