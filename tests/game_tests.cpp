@@ -7,6 +7,7 @@
 
 #include "game/model_geometry.h"
 #include "game/player_motion.h"
+#include "game/rotation.h"
 
 using namespace geow2;
 
@@ -53,6 +54,21 @@ static GameMath test_math() {
   c.at_base[1] = 0.5235987755982988;
   c.at_base[2] = 1.5707963267948966;
   c.at_base[3] = 1.0471975511965976;
+  // tan roles: the [4/4] Pade approximant
+  // r (945 - 105 r^2 + r^4) / (945 - 420 r^2 + 15 r^4) in the routine's form
+  // P = 1 + z (-e + z (b - z a)), Q = 1 + z (-g + z (f + z (z c - d))).
+  c.tan_k = 0.6366197723675814;
+  c.tan_range = 1e9;
+  c.tan_hi = 1.5707963267948966;
+  c.tan_lo = 0.0;
+  c.tan_a = 0.0;
+  c.tan_b = 1.0 / 945.0;
+  c.tan_c = 0.0;
+  c.tan_d = 0.0;
+  c.tan_e = 1.0 / 9.0;
+  c.tan_f = 1.0 / 63.0;
+  c.tan_g = 4.0 / 9.0;
+  c.tan_one = 1.0;
   return GameMath(c);
 }
 
@@ -205,7 +221,27 @@ static void test_arena() {
   expect(near(p.vx, 0.0f) && near(p.vy, 3.0f) && sound && p.wall_sound_frames == 2, "wall slide");
 }
 
+static void test_camera_pieces() {
+  // The in-game camera basis: looking down -z with up (0, -1, 0).
+  const Mat4 b = look_at_basis({3, 4, 512, 1}, {0, 0, -512, 0}, {0, -1, 0, 0});
+  expect(near(b.m[0], 1) && near(b.m[1], 0) && near(b.m[5], -1) && near(b.m[10], -1), "camera basis rows");
+  expect(near(b.m[12], 3) && near(b.m[13], 4) && near(b.m[14], 512), "camera basis position");
+  // Inverse times the matrix is the identity.
+  const Mat4 i = mul(b, inverse(b));
+  bool identity = true;
+  for (int k = 0; k < 16; ++k) identity = identity && near(i.m[k], (k % 5 == 0) ? 1.0f : 0.0f);
+  expect(identity, "inverse");
+  // Style None placement: a point at +x on the model, heading pi/2, at (10, 20).
+  const Mat4 p = placement_style_none(kMath, 10.0f, 20.0f, 1.57079633f);
+  const Vec4 v = mul(Vec4{1, 0, 0, 1}, p);
+  expect(near(v.x, 10.0f) && near(v.y, 21.0f), "placement rotates then translates");
+  // Perspective with fov pi/2: ys = 1 / tan(pi/4) = 1.
+  const Mat4 proj = perspective(kMath, 1.57079633f, 2.0f, 1.0f, 10000.0f);
+  expect(near(proj.m[5], 1.0f) && near(proj.m[0], 0.5f) && proj.m[11] == 1.0f, "perspective");
+}
+
 int main() {
+  test_camera_pieces();
   test_game_math();
   test_stick();
   test_thrust_and_integrate();

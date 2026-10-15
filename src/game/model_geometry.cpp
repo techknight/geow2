@@ -1,5 +1,7 @@
 #include "game/model_geometry.h"
 
+#include "game/rotation.h"
+
 #include <cmath>
 #include <string>
 
@@ -44,42 +46,6 @@ Vec4 vector3(const FlaskStruct* s, float w) {
   return {as_float(s->find("x")), as_float(s->find("y")), as_float(s->find("z")), w};
 }
 
-// sub_820318D8 with scale 1 and no translation (TransformRotate): rotation
-// from three angles in radians, rows as the game writes them.
-Mat4 euler(const GameMath& gm, float a, float b, float c) {
-  const float sa = gm.sinf(a), ca = gm.cosf(a), sb = gm.sinf(b), cb = gm.cosf(b), sc = gm.sinf(c),
-              cc = gm.cosf(c);
-  Mat4 r = Mat4::identity();
-  r.m[0] = cc * cb;
-  r.m[1] = sc * cb;
-  r.m[2] = -sb;
-  // fmsubs/fmadds at 0x820319D4..0x820319FC.
-  r.m[4] = std::fmaf(sb * sa, cc, -(sc * ca));
-  r.m[5] = std::fmaf(sb * sa, sc, cc * ca);
-  r.m[6] = cb * sa;
-  r.m[8] = std::fmaf(sb * ca, cc, sc * sa);
-  r.m[9] = std::fmaf(sb * ca, sc, -(cc * sa));
-  r.m[10] = cb * ca;
-  return r;
-}
-
-// sub_82041600: rotation about a unit axis.
-Mat4 axis_angle(const GameMath& gm, float angle, float x, float y, float z) {
-  // All nine elements are fused (0x820416A0..0x82041768).
-  const float c = gm.cosf(angle), s = gm.sinf(angle), t = 1.0f - c;
-  Mat4 r = Mat4::identity();
-  r.m[0] = std::fmaf(x * x, t, c);
-  r.m[1] = std::fmaf(t * x, y, z * s);
-  r.m[2] = std::fmaf(z * t, x, -(s * y));
-  r.m[4] = std::fmaf(t * x, y, -(z * s));
-  r.m[5] = std::fmaf(y * y, t, c);
-  r.m[6] = std::fmaf(z * t, y, x * s);
-  r.m[8] = std::fmaf(z * t, x, s * y);
-  r.m[9] = std::fmaf(z * t, y, -(x * s));
-  r.m[10] = std::fmaf(z * z, t, c);
-  return r;
-}
-
 // sub_82061B58: compose a transform list onto `parent`. A scale is
 // prepended (it scales the rows of the running matrix, sub_82040F28); the
 // others are appended; the result is local * parent.
@@ -98,11 +64,11 @@ Mat4 compose(const GameMath& gm, const FlaskList* transforms, const Mat4& parent
         }
       } else if (t->type == "TransformRotate") {
         const Vec4 r = vector3(as_struct(t->find("rotation")), 0.0f);
-        local = mul(local, euler(gm, r.x * kDegToRad, r.y * kDegToRad, r.z * kDegToRad));
+        local = mul(local, rotation_euler(gm, r.x * kDegToRad, r.y * kDegToRad, r.z * kDegToRad));
       } else if (t->type == "TransformAxisAngle") {
         const Vec4 a = vector3(as_struct(t->find("axis")), 0.0f);
         const float inv = 1.0f / std::sqrt((a.y * a.y + a.z * a.z) + a.x * a.x);  // fsqrts, fdivs
-        local = mul(local, axis_angle(gm, as_float(t->find("angle")) * kDegToRad, a.x * inv, a.y * inv, a.z * inv));
+        local = mul(local, rotation_axis(gm, as_float(t->find("angle")) * kDegToRad, a.x * inv, a.y * inv, a.z * inv));
       } else if (t->type == "TransformTranslate") {
         const Vec4 d = vector3(as_struct(t->find("translation")), 0.0f);
         local.m[12] += d.x;
