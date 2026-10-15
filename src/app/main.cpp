@@ -13,7 +13,8 @@
 // (default: the user's preferences folder). The second runs n simulation steps of a game of
 // --mode (0 Deadline, 1 Evolved, 2 Sequence, 3 Waves, 4 Pacifism, 5 King)
 // without a window, with a fixed raw stick value (XInput convention),
-// --bomb pulling the trigger on one step and --spawn adding enemies at the
+// --bomb pulling the trigger on one step and --spawn adding enemies (type
+// 16: a power-up item) at the
 // start, and saves the final frame. --player joins a pad to a multiplayer
 // game (team 0-3, role 0 alone, 1 pilot, 2 copilot; --versus for teams
 // against each other), every pad holding the --stick and --fire values
@@ -260,7 +261,12 @@ int capture(SDL_GPUDevice* dev, Renderer& r, const Game& g, const UiCanvas& ui, 
 int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std::array<Sticks, 4>& sticks,
                  int bomb_step, const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h,
                  bool exact_720p) {
-  for (const DevSpawn& d : spawns) spawn_enemy(*g.world, d.type, 0.0f, d.x, d.y);
+  // Type 16 (0x10) is a power-up item; the rest are enemies.
+  for (const DevSpawn& d : spawns)
+    if (d.type == 0x10)
+      g.world->add(std::make_unique<PowerUp>(*g.world, d.x, d.y, 3));
+    else
+      spawn_enemy(*g.world, d.type, 0.0f, d.x, d.y);
   for (int i = 0; i < frames; ++i) {
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     // By joined index, from each joined pad.
