@@ -13,8 +13,9 @@ Status: all six single-player modes play (Deadline, King, Evolved,
 Pacifism, Waves, Sequence) with their enemies, the grid, particles,
 debris, geoms and the multiplier, bombs, lives, the HUD, sound and music,
 the front end (menus, rules screens, options, results, unlocking the
-modes), local score boards and local achievements. Not in yet: local
-multiplayer, Sequence's between-levels screen, Pacifism's edge marks.
+modes), local score boards and local achievements, and local
+multiplayer for up to four players (versus and co-op, teams and
+copilots, power-ups).
 
 ## What you need
 
