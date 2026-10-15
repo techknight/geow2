@@ -162,6 +162,28 @@ class Frontend {
   void after_game();                       // sub_8208EF90
   void achievements_screen();              // stands in for XamShowAchievementsUI
 
+  // The multiplayer setup (menu 6, sub_820863B0) and its parts.
+  void lobby(bool reset);
+  void lobby_open(int pad);                       // sub_82083AE0
+  void lobby_update(const MenuInput& in);         // sub_820846E0
+  bool lobby_navigate(uint32_t bits);             // sub_82084588
+  int lobby_search(int col, int row, int dir) const;  // sub_82083518
+  void lobby_roles();                             // sub_82082F10
+  void lobby_frame(UiCanvas& c) const;            // sub_82084990
+  void lobby_players(UiCanvas& c) const;          // sub_82083C28
+  void lobby_tile(UiCanvas& c, int index, int text, bool selected, bool disabled) const;  // sub_82085C28
+  void lobby_teams(TextLayout& l, int preset, bool copilots, bool joined_only) const;    // sub_82084FC0
+  void lobby_back();                              // sub_820832A0
+  int joined() const;                             // the joined pads
+  int partner(int pad) const;                     // sub_82082BC8
+  int one_team_preset() const;                    // sub_82082CD0
+  int team_count() const;                         // sub_82082B00
+  // The gamertag stand-in of a pad ("%s %i", text 0x82 and the pad).
+  std::string pad_name(int pad) const;
+  // The results bodies: co-op (sub_82089218) and versus (sub_82088978).
+  void results_coop(UiCanvas& c) const;
+  void results_versus(UiCanvas& c) const;
+
   // Drawing helpers.
   void draw_title_block(UiCanvas& c) const;  // sub_8208F718 / sub_8208F9B8
   // sub_82091630: the pad picture with the mode's controls labelled.
@@ -211,6 +233,17 @@ class Frontend {
   // frame the title block is drawn.
   float logo_phase_ = 0.0f, star_phase_ = 0.0f;
   mutable bool title_drawn_ = false;
+  // The pads of the last frame, and the lobby's per-pad held bits and
+  // their pressed edges (lobby record +0xC / +0x10); the copilot setting
+  // (dat_821E9FE8), the team preset (dat_821E9FEC), the copilot swap of
+  // teams 0 and 1 (dat_821E9FE5 / FE4) and the join prompt's pulse
+  // (dat_821E9FE0).
+  std::array<PadState, 4> pads_{};
+  std::array<uint32_t, 4> lobby_held_{}, lobby_pressed_{};
+  bool copilots_ = false;
+  int preset_ = 0;
+  std::array<bool, 2> swap_{};
+  float lobby_phase_ = 0.0f;
   // The intro (dat_821D39DD phase, E8 time, EC fade-in, E4 scale, E0 speed).
   int intro_phase_ = 0;
   float intro_time_ = 0.0f, intro_fade_ = 0.0f, intro_scale_ = 1.0f, intro_speed_ = 0.0f;

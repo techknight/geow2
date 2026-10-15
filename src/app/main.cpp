@@ -16,8 +16,8 @@
 // game (team 0-3, role 0 alone, 1 pilot, 2 copilot; --versus for teams
 // against each other), every pad holding the --stick and --fire values
 // unless --pad-stick / --pad-fire set its own. The third runs the front end instead,
-// pressing a button (a, b, x, y, start, back, up, down, left, right) on
-// the given frames; it never saves.
+// pressing a button (a, b, x, y, start, back, up, down, left, right; pad 0,
+// or another with :<pad>) on the given frames; it never saves.
 
 #include <SDL3/SDL.h>
 
@@ -55,6 +55,7 @@ struct DevSpawn {
 struct Press {
   int frame;
   int axis;
+  int pad = 0;
 };
 
 int16_t clamp16(int v) { return int16_t(std::clamp(v, -32768, 32767)); }
@@ -262,16 +263,19 @@ int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, 
   Frontend fe(g, g.text, profile, boards, {});
   fe.boot();
   for (int i = 0; i < frames; ++i) {
+    // Pad 0 and every pad a press names are connected throughout.
     std::array<PadState, 4> pads{};
     pads[0].connected = true;
+    for (const Press& p : presses) pads[size_t(p.pad)].connected = true;
     for (const Press& p : presses) {
       if (p.frame != i) continue;
+      PadState& ps = pads[size_t(p.pad)];
       switch (p.axis) {
-        case -1: pads[0].axis[5] = -1.0f; break;
-        case -2: pads[0].axis[5] = 1.0f; break;
-        case -3: pads[0].axis[4] = -1.0f; break;
-        case -4: pads[0].axis[4] = 1.0f; break;
-        default: pads[0].axis[size_t(p.axis)] = 1.0f; break;
+        case -1: ps.axis[5] = -1.0f; break;
+        case -2: ps.axis[5] = 1.0f; break;
+        case -3: ps.axis[4] = -1.0f; break;
+        case -4: ps.axis[4] = 1.0f; break;
+        default: ps.axis[size_t(p.axis)] = 1.0f; break;
       }
     }
     fe.frame(pads);
@@ -381,8 +385,12 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& cache, 
       for (size_t i = 0; i < 4; ++i) state[i] = pad_state(pads[i]);
       keyboard_pad(state[0], g.flow == 2);
       fe.frame(state);
-      const Sticks s = (g.flow == 2) ? sticks_from(state[0], profile) : Sticks{};
-      tick(g, std::span<const Sticks>(&s, 1), r, cmd);
+      // Each joined index's pad (one profile's stick settings for all).
+      std::array<Sticks, 4> s{};
+      if (g.flow == 2)
+        for (int j = 0; j < g.joined_count && j < 4; ++j)
+          s[size_t(j)] = sticks_from(state[size_t(g.joined_pad[size_t(j)] & 3)], profile);
+      tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
       if (has_sound) {
         // sub_82078970 after the wells, then sub_82079BC0.
         if (!frozen(g)) glue.gravity_wells_update(kWellMaxHits);
@@ -469,8 +477,12 @@ int main(int argc, char** argv) {
     else if (a == "--level" && i + 1 < argc) start_level = std::clamp(std::atoi(argv[++i]), 0, 19);
     else if (a == "--frontend") frontend = true;
     else if (a == "--press" && i + 2 < argc) {
+      // <button>[:<pad>]
       const int f = std::atoi(argv[++i]);
-      presses.push_back({f, button_axis(argv[++i])});
+      const std::string b = argv[++i];
+      const size_t colon = b.find(':');
+      const int pad = colon == std::string::npos ? 0 : std::clamp(std::atoi(b.c_str() + colon + 1), 0, 3);
+      presses.push_back({f, button_axis(b.substr(0, colon)), pad});
     } else if (a == "--size" && i + 2 < argc) {
       shot_w = uint32_t(std::atoi(argv[++i]));
       shot_h = uint32_t(std::atoi(argv[++i]));

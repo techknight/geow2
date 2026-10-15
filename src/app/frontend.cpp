@@ -63,9 +63,11 @@ Frontend::Frontend(Game& g, const UiText& text, Profile& profile, std::array<Loc
 
 void Frontend::sound(audio::Event e) const { g_.world->play(e); }
 
-std::string Frontend::player_name() const {
+std::string Frontend::player_name() const { return pad_name(game_pad_); }
+
+std::string Frontend::pad_name(int pad) const {
   // Gamertags stand in as "%s %i" with text 0x82 and the pad (0x820049D0).
-  return format("%s %i", text_(0x82).c_str(), game_pad_ + 1);
+  return format("%s %i", text_(0x82).c_str(), pad + 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +201,7 @@ void Frontend::step_menu(const MenuInput& in) {
 // Input and the flow
 
 void Frontend::frame(const std::array<PadState, 4>& pads) {
+  pads_ = pads;
   // Which pads drive the menus: the player's while a game runs, else the
   // menu pad, or all four.
   uint32_t held = 0;
@@ -285,6 +288,7 @@ void Frontend::request_game(int mode) {
   open(0, {}, [this](UiCanvas& c) { draw_game_hud(g_, c.lines); }, false, {}, 0);
   game_pad_ = menu_pad_ >= 0 ? menu_pad_ : 0;
   start_game(g_, mode);  // (and the game music, sub_82078A50(1))
+  g_.joined_pad[0] = game_pad_;
 }
 
 void Frontend::playing(const MenuInput& in) {
@@ -307,8 +311,14 @@ void Frontend::playing(const MenuInput& in) {
     g_.end_reason = 2;
     return;
   }
-  if (in.pressed & kStart) {
-    sound(audio::Event::kUiConfirm);
+  // START, or a pad of the game's list (dat_8219CE90) gone.
+  bool lost = false;
+  for (int j = 0; j < g_.joined_count && j < 4; ++j) {
+    const int pad = g_.joined_pad[size_t(j)];
+    if (pad >= 0 && pad < 4 && !pads_[size_t(pad)].connected) lost = true;
+  }
+  if (in.pressed & kStart) sound(audio::Event::kUiConfirm);
+  if ((in.pressed & kStart) || lost) {
     pause(true);
     g_.flow = 3;
   }
@@ -326,7 +336,18 @@ void Frontend::finish() {
   // sub_820338D8: every object deleted, the menu music (sub_82078A50(0)).
   delete_objects(g_);
   const int reason = g_.end_reason;
-  if (reason == 2) {
+  if (reason == 2 && g_.multiplayer) {
+    // Co-op (one record): the co-op table under the joined players' names
+    // (", " between them, 0x82000C6C); versus keeps only the match points.
+    const int mode = g_.rules.mode;
+    if (g_.record_count == 1 && mode >= 0 && mode < 6) {
+      std::string name;
+      for (int pad = 0; pad < 4; ++pad)
+        if (g_.lobby[size_t(pad)].joined) name += (name.empty() ? "" : ", ") + pad_name(pad);
+      const ScoreRecord& rec = g_.world->records[0];
+      g_.coop_tables[size_t(mode)].insert(rec.score, rec.multiplier, name.substr(0, 0x47));
+    }
+  } else if (reason == 2) {
     const int mode = g_.rules.mode;
     const std::string name = player_name();
     if (mode >= 0 && mode < 6) {
@@ -359,7 +380,14 @@ void Frontend::finish() {
   }
 }
 
-void Frontend::after_game() { mode_select(true); }  // sub_8208EF90, single player
+void Frontend::after_game() {
+  // sub_8208EF90: the mode select after a single-player game, the
+  // multiplayer setup after a multiplayer one.
+  if (g_.multiplayer)
+    lobby(false);
+  else
+    mode_select(true);
+}
 
 // ---------------------------------------------------------------------------
 // Key tips
@@ -723,8 +751,13 @@ void Frontend::main_menu(bool reset) {
     menu_pad_ = in.pad;
     mode_select(true);
   });
-  // Multiplayer is not ported yet: shown locked.
-  add_item(0x02, {}, {}, [](int, int) { return false; });
+  // sub_8208F028: the pad that chose it becomes the active one and joins.
+  add_item(0x02, [this](const MenuInput& in, int, int) {
+    if (in.pad == -1) return;
+    menu_pad_ = in.pad;
+    lobby_open(in.pad);
+    lobby(true);
+  });
   add_item(0x04, [this](const MenuInput& in, int, int) {
     if (in.pad == -1) return;
     menu_pad_ = in.pad;
@@ -1272,15 +1305,16 @@ void Frontend::results() {
          const int mode = std::clamp(g_.rules.mode, 0, 5);
          const ScoreTable& T = g_.tables[size_t(mode)];
          auto heading = [&](float y, const std::string& t) {
-           ui_panel(c, 0.0f, y, 160.0f, y + 14.0f, P[kUiBackground], 0);
-           ui_panel(c, 166.0f, y, 474.0f, y + 14.0f, P[kUiBackground], 0);
-           ui_panel(c, 480.0f, y, 640.0f, y + 14.0f, P[kUiBackground], 0);
+           // Headings (sub_820877D8) in palette slot 10.
+           ui_panel(c, 0.0f, y, 160.0f, y + 14.0f, P[10], 0);
+           ui_panel(c, 166.0f, y, 474.0f, y + 14.0f, P[10], 0);
+           ui_panel(c, 480.0f, y, 640.0f, y + 14.0f, P[10], 0);
            font.centre_fit(c.lines, 320.0f, (y + 7.0f) - 4.0f, 8.0f, 8.0f, 300.0f, P[kUiHighlight].data(), t);
            return 20.0f;
          };
          auto two = [&](float y, const std::string& a, const std::string& b) {
            const float xs[5][2] = {{0, 25}, {31, 311}, {317, 323}, {329, 609}, {615, 640}};
-           for (const auto& x : xs) ui_panel(c, x[0], y, x[1], y + 14.0f, P[kUiBackground], 0);
+           for (const auto& x : xs) ui_panel(c, x[0], y, x[1], y + 14.0f, P[10], 0);
            font.centre_fit(c.lines, 171.0f, (y + 7.0f) - 4.0f, 8.0f, 8.0f, 276.0f, P[kUiHighlight].data(), a);
            font.centre_fit(c.lines, 469.0f, (y + 7.0f) - 4.0f, 8.0f, 8.0f, 276.0f, P[kUiHighlight].data(), b);
            return 20.0f;
@@ -1292,6 +1326,13 @@ void Frontend::results() {
            font.centre(c.lines, 320.0f, std::fmaf(h, 0.5f, y) - drop, size, size, P[kUiNormal].data(), format_number(v));
            return h + 6.0f;
          };
+         if (g_.multiplayer) {
+           if (g_.record_count <= 1)
+             results_coop(c);
+           else
+             results_versus(c);
+           return;
+         }
          float y = 46.0f;
          y = y + heading(y, text_(0x65));
          y = y + box(y, 50.0f, T.entry[0].score, 20.0f, 10.0f);
@@ -1343,6 +1384,674 @@ void Frontend::results() {
        false, {}, 0);
   screen_.accept = [this](const MenuInput&) { after_game(); };
   screen_.tips = [this](TextLayout& l) { tips_continue(l); };
+}
+
+// ---------------------------------------------------------------------------
+// The multiplayer setup
+
+namespace {
+
+// The lobby's items: 0..11 the mode tiles (row = index / 6, column =
+// index mod 6; columns 0..2 Versus, 3..5 Cooperative), 12..15 the team
+// presets, 16 and 17 copilots off / on.
+constexpr int kLobbyItems[18] = {0x1E, 0x21, 0x1C, 0x1E, 0x21, 0x1C, 0x20, 0x1F, 0x1D,
+                                 0x20, 0x1F, 0x1D, 0x18, 0x18, 0x18, 0x18, 0x19, 0x19};
+// The team presets (0x8218E780): each pad's team.
+constexpr int kPresets[4][4] = {{0, 1, 2, 3}, {0, 0, 1, 1}, {0, 1, 0, 1}, {0, 1, 1, 0}};
+
+// sub_82082DD0: a pad's ship glyph alone (0x0C..0x0F), as pilot (0x16,
+// 0x18, 0x1A, 0x1C) or as copilot (0x15, 0x17, 0x19, 0x1B).
+std::string ship_glyph(int pad, int role) {
+  const int c = role == 1 ? 0x16 + 2 * pad : role == 2 ? 0x15 + 2 * pad : 0x0C + pad;
+  return std::string(1, char(c));
+}
+
+// The group of a lobby item: 0 Versus tiles, 1 Cooperative tiles, 2 team
+// presets, 3 copilots.
+int lobby_group(int i) { return i < 12 ? (i % 6 < 3 ? 0 : 1) : i < 16 ? 2 : 3; }
+
+}  // namespace
+
+int Frontend::joined() const {
+  int n = 0;
+  for (const LobbyPad& l : g_.lobby) n += l.joined ? 1 : 0;
+  return n;
+}
+
+int Frontend::partner(int pad) const {
+  // With copilots on: the one other joined pad of the same team (-2 when
+  // more than one, -1 when none).
+  if (!copilots_ || pad < 0 || pad > 3) return -1;
+  int r = -1;
+  for (int o = 0; o < 4; ++o) {
+    const LobbyPad& l = g_.lobby[size_t(o)];
+    if (!l.joined || o == pad || l.team != g_.lobby[size_t(pad)].team) continue;
+    r = r == -1 ? o : -2;
+  }
+  return r;
+}
+
+int Frontend::one_team_preset() const {
+  // The first preset (1..3) that puts every joined pad in one team.
+  for (int p = 1; p < 4; ++p) {
+    std::array<bool, 4> seen{};
+    int teams = 0;
+    for (int o = 0; o < 4; ++o)
+      if (g_.lobby[size_t(o)].joined && !seen[size_t(kPresets[p][o])]) {
+        seen[size_t(kPresets[p][o])] = true;
+        ++teams;
+      }
+    if (teams == 1) return p;
+  }
+  return 0;
+}
+
+int Frontend::team_count() const {
+  std::array<bool, 4> seen{};
+  int teams = 0;
+  for (const LobbyPad& l : g_.lobby)
+    if (l.joined && !seen[size_t(l.team & 3)]) {
+      seen[size_t(l.team & 3)] = true;
+      ++teams;
+    }
+  return teams;
+}
+
+void Frontend::lobby_open(int pad) {
+  // sub_82083AE0: every pad out, in its own team, nothing scored; copilots
+  // off, preset 0, no swaps; the pad that chose Multiplayer joins.
+  for (int p = 0; p < 4; ++p) g_.lobby[size_t(p)] = LobbyPad{false, p, 0, 0, 0, 0};
+  copilots_ = false;
+  preset_ = 0;
+  swap_ = {};
+  g_.lobby[size_t(std::clamp(pad, 0, 3))].joined = true;
+}
+
+void Frontend::lobby(bool reset) {
+  open(6, [this](const MenuInput&) { lobby_back(); }, [this](UiCanvas& c) { lobby_frame(c); }, reset,
+       [this](const MenuInput& in) { lobby_update(in); }, 0);
+  screen_.tips = [this](TextLayout& l) {
+    // sub_820833C0.
+    const int n = joined();
+    l.add(copilots_ ? palette_[kUiHighlight] : palette_[kUiDisabled], " Y ");
+    l.add(copilots_ ? palette_[kUiNormal] : palette_[kUiDisabled], text_(0x39));
+    l.add(n >= 2 ? palette_[kUiHighlight] : palette_[kUiDisabled], " \x1D\x1E ");
+    l.add(n >= 2 ? palette_[kUiNormal] : palette_[kUiDisabled], text_(0x2C));
+    l.add(n >= 2 ? palette_[kUiHighlight] : palette_[kUiDisabled], " A ");
+    l.add(n >= 2 ? palette_[kUiNormal] : palette_[kUiDisabled], text_(0x33));
+    l.add(palette_[kUiHighlight], " B ");
+    l.add(palette_[kUiNormal], text_(0x2E));
+  };
+  screen_.item_draw = [this](UiCanvas& c, int index, int text, bool selected, bool disabled) {
+    lobby_tile(c, index, text, selected, disabled);
+  };
+  for (int i = 0; i < 12; ++i)
+    add_item(
+        kLobbyItems[i],
+        [this](const MenuInput& in, int index, int text) {
+          // sub_820835E0: versus for columns 0..2; the game starts with
+          // the multiplayer setup as its mode setup, the pad that chose it
+          // driving the menus.
+          const int mode = mode_of_text(text);
+          if (!profile_.mode_unlocked(mode)) return;
+          const bool versus = index % 6 < 3;
+          lobby_roles();
+          if (joined() < 2) return;
+          open(0, {}, [this](UiCanvas& c) { draw_game_hud(g_, c.lines); }, false, {}, 0);
+          game_pad_ = in.pad >= 0 ? in.pad : (menu_pad_ >= 0 ? menu_pad_ : 0);
+          start_multiplayer(g_, mode, versus);
+        },
+        {},
+        [this](int index, int text) {
+          // sub_820838A8: two or more joined and the mode unlocked; with
+          // copilots, no Pacifism and Versus only from three.
+          const int n = joined();
+          if (n < 2 || !profile_.mode_unlocked(mode_of_text(text))) return false;
+          if (copilots_) {
+            if (text == 0x20) return false;
+            if (n < 3 && index % 6 < 3) return false;
+          }
+          return true;
+        });
+  for (int i = 12; i < 16; ++i)
+    add_item(
+        kLobbyItems[i],
+        [this](const MenuInput&, int index, int) {
+          // sub_82085BB8: preset 0 also turns copilots off.
+          const int p = std::clamp(index - 12, 0, 3);
+          if (p == preset_) return;
+          if (p == 0) copilots_ = false;
+          preset_ = p;
+          reset_pulse();
+        },
+        {}, [this](int, int) { return joined() > 2; });
+  for (int i = 16; i < 18; ++i)
+    add_item(
+        kLobbyItems[i],
+        [this](const MenuInput&, int index, int) {
+          // sub_82083780: with two joined, copilots put both in one team
+          // (or stay off when no preset does); with three or more, preset
+          // 0 becomes 1.
+          const bool on = index != 16;
+          if (on == copilots_) return;
+          const int n = joined();
+          copilots_ = on;
+          if (n == 2) {
+            preset_ = one_team_preset();
+            if (preset_ < 1) copilots_ = false;
+            for (int p = 0; p < 4; ++p) g_.lobby[size_t(p)].team = kPresets[preset_][p];
+          } else if (n > 2 && preset_ == 0) {
+            preset_ = 1;
+          }
+          reset_pulse();
+        },
+        {}, [this](int, int) { return joined() > 1; });
+}
+
+void Frontend::lobby_roles() {
+  // sub_82082F10: the preset and copilots kept consistent with the joined
+  // count, the teams from the preset, and with copilots the first two
+  // joined of teams 0 and 1 as pilot and copilot (swapped by Y).
+  const int n = joined();
+  if (n < 2) {
+    preset_ = 0;
+    copilots_ = false;
+  } else if (n < 3) {
+    if (preset_ >= 1 && team_count() == 1) {
+      if (!copilots_) preset_ = 0;
+    } else {
+      preset_ = 0;
+      copilots_ = false;
+    }
+  } else if (preset_ == 0 && copilots_) {
+    preset_ = 1;
+  }
+  std::array<int, 2> first{-1, -1}, second{-1, -1};
+  std::array<bool, 2> pair{true, true};
+  for (int p = 0; p < 4; ++p) {
+    LobbyPad& l = g_.lobby[size_t(p)];
+    l.team = kPresets[preset_][p];
+    l.role = 0;
+    if (!l.joined || l.team > 1) continue;
+    const size_t t = size_t(l.team);
+    if (first[t] == -1)
+      first[t] = p;
+    else if (second[t] == -1)
+      second[t] = p;
+    else
+      pair[t] = false;
+  }
+  if (!copilots_) return;
+  for (size_t t = 0; t < 2; ++t) {
+    if (!pair[t] || first[t] == -1 || second[t] == -1) continue;
+    g_.lobby[size_t(first[t])].role = swap_[t] ? 2 : 1;
+    g_.lobby[size_t(second[t])].role = swap_[t] ? 1 : 2;
+  }
+}
+
+void Frontend::lobby_update(const MenuInput& in) {
+  // sub_820846E0: the join prompt's pulse turns at pi a second.
+  {
+    const double d = double(std::fmaf(kStep, 3.14159274f, lobby_phase_)) * 0.15915494309189535;
+    lobby_phase_ = float((d - std::nearbyint(d)) * 6.2831853072);
+  }
+  // Each pad's bits (above 0.75): START, A, B or BACK, X, Y, not
+  // connected; the pressed edges.
+  for (int p = 0; p < 4; ++p) {
+    const PadState& ps = pads_[size_t(p)];
+    uint32_t b = 0;
+    if (ps.axis[0x10] > 0.75f) b |= kStart;
+    if (ps.axis[0xC] > 0.75f) b |= kA;
+    if (ps.axis[0x11] > 0.75f || ps.axis[0xD] > 0.75f) b |= kBack;
+    if (ps.axis[0xE] > 0.75f) b |= kX;
+    if (ps.axis[0xF] > 0.75f) b |= kY;
+    if (!ps.connected) b |= 0x20000;
+    lobby_pressed_[size_t(p)] = (b ^ lobby_held_[size_t(p)]) & b;
+    lobby_held_[size_t(p)] = b;
+  }
+  // Every pad but the active one joins with START or A and leaves with B,
+  // BACK or when disconnected; Y swaps the copilot positions of a joined
+  // pad's team.
+  for (int p = 0; p < 4; ++p) {
+    LobbyPad& l = g_.lobby[size_t(p)];
+    if (p != menu_pad_) {
+      if (lobby_pressed_[size_t(p)] & (kStart | kA))
+        l.joined = true;
+      else if ((lobby_pressed_[size_t(p)] & kBack) || (lobby_held_[size_t(p)] & 0x20000))
+        l.joined = false;
+    }
+    if (l.joined && (lobby_pressed_[size_t(p)] & kY) && partner(p) > -1) {
+      if (l.team == 0) swap_[0] = !swap_[0];
+      else if (l.team == 1) swap_[1] = !swap_[1];
+    }
+  }
+  lobby_roles();
+  if (!lobby_navigate(in.pressed)) lobby_navigate((in.pressed ^ in.raw) & in.raw);
+  MenuInput rest = in;
+  rest.pressed &= ~uint32_t(0x3C);
+  default_handler(rest);
+  lobby_roles();
+}
+
+int Frontend::lobby_search(int col, int row, int dir) const {
+  // sub_82083518: the nearest enabled item from `col` in direction `dir`
+  // within the row's six; else `col`.
+  for (int c = col + dir; c >= 0 && c < 6; c += dir)
+    if (item_enabled(row * 6 + c)) return c;
+  return col;
+}
+
+bool Frontend::lobby_navigate(uint32_t bits) {
+  // sub_82084588.
+  const int sel = selection_value();
+  int col = std::clamp(sel % 6, 0, 5), row = std::clamp(sel / 6, 0, 2);
+  if ((bits & kUp) && row > 0) {
+    // sub_82084338: up a row (from the bottom row 0, 1, 1, 2, 3, 5), the
+    // nearest enabled to the left when the target is not.
+    static constexpr int kUpMap[6] = {0, 1, 1, 2, 3, 5};
+    for (;;) {
+      if (row == 1) {
+        row = 0;
+        if (item_enabled(col)) break;
+      } else if (row == 2) {
+        col = kUpMap[col];
+        row = 1;
+        if (item_enabled(6 + col)) break;
+      } else {
+        break;
+      }
+      col = lobby_search(col, row, -1);
+      if (item_enabled(row * 6 + col)) break;
+    }
+  }
+  if ((bits & kDown) && row < 2) {
+    // sub_82084438: down a row (to the bottom row 0, 1, 3, 4, 4, 5), the
+    // nearest enabled to the left, then (bottom row) to the right.
+    static constexpr int kDownMap[6] = {0, 1, 3, 4, 4, 5};
+    for (;;) {
+      if (row == 0) {
+        row = 1;
+        if (item_enabled(6 + col)) break;
+        col = lobby_search(col, 1, -1);
+        if (item_enabled(6 + col)) break;
+      } else if (row == 1) {
+        col = kDownMap[col];
+        row = 2;
+        if (item_enabled(12 + col)) break;
+        col = lobby_search(col, 2, -1);
+        if (item_enabled(12 + col)) break;
+        col = lobby_search(col, 2, 1);
+        break;
+      } else {
+        break;
+      }
+    }
+  }
+  if (bits & kLeft) col = lobby_search(col, row, -1);
+  if (bits & kRight) col = lobby_search(col, row, 1);
+  const int to = row * 6 + col;
+  if (to == sel || !item_enabled(to)) return false;
+  selection() = to;
+  reset_pulse();
+  sound(audio::Event::kUiChange);
+  return true;
+}
+
+void Frontend::lobby_back() {
+  // sub_820832A0: straight to the main menu unless points were scored or
+  // two or more joined; then a confirm (title 0x71: No / Yes).
+  bool scored = false;
+  for (const LobbyPad& l : g_.lobby)
+    if (l.joined && l.total >= 1) scored = true;
+  if (!scored && joined() < 2) {
+    main_menu(false);
+    return;
+  }
+  open(0, [this](const MenuInput&) { lobby(false); }, {}, false, {}, 0x71);
+  screen_.tips = [this](TextLayout& l) { tips_menu(l); };
+  add_item(0x17, [this](const MenuInput&, int, int) { lobby(false); });
+  screen_.items.back().goes_back = true;
+  add_item(0x16, [this](const MenuInput&, int, int) { main_menu(false); });
+}
+
+void Frontend::lobby_players(UiCanvas& c) const {
+  // sub_82083C28: the title bar, then each pad's box (top row 46, bottom
+  // 88; even pads left, odd right) in its team colour, or the locked
+  // background with "Press A to join" (0x85; 0x86 without a pad) pulsing.
+  const Font& font = g_.font;
+  ui_bar(c, palette_, 18.0f, 40.0f);
+  font.centre_fit(c.lines, 320.0f, 24.0f, 20.0f, 10.0f, 540.0f, palette_[kUiNormal].data(), text_(0x43));
+  for (int p = 0; p < 4; ++p) {
+    const LobbyPad& l = g_.lobby[size_t(p)];
+    const float y = p < 2 ? 46.0f : 88.0f;
+    const Rgba base = l.joined ? palette_[kUiMultiplayerRed + std::clamp(l.team, 0, 3)] : palette_[kUiLockedBackground];
+    const bool odd = (p & 1) != 0;
+    ui_panel(c, odd ? 323.0f : 0.0f, y, odd ? 640.0f : 317.0f, y + 36.0f, base, odd ? 4 : 2);
+    const float ty = y + 6.0f;
+    const bool connected = pads_[size_t(p)].connected;
+    const std::string name = pad_name(p);
+    if (!l.joined) {
+      const Rgba col = scaled(base, 3.0f);
+      const float k = (float(g_.gm->cos(lobby_phase_)) + 1.0f) * 4.0f + 1.0f;
+      const Rgba pulse = scaled(col, k);
+      const std::string& prompt = text_(connected ? 0x85 : 0x86);
+      if (!odd) {
+        font.left_fit(c.lines, 64.0f, ty, 10.0f, 10.0f, 220.0f, col.data(), name);
+        font.left_fit(c.lines, 64.0f, ty + 14.0f, 10.0f, 10.0f, 220.0f, pulse.data(), prompt);
+      } else {
+        font.right_fit(c.lines, 576.0f, ty, 10.0f, 10.0f, 220.0f, col.data(), name);
+        font.right_fit(c.lines, 576.0f, ty + 14.0f, 10.0f, 10.0f, 220.0f, pulse.data(), prompt);
+      }
+    } else {
+      const Rgba col = scaled_rgb(base, 3.0f);
+      int n = partner(p);
+      if (p <= n) n = p;
+      const std::string glyph = n >= 0 && (l.role == 1 || l.role == 2) ? ship_glyph(n, l.role) : ship_glyph(p, 0);
+      const std::string score = format("%s: %i", text_(0x7A).c_str(), l.total);
+      if (!odd) {
+        font.left_fit(c.lines, 64.0f, ty, 10.0f, 10.0f, 220.0f, col.data(), name);
+        font.left_fit(c.lines, 64.0f, ty + 14.0f, 10.0f, 10.0f, 220.0f, col.data(), score);
+        font.right(c.lines, 308.0f, ty + 2.0f, 20.0f, 20.0f, col.data(), glyph);
+      } else {
+        font.right_fit(c.lines, 576.0f, ty, 10.0f, 10.0f, 220.0f, col.data(), name);
+        font.right_fit(c.lines, 576.0f, ty + 14.0f, 10.0f, 10.0f, 220.0f, col.data(), score);
+        font.left(c.lines, 332.0f, ty + 2.0f, 20.0f, 20.0f, col.data(), glyph);
+      }
+    }
+  }
+}
+
+void Frontend::lobby_frame(UiCanvas& c) const {
+  // sub_82084990.
+  lobby_players(c);
+  const Font& font = g_.font;
+  const int n = joined();
+  const bool two = n >= 2;
+  const int sel = selection_value();
+  const int group = lobby_group(sel);
+  const Rgba& bg = palette_[kUiBackground];
+  const Rgba& bar = palette_[10];
+  auto bar_tint = [&](bool on) { return scaled(bar, on ? 2.0f : 0.5f); };
+  ui_panel(c, 0.0f, 150.0f, 22.0f, 266.0f, bg, 2);
+  ui_panel(c, 618.0f, 150.0f, 640.0f, 266.0f, bg, 4);
+  ui_panel(c, 0.0f, 130.0f, 311.0f, 144.0f, bar_tint(two && group == 0), 2);
+  ui_panel(c, 317.0f, 130.0f, 323.0f, 144.0f, bar, 0);
+  ui_panel(c, 329.0f, 130.0f, 640.0f, 144.0f, bar_tint(two && group == 1), 4);
+  const bool versus = two && !(copilots_ && n < 3);
+  font.centre(c.lines, 170.0f, 133.0f, 8.0f, 8.0f, (versus ? palette_[kUiHighlight] : palette_[11]).data(), text_(0x70));
+  font.centre(c.lines, 470.0f, 133.0f, 8.0f, 8.0f, (two ? palette_[kUiHighlight] : palette_[11]).data(), text_(0x6F));
+  emit_ui_body(c.lines, 320.0f, 150.0f, 320.0f, 266.0f, bar.data(), bar.data());
+  ui_panel(c, 0.0f, 292.0f, 22.0f, cursor_, bg, 2);
+  ui_panel(c, 618.0f, 292.0f, 640.0f, cursor_, bg, 4);
+  ui_panel(c, 0.0f, 272.0f, 311.0f, 286.0f, bar_tint(two && group == 2), 2);
+  ui_panel(c, 317.0f, 272.0f, 323.0f, 286.0f, bar, 0);
+  ui_panel(c, 329.0f, 272.0f, 640.0f, 286.0f, bar_tint(two && group == 3), 4);
+  font.centre(c.lines, 170.0f, 275.0f, 8.0f, 8.0f, (n < 3 ? palette_[11] : palette_[kUiHighlight]).data(), text_(0x18));
+  font.centre(c.lines, 470.0f, 275.0f, 8.0f, 8.0f, (n < 2 ? palette_[11] : palette_[kUiHighlight]).data(), text_(0x19));
+  emit_ui_body(c.lines, 320.0f, 292.0f, 320.0f, cursor_, bar.data(), bar.data());
+}
+
+void Frontend::lobby_teams(TextLayout& l, int preset, bool copilots, bool joined_only) const {
+  // sub_82084FC0: the pads' ship glyphs in the preset's order (0x8218E798
+  // rows {0, 1, 2, 3}, {0, 1, 2, 3}, {0, 2, 1, 3}, {0, 3, 1, 2}) in team
+  // colours times 2: four teams for preset 0; else two pairs with a gap,
+  // as pilot and copilot glyphs when copilots are on and both are shown.
+  static constexpr int kOrder[4][4] = {{0, 1, 2, 3}, {0, 1, 2, 3}, {0, 2, 1, 3}, {0, 3, 1, 2}};
+  const int* o = kOrder[std::clamp(preset, 0, 3)];
+  auto shown = [&](int p) { return !joined_only || g_.lobby[size_t(p)].joined; };
+  auto colour = [&](int team) { return scaled_rgb(palette_[kUiMultiplayerRed + team], 2.0f); };
+  auto field = [&](int team, const std::string& glyph, bool pad) {
+    TextLayout::Field* f = l.add(colour(team), glyph);
+    if (f && pad) f->pad_after = 2.0f;
+  };
+  if (preset == 0) {
+    for (int k = 0; k < 4; ++k)
+      if (shown(o[k])) field(k, ship_glyph(o[k], 0), k < 3);
+    return;
+  }
+  const bool a = shown(o[0]) || shown(o[1]), b = shown(o[2]) || shown(o[3]);
+  if (!copilots) {
+    if (shown(o[0])) field(0, ship_glyph(o[0], 0), true);
+    if (shown(o[1])) field(0, ship_glyph(o[1], 0), true);
+    if (a && b)
+      if (TextLayout::Field* f = l.add_empty()) f->pad_after = 6.0f;
+    if (shown(o[2])) field(1, ship_glyph(o[2], 0), true);
+    if (shown(o[3])) field(1, ship_glyph(o[3], 0), false);
+    return;
+  }
+  const bool pair0 = !joined_only || (g_.lobby[size_t(o[0])].joined && g_.lobby[size_t(o[1])].joined);
+  const bool pair1 = !joined_only || (g_.lobby[size_t(o[2])].joined && g_.lobby[size_t(o[3])].joined);
+  if (shown(o[0])) field(0, ship_glyph(o[0], pair0 ? 1 : 0), true);
+  if (shown(o[1])) field(0, ship_glyph(pair0 ? o[0] : o[1], pair0 ? 2 : 0), true);
+  if (a && b)
+    if (TextLayout::Field* f = l.add_empty()) f->pad_after = 6.0f;
+  if (shown(o[2])) field(1, ship_glyph(o[2], pair1 ? 1 : 0), true);
+  if (shown(o[3])) field(1, ship_glyph(pair1 ? o[2] : o[3], pair1 ? 2 : 0), false);
+}
+
+void Frontend::lobby_tile(UiCanvas& c, int index, int text, bool selected, bool disabled) const {
+  // sub_82085C28.
+  const Font& font = g_.font;
+  const int row = index / 6, col = index % 6;
+  float x = std::fmaf(float(col), 97.3333359f, col < 3 ? 0.0f : 6.0f) + 28.0f;
+  float y = std::fmaf(float(row), 61.0f, 150.0f);
+  float w = 91.3333359f, h = 55.0f;
+  bool current = false;
+  if (index >= 16) {
+    x = std::fmaf(float(col - 4), 146.0f, 326.0f);
+    y = 292.0f;
+    w = 140.0f;
+    h = 30.0f;
+    current = index == (copilots_ ? 17 : 16);
+  } else if (index >= 12) {
+    x = std::fmaf(float(col), 73.0f, 28.0f);
+    y = 292.0f;
+    w = 67.0f;
+    h = 30.0f;
+    current = index == preset_ + 12;
+  }
+  const float p = selected ? pulse_factor(g_, pulse_) : 1.0f;
+  const Rgba col_text = disabled ? palette_[kUiLockedNormal] : scaled_rgb(palette_[kUiNormal], p);
+  if (!disabled) {
+    if (current || selected)
+      ui_panel(c, x + 3.0f, y + 3.0f, (x + w) - 3.0f, (y + h) - 3.0f,
+               current ? palette_[kUiHighlight] : palette_[kUiSelection], 1);
+    const float k = lobby_group(selection_value()) == lobby_group(index) ? 1.0f : 0.25f;  // dat_82000720
+    ui_panel(c, x, y, x + w, y + h, selected ? palette_[kUiSelection] : scaled(palette_[kUiBackground], k), 0);
+  } else {
+    ui_panel(c, x, y, x + w, y + h, palette_[kUiLockedBackground], 0);
+  }
+  const float cx = std::fmaf(w, 0.5f, x), cy = std::fmaf(h, 0.5f, y);
+  if (index < 12) {
+    static const std::map<int, const char*> kIcon = {{0x1E, "deadline"}, {0x21, "king"},     {0x1C, "evolved"},
+                                                     {0x20, "pacifism"}, {0x1F, "waves"},    {0x1D, "progression"}};
+    const auto name = kIcon.find(text);
+    if (name != kIcon.end()) {
+      const auto icon = g_.charmap.find(name->second);
+      if (icon != g_.charmap.end()) flat_icon(c, cx, cy - 5.0f, 1.1f, 1.1f, icon->second, col_text);
+    }
+    font.centre_fit(c.lines, cx, cy + 8.0f, 6.0f, 6.0f, 75.0f, col_text.data(), text_(text));
+    return;
+  }
+  TextLayout l;
+  const int n = joined();
+  if (index < 16) {
+    lobby_teams(l, index - 12, false, n > 2);
+  } else {
+    const bool on = index == 17;
+    int shown = 0;
+    if (on) {
+      shown = one_team_preset();
+      if (shown < 1) shown = 1;
+    }
+    if (shown <= preset_) shown = preset_;
+    if (!on && n < 3) shown = 0;
+    lobby_teams(l, shown, on, n > 1);
+  }
+  if (disabled) l.set_colour(palette_[kUiLockedNormal]);
+  if (selected) l.transform({1.0f, 1.0f, 1.0f, 1.0f}, {p, p, p, p});
+  l.draw(font, c.lines, cx, cy - 4.5f, 9.0f, 9.0f, -1.0f, 2);
+}
+
+void Frontend::results_coop(UiCanvas& c) const {
+  // sub_82089218: the co-op table (sub_82034C78): the final score, the
+  // previous co-op games and the best this session.
+  const Font& font = g_.font;
+  const float B = cursor_;
+  const UiPalette& P = palette_;
+  const int mode = std::clamp(g_.rules.mode, 0, 5);
+  const ScoreTable& T = g_.coop_tables[size_t(mode)];
+  auto heading = [&](float y, const std::string& t) {
+    ui_panel(c, 0.0f, y, 160.0f, y + 14.0f, P[10], 0);
+    ui_panel(c, 166.0f, y, 474.0f, y + 14.0f, P[10], 0);
+    ui_panel(c, 480.0f, y, 640.0f, y + 14.0f, P[10], 0);
+    font.centre_fit(c.lines, 320.0f, (y + 7.0f) - 4.0f, 8.0f, 8.0f, 300.0f, P[kUiHighlight].data(), t);
+  };
+  auto box = [&](float y, float h, int64_t v, float size, float drop) {
+    ui_panel(c, 0.0f, y, 22.0f, y + h, P[kUiBackground], 0);
+    ui_panel(c, 28.0f, y, 612.0f, y + h, P[kUiBackground], 0);
+    ui_panel(c, 618.0f, y, 640.0f, y + h, P[kUiBackground], 0);
+    if (size > 0.0f)
+      font.centre(c.lines, 320.0f, std::fmaf(h, 0.5f, y) - drop, size, size, P[kUiNormal].data(), format_number(v));
+  };
+  heading(46.0f, text_(0x65));
+  box(66.0f, 50.0f, T.entry[0].score, 20.0f, 10.0f);
+  heading(122.0f, text_(0x66));
+  box(142.0f, B - 204.0f, 0, 0.0f, 0.0f);
+  for (int k = 0; k < 8; ++k) {
+    const float ry = std::fmaf(float(k), 14.0f, 148.0f);
+    const ScoreEntry& e = T.entry[size_t(2 + k)];
+    const bool last = k == 0 && T.entry[0].score > 0 && e.score == T.entry[0].score &&
+                      e.multiplier == T.entry[0].multiplier && e.name == T.entry[0].name;
+    const Rgba& col = last ? P[kUiHighlight] : P[kUiNormal];
+    if (e.name.empty()) {
+      font.left(c.lines, 34.0f, ry, 8.0f, 8.0f, P[kUiDisabled].data(), "-");
+      font.right(c.lines, 606.0f, ry, 8.0f, 8.0f, P[kUiDisabled].data(), "-");
+    } else {
+      const std::string num = format_number(e.score);
+      const float max_w = std::max(572.0f - std::fmaf(font.measure(num), 8.0f, 20.0f), 1.0f);
+      font.left_fit(c.lines, 34.0f, ry, 8.0f, 8.0f, max_w, col.data(), e.name);
+      font.right(c.lines, 606.0f, ry, 8.0f, 8.0f, col.data(), num);
+    }
+  }
+  heading(B - 56.0f, text_(0x68));
+  box(B - 36.0f, 36.0f, T.entry[1].score, 12.0f, 6.0f);
+}
+
+void Frontend::results_versus(UiCanvas& c) const {
+  // sub_82088978: this game's rankings (sub_82087F38) over the overall
+  // ones (sub_820884D0), each in a box half the height left.
+  const Font& font = g_.font;
+  const float B = cursor_;
+  const UiPalette& P = palette_;
+  const float h = ((B - 46.0f) - 46.0f) * 0.5f;
+  auto heading = [&](float y, const std::string& t) {
+    ui_panel(c, 0.0f, y, 160.0f, y + 14.0f, P[10], 0);
+    ui_panel(c, 166.0f, y, 474.0f, y + 14.0f, P[10], 0);
+    ui_panel(c, 480.0f, y, 640.0f, y + 14.0f, P[10], 0);
+    font.centre_fit(c.lines, 320.0f, (y + 7.0f) - 4.0f, 8.0f, 8.0f, 300.0f, P[kUiHighlight].data(), t);
+  };
+  auto box = [&](float y, float hh) {
+    ui_panel(c, 0.0f, y, 22.0f, y + hh, P[kUiBackground], 0);
+    ui_panel(c, 28.0f, y, 612.0f, y + hh, P[kUiBackground], 0);
+    ui_panel(c, 618.0f, y, 640.0f, y + hh, P[kUiBackground], 0);
+  };
+  heading(46.0f, text_(0x69));
+  box(66.0f, h);
+  heading(72.0f + h, text_(0x6A));
+  box(92.0f + h, h);
+  const float* hi = P[kUiHighlight].data();
+  auto columns = [&](float y, int third, int fourth) {
+    font.centre(c.lines, 45.0f, y, 10.0f, 10.0f, hi, "#");
+    font.left_fit(c.lines, 65.0f, y, 10.0f, 10.0f, 260.0f, hi, text_(0x6B));
+    font.right_fit(c.lines, 530.0f, y, 10.0f, 10.0f, 200.0f, hi, text_(third));
+    font.right_fit(c.lines, 600.0f, y, 10.0f, 10.0f, 64.0f, hi, text_(fourth));
+  };
+  auto team_colour = [&](int id) {
+    return id >= 1 && id <= 4 ? scaled_rgb(P[kUiMultiplayerRed + id - 1], 2.0f) : P[kUiNormal];
+  };
+  // A joined index's glyph: the ship's alone, or pilot / copilot.
+  auto glyph_of = [&](int j, const Ship& sh) {
+    if (j == sh.pilot && j != sh.copilot) return ship_glyph(sh.number, 1);
+    if (j != sh.pilot && j == sh.copilot) return ship_glyph(sh.number, 2);
+    return ship_glyph(sh.number, 0);
+  };
+  auto slot_of = [&](int j) {
+    for (int k = 0; k < g_.ship_count; ++k)
+      if (g_.ships[size_t(k)].pilot == j || g_.ships[size_t(k)].copilot == j) return k;
+    return 0;
+  };
+  // This game: records by score; per record its joined players (each
+  // ship's pilot, then its copilot), 14 apart, 8 more between records.
+  {
+    float y = 72.0f;
+    columns(y, 0x6C, 0x6D);
+    y = y + 22.0f;
+    std::array<int, 4> order{0, 1, 2, 3};
+    const int n = g_.record_count;
+    std::stable_sort(order.begin(), order.begin() + n, [this](int a, int b) {
+      return g_.world->records[size_t(a)].score > g_.world->records[size_t(b)].score;
+    });
+    for (int i = 0; i < n; ++i) {
+      const int r = order[size_t(i)];
+      std::vector<int> js;
+      for (int k = 0; k < g_.ship_count; ++k) {
+        const Ship& sh = g_.ships[size_t(k)];
+        if (sh.record != r) continue;
+        for (const int j : {sh.pilot, sh.copilot})
+          if (std::find(js.begin(), js.end(), j) == js.end() && js.size() < 4) js.push_back(j);
+      }
+      for (const int j : js) {
+        const int pad = g_.joined_pad[size_t(j & 3)];
+        const Ship& sh = g_.ships[size_t(slot_of(j))];
+        const Rgba colr = team_colour(sh.colour);
+        const std::string num = format_number(g_.world->records[size_t(r)].score);
+        font.centre(c.lines, 45.0f, y, 10.0f, 10.0f, colr.data(), format("%i", g_.lobby[size_t(pad)].last_rank + 1));
+        font.left(c.lines, 65.0f, y, 10.0f, 10.0f, colr.data(), glyph_of(j, sh));
+        font.left_fit(c.lines, 85.0f, y, 10.0f, 10.0f, -(font.measure(num) * 10.0f - 429.0f), colr.data(), pad_name(pad));
+        font.right(c.lines, 530.0f, y, 10.0f, 10.0f, colr.data(), num);
+        font.right(c.lines, 600.0f, y, 10.0f, 10.0f, colr.data(),
+                   format("+%s", format_number(g_.lobby[size_t(pad)].last_points).c_str()));
+        y = y + 14.0f;
+      }
+      y = y + 8.0f;
+    }
+  }
+  // Overall: the joined pads by total (joined first, then total, then
+  // pad), sharing a place on equal totals, 22 apart.
+  {
+    float y = 98.0f + h;
+    columns(y, 0x6D, 0x6E);
+    y = y + 22.0f;
+    std::array<int, 4> pads{0, 1, 2, 3};
+    std::stable_sort(pads.begin(), pads.end(), [this](int a, int b) {
+      const LobbyPad& la = g_.lobby[size_t(a)];
+      const LobbyPad& lb = g_.lobby[size_t(b)];
+      if (la.joined != lb.joined) return la.joined;
+      return la.total > lb.total;
+    });
+    int place = 1, last_total = 0;
+    for (int i = 0; i < 4; ++i) {
+      const int pad = pads[size_t(i)];
+      int j = -1;
+      for (int k = 0; k < g_.joined_count; ++k)
+        if (g_.joined_pad[size_t(k)] == pad) j = k;
+      const LobbyPad& l = g_.lobby[size_t(pad)];
+      if (!l.joined || j < 0) continue;
+      if (last_total != l.total) {
+        place = i + 1;
+        last_total = l.total;
+      }
+      const Ship& sh = g_.ships[size_t(slot_of(j))];
+      const Rgba colr = team_colour(sh.colour);
+      font.centre(c.lines, 45.0f, y, 10.0f, 10.0f, colr.data(), format("%i", place));
+      font.left(c.lines, 65.0f, y, 10.0f, 10.0f, colr.data(), glyph_of(j, sh));
+      font.left(c.lines, 85.0f, y, 10.0f, 10.0f, colr.data(), pad_name(pad));
+      font.right(c.lines, 530.0f, y, 10.0f, 10.0f, colr.data(), format("+%s", format_number(l.last_points).c_str()));
+      font.right(c.lines, 600.0f, y, 10.0f, 10.0f, colr.data(), format_number(l.total));
+      y = y + 22.0f;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

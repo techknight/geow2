@@ -61,8 +61,12 @@ Format for each entry:
   `profile.bin` in the user's preferences folder (or `--profile`); the
   local score boards beside it as `scores.txt`. Every pad counts as
   signed in; the player's name is the original's default for a player
-  without a gamertag, text 0x82 with the pad number ("Player 1").
-- **Decided**: 2026-10-15.
+  without a gamertag, text 0x82 with the pad number ("Player 1"). In
+  multiplayer every pad shows its "Player N" name (as the original does
+  for pads without a profile), and all pads use the one profile's stick
+  and bomb settings where the original reads each pad's own profile
+  (`sub_8204FF00`).
+- **Decided**: 2026-10-15; multiplayer 2026-10-15.
 
 ### Leaving the game
 

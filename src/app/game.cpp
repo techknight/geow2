@@ -1695,7 +1695,9 @@ void draw_game_hud(const Game& g, LineBatch& ui) {
   // The high score: the session's best for the mode, or this game's score
   // when higher.
   HudState hud;
-  if (g.rules.mode >= 0 && g.rules.mode < 6) hud.high_score = g.tables[size_t(g.rules.mode)].entry[1].score;
+  // (In co-op, the co-op table's: 0x8219B048.)
+  if (g.rules.mode >= 0 && g.rules.mode < 6)
+    hud.high_score = (g.multiplayer ? g.coop_tables : g.tables)[size_t(g.rules.mode)].entry[1].score;
   const LifeRecord& p = g.recs[0];
   hud.score = g.world->records[0].score;
   hud.multiplier = g.world->records[0].multiplier;

@@ -239,8 +239,10 @@ struct Game {
   int edge_count = 0;
   std::array<bool, 30> edge_top{}, edge_bottom{};
   std::array<bool, 20> edge_left{}, edge_right{};
-  // The single-player score tables, by mode (sub_82034C50).
+  // The single-player score tables, by mode (sub_82034C50), and the
+  // co-op ones (sub_82034C78, base 0x8219AFF0).
   std::array<ScoreTable, 6> tables{};
+  std::array<ScoreTable, 6> coop_tables{};
   bool first_spawn = true;  // dat_8219CE70
   int after_death = 0;      // dat_8219D288: the last player died (sub_8204E7D8)
   ModeRules rules;
