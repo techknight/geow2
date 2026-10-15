@@ -1,7 +1,8 @@
 // geow2: the game.
 //
 //   geow2 [--data <cache-dir>]
-//   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> [--stick <x> <y>] [--fire <x> <y>]
+//   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> [--size <w> <h>] [--stick <x> <y>]
+//         [--fire <x> <y>]
 //
 // The second form runs n simulation steps without a window (input: a fixed
 // raw stick value, XInput convention) and saves the final frame.
@@ -32,6 +33,8 @@
 #include "game/line_quads.h"
 #include "game/model_geometry.h"
 #include "game/player_motion.h"
+#include "game/rng.h"
+#include "game/stars.h"
 #include "game/rotation.h"
 
 namespace fs = std::filesystem;
@@ -94,6 +97,9 @@ struct Game {
   std::vector<GridVertex> grid_lines;    // this step's line quads
   std::vector<GridVertex> warp_mesh;     // this step's light map warp
   std::vector<LightVertex> lights;       // this step's light sprites
+  GameRng rng;
+  StarField stars;
+  std::vector<StarVertex> star_vertices;  // this step's stars
 };
 
 bool load(Game& g, const fs::path& cache) {
@@ -130,6 +136,10 @@ bool load(Game& g, const fs::path& cache) {
   g.glow_size = as_float(unit->s->find("glowSize"));
   // The grid at rest over the arena (sub_8205B000 from sub_82036250).
   g.grid.reset(kArenaHalfX, kArenaHalfY);
+  // The generator is seeded from the tick count at start-up
+  // (sub_82037C20), then the starfield draws from it (sub_82075318).
+  g.rng.seed_from_ticks(SDL_GetTicksNS() / 1000000);
+  g.stars.init(g.rng);
   // Player constructor sub_82051448: radius +0x20 = 5.0 (dat_820006F0),
   // heading +0x14 = -pi/2 (dat_820010F4). Spawn position: the arena centre
   // for now (the spawn point argument is not traced yet).
@@ -196,6 +206,9 @@ void step(Game& g, const Sticks& s) {
     emit_light(g.lights, b.radius * 6.0f, b.x, b.y, c);
   }
   emit_light(g.lights, g.glow_size, g.player.x, g.player.y, g.glow);
+
+  // The stars' step (sub_82075548, on the render worker each frame).
+  g.stars.update(*g.gm, 1.0f, g.star_vertices);
 }
 
 // The foreground lines: the ship's body (part 0), each line coloured as
@@ -220,8 +233,8 @@ void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_
             uint32_t w, uint32_t h, const Game& g) {
   static LineBatch front;
   foreground(g, front);
-  r.draw(cmd, target, format, w, h, camera_view_projection(g.camera, *g.gm), g.grid_visible ? &g.grid_lines : nullptr,
-         front);
+  r.draw(cmd, target, format, w, h, camera_view_projection(g.camera, *g.gm), g.star_vertices,
+         g.grid_visible ? &g.grid_lines : nullptr, front);
 }
 
 // One simulation step and its light map update (one per step, as the
@@ -231,13 +244,13 @@ void tick(Game& g, const Sticks& s, Renderer& r, SDL_GPUCommandBuffer* cmd) {
   r.update_light_map(cmd, g.warp_mesh, g.lights);
 }
 
-int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sticks& sticks, const fs::path& out) {
+int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sticks& sticks, const fs::path& out,
+                 uint32_t w, uint32_t h) {
   for (int i = 0; i < frames; ++i) {
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     tick(g, sticks, r, cmd);
     SDL_SubmitGPUCommandBuffer(cmd);
   }
-  const uint32_t w = 1280, h = 720;
   SDL_GPUTextureCreateInfo tci{};
   tci.type = SDL_GPU_TEXTURETYPE_2D;
   tci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
@@ -345,12 +358,16 @@ int main(int argc, char** argv) {
   int frames = -1;
   Sticks sticks;
   fs::path screenshot;
+  uint32_t shot_w = 1280, shot_h = 720;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--data" && i + 1 < argc) cache = argv[++i];
     else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
     else if (a == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
-    else if (a == "--stick" && i + 2 < argc) {
+    else if (a == "--size" && i + 2 < argc) {
+      shot_w = uint32_t(std::atoi(argv[++i]));
+      shot_h = uint32_t(std::atoi(argv[++i]));
+    } else if (a == "--stick" && i + 2 < argc) {
       sticks.move_x = clamp16(std::atoi(argv[++i]));
       sticks.move_y = clamp16(std::atoi(argv[++i]));
     } else if (a == "--fire" && i + 2 < argc) {
@@ -358,7 +375,8 @@ int main(int argc, char** argv) {
       sticks.fire_y = clamp16(std::atoi(argv[++i]));
     } else {
       std::fprintf(stderr,
-                   "usage: geow2 [--data <cache>] [--frames <n> --screenshot <png> [--stick <x> <y>] [--fire <x> <y>]]\n");
+                   "usage: geow2 [--data <cache>] [--frames <n> --screenshot <png> [--size <w> <h>] [--stick <x> <y>]"
+                   " [--fire <x> <y>]]\n");
       return 2;
     }
   }
@@ -378,7 +396,7 @@ int main(int argc, char** argv) {
   Renderer renderer;
   if (!renderer.init(dev, fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "shaders")) return 1;
   const int rc =
-      headless ? run_headless(dev, renderer, game, frames, sticks, screenshot) : run_window(dev, renderer, game);
+      headless ? run_headless(dev, renderer, game, frames, sticks, screenshot, shot_w, shot_h) : run_window(dev, renderer, game);
   renderer.release();
   SDL_DestroyGPUDevice(dev);
   SDL_Quit();

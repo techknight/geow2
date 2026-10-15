@@ -51,7 +51,7 @@ struct Attr {
 
 SDL_GPUGraphicsPipeline* make_pipeline(SDL_GPUDevice* dev, SDL_GPUShader* vs, SDL_GPUShader* fs,
                                        SDL_GPUTextureFormat format, bool additive, uint32_t pitch,
-                                       std::initializer_list<Attr> attrs) {
+                                       std::initializer_list<Attr> attrs, bool per_instance = false) {
   SDL_GPUColorTargetDescription target{};
   target.format = format;
   if (additive) {
@@ -67,7 +67,7 @@ SDL_GPUGraphicsPipeline* make_pipeline(SDL_GPUDevice* dev, SDL_GPUShader* vs, SD
   SDL_GPUVertexBufferDescription vb{};
   vb.slot = 0;
   vb.pitch = pitch;
-  vb.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+  vb.input_rate = per_instance ? SDL_GPU_VERTEXINPUTRATE_INSTANCE : SDL_GPU_VERTEXINPUTRATE_VERTEX;
   std::vector<SDL_GPUVertexAttribute> va;
   for (const Attr& a : attrs) va.push_back({uint32_t(va.size()), 0, a.format, a.offset});
   SDL_GPUGraphicsPipelineCreateInfo info{};
@@ -114,6 +114,8 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   SDL_GPUShader* warp_fs = shader("light_warp.frag.spv", F, 1, 0);
   SDL_GPUShader* sprite_vs = shader("light_sprite.vert.spv", V, 0, 0);
   SDL_GPUShader* sprite_fs = shader("light_sprite.frag.spv", F, 1, 0);
+  SDL_GPUShader* star_vs = shader("star.vert.spv", V, 0, 1);
+  SDL_GPUShader* star_fs = shader("star.frag.spv", F, 1, 0);
   full_vs_ = shader("fullscreen.vert.spv", V, 0, 0);
   SDL_GPUShader* downsample_fs = shader("downsample.frag.spv", F, 1, 1);
   SDL_GPUShader* blur_fs = shader("blur.frag.spv", F, 1, 1);
@@ -133,6 +135,8 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   warp_ = make_pipeline(device, warp_vs, warp_fs, kLayerFormat, false, sizeof(GridVertex), {{F2, 0}, {F2, 12}});
   sprites_ = make_pipeline(device, sprite_vs, sprite_fs, kLayerFormat, true, sizeof(LightVertex),
                            {{F2, 0}, {F2, 8}, {F3, 16}});
+  stars_ = make_pipeline(device, star_vs, star_fs, kLayerFormat, true, sizeof(StarVertex), {{F3, 0}, {F3, 12}},
+                         true);
   downsample_ = make_pipeline(device, full_vs_, downsample_fs, kLayerFormat, false, 0, {});
   blur_ = make_pipeline(device, full_vs_, blur_fs, kLayerFormat, false, 0, {});
   combine_ = make_pipeline(device, full_vs_, combine_fs, kLayerFormat, false, 0, {});
@@ -160,6 +164,10 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   tci.layer_count_or_depth = 1;
   tci.num_levels = 1;
   sprite_ = SDL_CreateGPUTexture(device, &tci);
+  tci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+  tci.width = 3;
+  tci.height = 3;
+  star_sprite_ = SDL_CreateGPUTexture(device, &tci);
 
   light_ = make_target(kLightW, kLightH);
   light_warped_ = make_target(kLightW, kLightH);
@@ -167,7 +175,7 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   light_combined_ = make_target(kLightW, kLightH);
   make_chain(light_chain_, kLightW, kLightH, false);
 
-  if (!body_ || !caps_ || !grid_ || !warp_ || !sprites_ || !downsample_ || !blur_ || !combine_ || !light_combine_ ||
+  if (!body_ || !caps_ || !grid_ || !warp_ || !sprites_ || !stars_ || !star_sprite_ || !downsample_ || !blur_ || !combine_ || !light_combine_ ||
       !feedback_ || !sampler_ || !sprite_sampler_ || !sprite_ || !light_.tex) {
     SDL_Log("cannot create the render resources: %s", SDL_GetError());
     return false;
@@ -188,6 +196,21 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   dst.h = kLightSpriteSize;
   dst.d = 1;
   SDL_UploadToGPUTexture(copy, &src, &dst, false);
+  // The star sprite (sub_82075318): 3 x 3, all zero but the middle texel,
+  // which is 0xFFFFFFFF.
+  uint8_t star[3 * 3 * 4] = {};
+  for (int c = 0; c < 4; ++c) star[(1 * 3 + 1) * 4 + c] = 0xFF;
+  SDL_GPUTransferBufferCreateInfo sti{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, sizeof(star), 0};
+  SDL_GPUTransferBuffer* st = SDL_CreateGPUTransferBuffer(device, &sti);
+  std::memcpy(SDL_MapGPUTransferBuffer(device, st, false), star, sizeof(star));
+  SDL_UnmapGPUTransferBuffer(device, st);
+  SDL_GPUTextureTransferInfo ssrc{st, 0, 3, 3};
+  SDL_GPUTextureRegion sdst{};
+  sdst.texture = star_sprite_;
+  sdst.w = 3;
+  sdst.h = 3;
+  sdst.d = 1;
+  SDL_UploadToGPUTexture(copy, &ssrc, &sdst, false);
   SDL_EndGPUCopyPass(copy);
   std::vector<uint16_t> tri;
   const std::vector<uint16_t> quads = grid_warp_indices();
@@ -197,6 +220,7 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   upload(cmd, warp_index_, SDL_GPU_BUFFERUSAGE_INDEX, tri.data(), uint32_t(tri.size() * sizeof(uint16_t)));
   SDL_SubmitGPUCommandBuffer(cmd);
   SDL_ReleaseGPUTransferBuffer(device, t);
+  SDL_ReleaseGPUTransferBuffer(device, st);
   return true;
 }
 
@@ -205,15 +229,17 @@ void Renderer::release() {
   resize(0, 0);
   for (Target* t : {&light_, &light_warped_, &light_new_, &light_combined_}) free_target(*t);
   free_chain(light_chain_);
-  for (SDL_GPUGraphicsPipeline* p : {body_, caps_, grid_, warp_, sprites_, downsample_, blur_, combine_,
+  for (SDL_GPUGraphicsPipeline* p : {body_, caps_, grid_, warp_, sprites_, stars_, downsample_, blur_, combine_,
                                      light_combine_, feedback_, composite_})
     if (p) SDL_ReleaseGPUGraphicsPipeline(device_, p);
   for (SDL_GPUShader* s : shaders_)
     if (s) SDL_ReleaseGPUShader(device_, s);
   for (SDL_GPUSampler* s : {sampler_, sprite_sampler_})
     if (s) SDL_ReleaseGPUSampler(device_, s);
-  if (sprite_) SDL_ReleaseGPUTexture(device_, sprite_);
-  for (Buffer* b : {&lines_, &grid_vertices_, &warp_vertices_, &sprite_vertices_, &quad_index_, &warp_index_}) {
+  for (SDL_GPUTexture* t : {sprite_, star_sprite_})
+    if (t) SDL_ReleaseGPUTexture(device_, t);
+  for (Buffer* b : {&lines_, &grid_vertices_, &warp_vertices_, &sprite_vertices_, &star_vertices_, &quad_index_,
+                    &warp_index_}) {
     if (b->buf) SDL_ReleaseGPUBuffer(device_, b->buf);
     if (b->staging) SDL_ReleaseGPUTransferBuffer(device_, b->staging);
   }
@@ -454,8 +480,8 @@ SDL_GPUGraphicsPipeline* Renderer::composite_pipeline(SDL_GPUTextureFormat forma
 }
 
 void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextureFormat format, uint32_t out_w,
-                    uint32_t out_h, const Mat4& vp, const std::vector<GridVertex>* grid,
-                    const LineBatch& foreground) {
+                    uint32_t out_h, const Mat4& vp, const std::vector<StarVertex>& stars,
+                    const std::vector<GridVertex>* grid, const LineBatch& foreground) {
   // The 16:9 picture, letterboxed into the output.
   uint32_t pw = out_w, ph = uint32_t(float(out_w) / kAspect + 0.5f);
   if (ph > out_h) {
@@ -474,6 +500,7 @@ void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextu
   upload(cmd, lines_, SDL_GPU_BUFFERUSAGE_VERTEX, v.data(), uint32_t(v.size() * sizeof(LineVertex)));
   if (grid_quads)
     upload(cmd, grid_vertices_, SDL_GPU_BUFFERUSAGE_VERTEX, grid->data(), uint32_t(grid->size() * sizeof(GridVertex)));
+  upload(cmd, star_vertices_, SDL_GPU_BUFFERUSAGE_VERTEX, stars.data(), uint32_t(stars.size() * sizeof(StarVertex)));
 
   auto begin_layer = [&](const Target& t) {
     // Cleared to Render.ClearColour (0x821B39CC, default (0, 0, 0, 0)).
@@ -489,9 +516,28 @@ void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextu
     return rp;
   };
 
-  // Layer A (sub_820663A8): the grid (sub_8205CAF0, preset 0x821B45C8),
-  // lit by the light map.
+  // Layer A (sub_820663A8): the stars (sub_820756F8, preset 0x821B4658),
+  // then the grid (sub_8205CAF0, preset 0x821B45C8), lit by the light map.
   SDL_GPURenderPass* rp = begin_layer(layer_a_);
+  if (!stars.empty()) {
+    // 3 pixels of the original's back buffer (720 or 1080 lines).
+    const float px = 3.0f * float(ph) / float(ph > kStandardHeight ? 1080 : 720);
+    struct {
+      float m[16];
+      float size[4];
+    } u{};
+    std::memcpy(u.m, vp.m, sizeof(u.m));
+    u.size[0] = 2.0f * px / float(pw);
+    u.size[1] = 2.0f * px / float(ph);
+    SDL_PushGPUVertexUniformData(cmd, 0, &u, sizeof(u));
+    SDL_BindGPUGraphicsPipeline(rp, stars_);
+    const SDL_GPUBufferBinding vb{star_vertices_.buf, 0};
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    const SDL_GPUTextureSamplerBinding tex{star_sprite_, sprite_sampler_};
+    SDL_BindGPUFragmentSamplers(rp, 0, &tex, 1);
+    SDL_DrawGPUPrimitives(rp, 6, uint32_t(stars.size()), 0, 0);
+    SDL_PushGPUVertexUniformData(cmd, 0, vp.m, sizeof(vp.m));
+  }
   if (grid_quads) {
     SDL_BindGPUGraphicsPipeline(rp, grid_);
     const SDL_GPUBufferBinding vb{grid_vertices_.buf, 0};

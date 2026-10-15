@@ -10,6 +10,7 @@
 #include "game/light_map.h"
 #include "game/line_quads.h"
 #include "game/math.h"
+#include "game/stars.h"
 
 namespace geow2 {
 
@@ -61,8 +62,8 @@ class Renderer {
   // Draws into `out` (out_w x out_h, `format`), the 16:9 picture
   // letterboxed. `grid` is null while the grid is faded out.
   void draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextureFormat format, uint32_t out_w,
-            uint32_t out_h, const Mat4& view_projection, const std::vector<GridVertex>* grid,
-            const LineBatch& foreground);
+            uint32_t out_h, const Mat4& view_projection, const std::vector<StarVertex>& stars,
+            const std::vector<GridVertex>* grid, const LineBatch& foreground);
 
   RenderTuning tuning;
 
@@ -104,6 +105,7 @@ class Renderer {
   SDL_GPUGraphicsPipeline* grid_ = nullptr;
   SDL_GPUGraphicsPipeline* warp_ = nullptr;
   SDL_GPUGraphicsPipeline* sprites_ = nullptr;
+  SDL_GPUGraphicsPipeline* stars_ = nullptr;
   SDL_GPUGraphicsPipeline* downsample_ = nullptr;
   SDL_GPUGraphicsPipeline* blur_ = nullptr;
   SDL_GPUGraphicsPipeline* combine_ = nullptr;
@@ -114,8 +116,9 @@ class Renderer {
   SDL_GPUSampler* sampler_ = nullptr;         // reads go through texelFetch
   SDL_GPUSampler* sprite_sampler_ = nullptr;  // bilinear, clamped
   SDL_GPUTexture* sprite_ = nullptr;          // dat_821A1D60
+  SDL_GPUTexture* star_sprite_ = nullptr;     // dat_821B4768
 
-  Buffer lines_, grid_vertices_, warp_vertices_, sprite_vertices_, quad_index_, warp_index_;
+  Buffer lines_, grid_vertices_, warp_vertices_, sprite_vertices_, star_vertices_, quad_index_, warp_index_;
   uint32_t quad_index_quads_ = 0;
   uint32_t warp_index_count_ = 0;
 
