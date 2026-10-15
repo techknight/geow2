@@ -98,7 +98,7 @@ int WaveSpawner::next_side(World& w, bool refresh) {
   return side[index++];
 }
 
-void WaveSpawner::step(World& w, int mode, bool cycle_refresh) {
+void WaveSpawner::step(World& w, int mode, bool cycle_refresh, int& after_death) {
   if (after_death == 1) {
     timer = 3.0f;  // dat_820006F8
     after_death = 2;

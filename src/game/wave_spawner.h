@@ -16,11 +16,10 @@ class WaveSpawner {
   // One step for mode `mode` (1 Evolved, 3 Waves, 4 Pacifism, 5 King),
   // while a player is alive. `cycle_refresh` is sub_8203EB88's test:
   // multiplayer, or a bomb used, or the shield hit (dat_8219D0C8 / C9).
-  void step(World& w, int mode, bool cycle_refresh);
-
-  // dat_8219D288: 1 when the last player died; the next wave then comes
-  // three seconds after the respawn (2 while that wait runs).
-  int after_death = 0;
+  // `after_death` is dat_8219D288: 1 when the last player died; the next
+  // wave then comes three seconds after the respawn (2 while that wait
+  // runs).
+  void step(World& w, int mode, bool cycle_refresh, int& after_death);
   int walls = 0;  // dat_8219CE80: rocket walls so far (an achievement counts them)
 
   // The state block.

@@ -18,6 +18,7 @@
 #include "game/model_geometry.h"
 #include "game/player_motion.h"
 #include "game/rotation.h"
+#include "game/sequence.h"
 #include "game/shots.h"
 #include "game/spawn.h"
 #include "game/wanderer.h"
@@ -646,7 +647,35 @@ static void test_gravity_well() {
   expect((h->flags & kEntityRemoved) && blasts == 1 && w2.score == 25, "well shot to 0 bursts (100 points)");
 }
 
+void test_sequence_parser() {
+  SequenceCommand c;
+  expect(parse_sequence_line("  CIRCLE Count(3) radius (12.5) type(snake) slip(90) position(Centre)", c) &&
+             c.kind == SequenceCommand::kCircle && c.count == 3 && c.radius == 12.5f && c.type == 8 &&
+             c.position == 1 && std::fabs(c.slip - 1.5707964f) < 1e-6f,
+         "circle line, any case, space before the bracket");
+  expect(parse_sequence_line("scatter count(2) type(Quanta)", c) && c.kind == SequenceCommand::kScatter &&
+             c.count == 2 && c.type == 16 && c.radius == 165.0f && c.max_radius == 600.0f,
+         "scatter defaults");
+  expect(parse_sequence_line("line wall(west) type(rocket) half(2)", c) && c.wall == 3 && c.type == 12 &&
+             c.half == 2,
+         "line takes the wall's first letter");
+  expect(parse_sequence_line("line wall(x) type(grunt)", c) && c.wall == -1, "line with an unknown wall");
+  expect(parse_sequence_line("clump position(se) type(duck) radius(30) count(4)", c) && c.position == 3 &&
+             c.type == 22 && c.count == 4,
+         "clump position");
+  expect(parse_sequence_line("clump type(duck) radius(30) count(4)", c) && c.position == -1, "clump without position");
+  expect(!parse_sequence_line("wait time 3", c), "a key without brackets rejects the line");
+  expect(!parse_sequence_line("hover time(3)", c), "an unknown command is dropped");
+  expect(!parse_sequence_line("   ", c), "an empty line makes nothing");
+  expect(sequence_type("nothing") == 0 && sequence_type("GRAVITYWELL") == 5 && sequence_type("") == 0,
+         "type names");
+  const auto cmds = parse_sequence_script("wait time(1.5)\r\n\r\n;scatter count(9)\nscatter count(1) type(grunt) ; note\r\n");
+  expect(cmds.size() == 2 && cmds[0].kind == SequenceCommand::kWait && cmds[0].time == 1.5f && cmds[1].count == 1,
+         "script lines, comments cut at ';'");
+}
+
 int main() {
+  test_sequence_parser();
   test_gravity_well();
   test_gate();
   test_enemies();

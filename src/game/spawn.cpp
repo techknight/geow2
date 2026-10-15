@@ -83,6 +83,42 @@ Vec2 spawn_position(World& w, float dist) {
   }
 }
 
+Vec2 spawn_position_between(World& w, float min, float max) {
+  constexpr float kAhead = 0.333333343f;  // dat_820010F0
+  float px[4], py[4];
+  int n = 0;
+  for (const PlayerTarget& p : w.players) {
+    if (p.removed || n >= 4) continue;
+    px[n] = p.x + p.vx * kAhead;
+    py[n] = p.y + p.vy * kAhead;
+    ++n;
+  }
+  const double lo = double(min * min), hi = double(max * max);
+  for (int tries = 0;; ++tries) {
+    const Vec2 c = w.random_position();
+    bool ok = true;
+    for (int i = 0; i < n; ++i) {
+      const float dx = c.x - px[i], dy = c.y - py[i];
+      const double d = double(dx * dx + dy * dy);
+      if (d < lo || hi < d) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok || tries + 1 > 0x1F) return c;
+  }
+}
+
+void spawn_circle(World& w, float radius, float slip, int type, int n, Vec2 centre) {
+  constexpr float kTwoPi = 6.28318548f;  // dat_82181578
+  constexpr float kPi = 3.14159274f;     // dat_820010DC
+  for (int i = 0; i < n; ++i) {
+    const float a = std::fmaf(float(i) / float(n), kTwoPi, slip);
+    const float s = float(w.gm.sin(a)), c = float(w.gm.cos(a));
+    spawn_enemy(w, type, a + kPi, centre.x + c * radius, centre.y + s * radius);
+  }
+}
+
 float random_right_angle(World& w) {
   // frac(float(float(k) * pi) * 0.5 / 2pi) * 2pi with k = r & 3, the
   // integer part taken with fctid (round to nearest): 0, pi/2, pi, -pi/2.

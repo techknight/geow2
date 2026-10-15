@@ -62,6 +62,7 @@ add_library(geow2_game STATIC
   src/game/player_motion.cpp
   src/game/repulsar.cpp
   src/game/rotation.cpp
+  src/game/sequence.cpp
   src/game/shockwave.cpp
   src/game/shots.cpp
   src/game/snake.cpp

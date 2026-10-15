@@ -56,6 +56,7 @@
 #include "game/wave_spawner.h"
 #include "game/world.h"
 #include "game/rotation.h"
+#include "game/sequence.h"
 #include "game/shots.h"
 #include "game/spawn.h"
 
@@ -136,9 +137,12 @@ struct Game {
   std::unique_ptr<World> world;
   DeadlineSpawner spawner;
   WaveSpawner waves;     // the other modes' spawner (0x8219DDA0)
+  Sequence sequence;     // Sequence's levels (0x8219D3E0)
   float elapsed = 0.0f;  // dat_8219CE68
-  bool over = false;     // dat_8219CE73: game over
+  bool over = false;     // dat_8219CE73: the game-over rule was met
+  bool ended = false;    // the end handled (field cleared, results next)
   bool first_spawn = true;  // dat_8219CE70
+  int after_death = 0;      // dat_8219D288: the last player died (sub_8204E7D8)
   // The player's life and the mode's rules.
   PlayerLife life;
   ModeRules rules;
@@ -221,7 +225,7 @@ void kill_player(Game& g, Entity& killer) {
   p.removed = true;
   w.players[0].removed = true;
   // No player is left (sub_8204E7D8): dat_8219D288 = 1.
-  g.waves.after_death = 1;
+  g.after_death = 1;
   update_scoring(g);
 }
 
@@ -415,10 +419,24 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode) {
   g.life.bombs = g.rules.start_bombs;
   g.world->players[0].removed = true;
   // The spawners' reset (sub_8203E538): the shared spawner's state, then
-  // Sequence's between-levels screen block (sub_8203B2C8, 20 draws, not
-  // ported yet: the draws are kept for the generator's order).
+  // Sequence's (every mode). Sequence holds the game's end back until its
+  // own (dat_8219CE72, cleared by its setup).
+  for (uint32_t r = 0; r < g.db->records().size(); ++r) {
+    if (g.db->types()[g.db->records()[r].type].name != "ProgressionLevel") continue;
+    const FlaskValue v = g.db->decode(r);
+    const FlaskStruct* s = as_struct(&v);
+    const FlaskValue* level = s ? s->find("level") : nullptr;
+    const FlaskValue* script = s ? s->find("script") : nullptr;
+    if (!level || !script || !std::holds_alternative<std::string>(script->v)) continue;
+    int index = -1;
+    if (auto* i = std::get_if<int64_t>(&level->v)) index = int(*i);
+    else if (auto* u = std::get_if<uint64_t>(&level->v)) index = int(*u);
+    else if (auto* d = std::get_if<double>(&level->v)) index = int(*d);
+    g.sequence.scripts.emplace_back(index, std::get<std::string>(script->v));
+  }
   g.waves.reset(*g.world);
-  for (int i = 0; i < 20; ++i) g.rng.next();
+  g.sequence.reset(*g.world);
+  g.sequence.allow_end = g.rules.mode != 2;
   g.world->scored = [&g]() { score_awards(g); };
   const FlaskValue* model_ref = unit->s->find("model");
   const auto* ref = model_ref ? std::get_if<FlaskRef>(&model_ref->v) : nullptr;
@@ -515,11 +533,19 @@ void step(Game& g, const Sticks& s) {
   // The spawner (sub_8203E7E8) runs while a player is in the game:
   // Deadline's own, the others' shared one (Sequence's is not ported);
   // then the clock (sub_820366A0).
-  if (g.life.alive()) {
+  if (g.rules.mode == 2) {
+    Sequence::Inputs in;
+    in.alive = g.life.alive();
+    in.over = g.over;
+    in.after_death = &g.after_death;
+    in.respawn_wait = &g.life.respawn_wait;
+    in.level_time = g.rules.level_time;
+    g.sequence.step(w, in);
+  } else if (g.life.alive()) {
     if (g.rules.mode == 0)
       g.spawner.step(w, g.elapsed);
-    else if (g.rules.mode != 2)
-      g.waves.step(w, g.rules.mode, g.life.bomb_used || g.life.shield_hit);
+    else
+      g.waves.step(w, g.rules.mode, g.life.bomb_used || g.life.shield_hit, g.after_death);
   }
   g.elapsed = kStep + g.elapsed;
   w.clock = g.elapsed;
@@ -567,19 +593,23 @@ void step(Game& g, const Sticks& s) {
   respawn(g);
   update_scoring(g);
   // Game over (sub_820366A0): with lives, when no player is left and none
-  // can come back; with the time limit, when time is up. The field is
-  // cleared (sounds 1 and 0x25; the results follow, sub_820364D0 and
-  // sub_82034408(2), with the front end).
-  if (!g.over) {
+  // can come back; with the time limit, when time is up; or when Sequence
+  // says so (dat_8219CE71). Sounds 1 and 0x25; unless Sequence holds the
+  // end back (dat_8219CE72) the field is cleared and the results follow
+  // (sub_820364D0, sub_82034408(2): with the front end).
+  if (!g.ended) {
     const PlayerLife& p = g.life;
-    bool end = false;
+    bool end = g.sequence.force_over;
     if (g.rules.lives_mode == 0)
-      end = (p.alive() ? 1 : 0) + (p.free_spawn ? 1 : 0) + p.lives < 1;
+      end = end || (p.alive() ? 1 : 0) + (p.free_spawn ? 1 : 0) + p.lives < 1;
     else if (g.rules.lives_mode == 2)
-      end = g.rules.length <= w.clock;
+      end = end || g.rules.length <= w.clock;
     if (end) {
       g.over = true;
-      clear_field(g);
+      if (g.sequence.allow_end) {
+        clear_field(g);
+        g.ended = true;
+      }
     }
   }
 
@@ -713,6 +743,9 @@ void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_
   hud.lives_pulse = g.life.lives_pulse;
   hud.bombs_pulse = g.life.bombs_pulse;
   hud.start_lives = g.rules.start_lives;
+  hud.mode = g.rules.mode;
+  hud.level_time = g.rules.level_time;
+  hud.level_timer = g.sequence.level_timer;
   hud.clock = g.elapsed;
   hud.length = g.rules.length;
   hud.lives_mode = g.rules.lives_mode;
@@ -777,11 +810,11 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sti
   SDL_UnmapGPUTransferBuffer(dev, down);
   SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets, "
           "%zu entities, score %lld x%d, %zu particles, %zu debris, %zu linger quads, %d deaths, %d bombs left, "
-          "%d bomb kills, %d lives%s",
+          "%d bomb kills, %d lives%s; sequence phase %d level %d",
           out.string().c_str(), frames, g.player.x, g.player.y, g.player.heading, g.camera.x, g.camera.y,
           g.camera.zoom, g.bullets.size(), g.world->entities.size(), (long long)g.world->score, g.world->multiplier, g.world->particles.size(),
           g.world->debris.size(), g.linger_lines.body.size() / 4, g.life.deaths, g.life.bombs, g.world->bomb_kills, g.life.lives,
-          g.over ? ", game over" : "");
+          g.over ? ", game over" : "", g.sequence.phase, g.sequence.level);
   SDL_ReleaseGPUTransferBuffer(dev, down);
   SDL_ReleaseGPUTexture(dev, tex);
   return 0;
@@ -863,6 +896,7 @@ int main(int argc, char** argv) {
   int64_t seed = -1;
   int bomb_step = -1;
   int mode = 0;
+  int start_level = -1;
   std::vector<DevSpawn> spawns;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -871,6 +905,7 @@ int main(int argc, char** argv) {
     else if (a == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
     else if (a == "--seed" && i + 1 < argc) seed = std::atoll(argv[++i]);
     else if (a == "--mode" && i + 1 < argc) mode = std::clamp(std::atoi(argv[++i]), 0, 5);
+    else if (a == "--level" && i + 1 < argc) start_level = std::clamp(std::atoi(argv[++i]), 0, 19);
     else if (a == "--size" && i + 2 < argc) {
       shot_w = uint32_t(std::atoi(argv[++i]));
       shot_h = uint32_t(std::atoi(argv[++i]));
@@ -889,7 +924,7 @@ int main(int argc, char** argv) {
       sticks.fire_y = clamp16(std::atoi(argv[++i]));
     } else {
       std::fprintf(stderr,
-                   "usage: geow2 [--data <cache>] [--seed <n>] [--mode <0-5>] [--frames <n> --screenshot <png> [--size <w> <h>]"
+                   "usage: geow2 [--data <cache>] [--seed <n>] [--mode <0-5>] [--level <0-19>] [--frames <n> --screenshot <png> [--size <w> <h>]"
                    " [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--spawn <type> <x> <y>]...]\n");
       return 2;
     }
@@ -902,6 +937,9 @@ int main(int argc, char** argv) {
   }
   Game game;
   if (!load(game, cache, seed, mode)) return 1;
+  // Level.StartLevel (0x8219D438) for development: Sequence starts at
+  // that level (sub_82039628 sets both the level and the one shown).
+  if (start_level >= 0) game.sequence.level = game.sequence.shown_level = start_level;
   SDL_GPUDevice* dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
   if (!dev) {
     SDL_Log("no GPU device: %s", SDL_GetError());

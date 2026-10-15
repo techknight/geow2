@@ -19,6 +19,14 @@ Entity* spawn_enemy(World& w, int type, float angle, float x, float y, bool flag
 // player's position a third of a second ahead (32 tries at most).
 Vec2 spawn_position(World& w, float dist);
 
+// sub_8203BD70: a random arena position between `min` and `max` from
+// every player's position a third of a second ahead (32 tries at most).
+Vec2 spawn_position_between(World& w, float min, float max);
+
+// sub_8203D9B0: `n` of `type` evenly around `centre` at `radius`, turned by
+// `slip`, each facing the centre's far side (angle + pi).
+void spawn_circle(World& w, float radius, float slip, int type, int n, Vec2 centre);
+
 // sub_8203DC68: a group of `type` facing one of four right angles, at a
 // spawn_position(dist).
 void spawn_at_random(World& w, float dist, int type);

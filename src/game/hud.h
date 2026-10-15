@@ -21,6 +21,9 @@ struct HudState {
   float clock = 0.0f;           // dat_8219CE68
   float length = 180.0f;        // dat_8219D258
   int lives_mode = 2;           // dat_8219D24C (2: the m:ss timer)
+  int mode = 0;                 // dat_8219D254 (2: Sequence's level timer)
+  float level_time = 30.0f;     // dat_8219D25C
+  float level_timer = 0.0f;     // dat_8219CE6C
 };
 
 // The HUD's strings: ID_X_SCORE (0x7A) and ID_X_HIGH_SCORE (0x7B) from the
@@ -34,7 +37,8 @@ struct HudText {
 // bombs along the top (Deadline), or lives and bombs either side of the
 // centre over the multiplier, or the multiplier alone when the mode starts
 // without lives; score top left, high score top right; in UI units
-// (640 x 360) as UI lines. (Sequence's level timer is not ported yet.)
+// (640 x 360) as UI lines. Sequence shows its level's seconds and
+// hundredths left, with lives and bombs either side.
 void draw_hud(const Font& font, const HudText& text, const HudState& s, LineBatch& out);
 
 }  // namespace geow2
