@@ -3,6 +3,7 @@
 //
 //   geow2-extract unpack <package-file | extracted-folder> <cache-dir>
 //   geow2-extract verify <cache-dir>
+//   geow2-extract dump-db <cache-dir>     (developer aid: every Data.bin value)
 
 #include <cstdio>
 #include <filesystem>
@@ -122,6 +123,39 @@ int check_text(const fs::path& files) {
   return bad;
 }
 
+// Prints a decoded value as flat "path = value" lines (developer aid).
+void print_value(const std::string& path, const FlaskValue& v) {
+  struct Visitor {
+    const std::string& path;
+    void operator()(std::monostate) const { std::printf("%s = null\n", path.c_str()); }
+    void operator()(bool b) const { std::printf("%s = %s\n", path.c_str(), b ? "true" : "false"); }
+    void operator()(int64_t i) const { std::printf("%s = %lld\n", path.c_str(), (long long)i); }
+    void operator()(uint64_t u) const { std::printf("%s = %llu\n", path.c_str(), (unsigned long long)u); }
+    void operator()(double d) const { std::printf("%s = %.9g\n", path.c_str(), d); }
+    void operator()(const std::string& s) const {
+      std::string e;
+      for (char c : s) e += c == '\r' ? std::string("\\r") : c == '\n' ? std::string("\\n") : std::string(1, c);
+      std::printf("%s = \"%s\"\n", path.c_str(), e.c_str());
+    }
+    void operator()(FlaskRef r) const { std::printf("%s = @%u\n", path.c_str(), r.record); }
+    void operator()(const std::shared_ptr<FlaskStruct>& s) const {
+      std::printf("%s : %s\n", path.c_str(), s->type.c_str());
+      for (const auto& [n, f] : s->fields) print_value(path + "." + n, f);
+    }
+    void operator()(const std::shared_ptr<FlaskList>& l) const {
+      std::printf("%s [%zu]\n", path.c_str(), l->size());
+      for (size_t i = 0; i < l->size(); ++i) print_value(path + "[" + std::to_string(i) + "]", (*l)[i]);
+    }
+  };
+  std::visit(Visitor{path}, v.v);
+}
+
+int dump_db(const std::string& cache) {
+  Flask db(read_file(fs::path(cache) / "files" / "Data.bin"));
+  for (uint32_t r = 0; r < db.records().size(); ++r) print_value(std::to_string(r), db.decode(r));
+  return 0;
+}
+
 // Decodes every record of Data.bin the way the game's merge does.
 int check_database(const fs::path& files) {
   try {
@@ -157,6 +191,7 @@ int main(int argc, char** argv) {
     const std::string cmd = argc > 1 ? argv[1] : "";
     if (cmd == "unpack" && argc == 4) return unpack(argv[2], argv[3]);
     if (cmd == "verify" && argc == 3) return verify(argv[2]);
+    if (cmd == "dump-db" && argc == 3) return dump_db(argv[2]);
     std::fprintf(stderr,
                  "usage:\n  geow2-extract unpack <package-file | extracted-folder> <cache-dir>\n"
                  "  geow2-extract verify <cache-dir>\n");
