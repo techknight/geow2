@@ -5,6 +5,7 @@
 //   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> [--size <w> <h>] [--mode <n>] [--level <n>]
 //         [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--trigger <0-255>] [--spawn <type> <x> <y>]...
 //         [--player <pad> <team> <role>]... [--versus] [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>]
+//         [--inputs <csv>]
 //   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
 //
 // The first form opens the window at the front end; the profile, the
@@ -18,7 +19,9 @@
 // start, and saves the final frame. --player joins a pad to a multiplayer
 // game (team 0-3, role 0 alone, 1 pilot, 2 copilot; --versus for teams
 // against each other), every pad holding the --stick and --fire values
-// unless --pad-stick / --pad-fire set its own. The third runs the front end instead,
+// unless --pad-stick / --pad-fire set its own. --inputs replays pad 0
+// step by step from a CSV with a step column and raw lx, ly, rx, ry, lt,
+// rt columns (a step without a row keeps the previous one). The third runs the front end instead,
 // pressing a button (a, b, x, y, start, back, up, down, left, right; pad 0,
 // or another with :<pad>) on the given frames; it never saves.
 
@@ -258,8 +261,55 @@ int capture(SDL_GPUDevice* dev, Renderer& r, const Game& g, const UiCanvas& ui, 
   return 0;
 }
 
+// --inputs: pad 0's sticks for each step (index = step number, 1-based).
+std::vector<Sticks> load_inputs(const fs::path& path) {
+  std::vector<Sticks> out;
+  std::ifstream f(path);
+  std::string line;
+  if (!std::getline(f, line)) {
+    SDL_Log("cannot read the inputs %s", path.string().c_str());
+    return out;
+  }
+  const auto split = [](const std::string& l) {
+    std::vector<std::string> v;
+    std::stringstream ss(l);
+    for (std::string c; std::getline(ss, c, ',');) v.push_back(c);
+    return v;
+  };
+  const std::vector<std::string> head = split(line);
+  const auto col = [&](const char* name) {
+    const auto it = std::find(head.begin(), head.end(), name);
+    return it == head.end() ? -1 : int(it - head.begin());
+  };
+  const int cs = col("step"), cx = col("lx"), cy = col("ly"), crx = col("rx"), cry = col("ry"), clt = col("lt"),
+            crt = col("rt");
+  if (cs < 0 || cx < 0 || cy < 0 || crx < 0 || cry < 0 || clt < 0 || crt < 0) {
+    SDL_Log("%s: needs step, lx, ly, rx, ry, lt, rt columns", path.string().c_str());
+    return out;
+  }
+  while (std::getline(f, line)) {
+    const std::vector<std::string> v = split(line);
+    if (int(v.size()) < int(head.size())) continue;
+    const int step = std::atoi(v[size_t(cs)].c_str());
+    if (step < 0) continue;
+    Sticks st;
+    st.move_x = clamp16(std::atoi(v[size_t(cx)].c_str()));
+    st.move_y = clamp16(std::atoi(v[size_t(cy)].c_str()));
+    st.fire_x = clamp16(std::atoi(v[size_t(crx)].c_str()));
+    st.fire_y = clamp16(std::atoi(v[size_t(cry)].c_str()));
+    st.left_trigger = uint8_t(std::clamp(std::atoi(v[size_t(clt)].c_str()), 0, 255));
+    st.right_trigger = uint8_t(std::clamp(std::atoi(v[size_t(crt)].c_str()), 0, 255));
+    if (size_t(step) >= out.size()) {
+      const Sticks hold = out.empty() ? Sticks{} : out.back();
+      out.resize(size_t(step) + 1, hold);
+    }
+    out[size_t(step)] = st;
+  }
+  return out;
+}
+
 int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std::array<Sticks, 4>& sticks,
-                 int bomb_step, const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h,
+                 const std::vector<Sticks>& inputs, int bomb_step, const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h,
                  bool exact_720p, const fs::path& trace_path, const fs::path& rng_path, int rng_step,
                  const fs::path& dump_path, int dump_step) {
   // --trace: after each step, the clock and slot 0's object (x, y, vx,
@@ -278,8 +328,10 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
   for (int i = 0; i < frames; ++i) {
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     // By joined index, from each joined pad.
+    std::array<Sticks, 4> pads = sticks;
+    if (!inputs.empty()) pads[0] = inputs[std::min(size_t(i) + 1, inputs.size() - 1)];
     std::array<Sticks, 4> s{};
-    for (int j = 0; j < g.joined_count && j < 4; ++j) s[size_t(j)] = sticks[size_t(g.joined_pad[size_t(j)] & 3)];
+    for (int j = 0; j < g.joined_count && j < 4; ++j) s[size_t(j)] = pads[size_t(g.joined_pad[size_t(j)] & 3)];
     if (i == bomb_step) s[0].right_trigger = 255;
     tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
     SDL_SubmitGPUCommandBuffer(cmd);
@@ -603,7 +655,7 @@ int main(int argc, char** argv) {
   std::array<LobbyPad, 4> lobby{};
   bool versus = false, multiplayer = false;
   fs::path screenshot;
-  fs::path trace_path, rng_path, dump_path;
+  fs::path trace_path, rng_path, dump_path, inputs_path;
   int rng_step = -1, dump_step = -1;
   uint32_t shot_w = 1280, shot_h = 720;
   int64_t seed = -1;
@@ -626,6 +678,7 @@ int main(int argc, char** argv) {
     else if (a == "--level" && i + 1 < argc) start_level = std::clamp(std::atoi(argv[++i]), 0, 19);
     else if (a == "--frontend") frontend = true;
     else if (a == "--trace" && i + 1 < argc) trace_path = argv[++i];
+    else if (a == "--inputs" && i + 1 < argc) inputs_path = argv[++i];
     else if (a == "--rng-state" && i + 2 < argc) {
       rng_path = argv[++i];
       rng_step = std::atoi(argv[++i]);
@@ -688,7 +741,8 @@ int main(int argc, char** argv) {
                    " [--vsync|--no-vsync] [--language <en|de|fr|es|it>] [--seed <n>] [--frames <n> --screenshot <png>"
                    " [--size <w> <h>] [--mode <0-5>] [--level <0-19>] [--stick <x> <y>] [--fire <x> <y>]"
                    " [--bomb <step>] [--spawn <type> <x> <y>]... [--player <pad> <team> <role>]... [--versus]"
-                   " [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] | --frontend [--press <frame> <button>]...]\n");
+                   " [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] [--inputs <csv>]"
+                   " | --frontend [--press <frame> <button>]...]\n");
       return 2;
     }
   }
@@ -738,7 +792,8 @@ int main(int argc, char** argv) {
   } else if (headless) {
     std::array<Sticks, 4> per_pad{};
     for (size_t p = 0; p < 4; ++p) per_pad[p] = pad_sticks[p] ? *pad_sticks[p] : sticks;
-    rc = run_headless(dev, renderer, game, frames, per_pad, bomb_step, spawns, screenshot, shot_w, shot_h,
+    const std::vector<Sticks> inputs = inputs_path.empty() ? std::vector<Sticks>{} : load_inputs(inputs_path);
+    rc = run_headless(dev, renderer, game, frames, per_pad, inputs, bomb_step, spawns, screenshot, shot_w, shot_h,
                       exact_720p == 1, trace_path, rng_path, rng_step, dump_path, dump_step);
   } else {
     Display d = load_display(profile_dir);

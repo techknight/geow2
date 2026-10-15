@@ -257,3 +257,21 @@ Format for each entry:
   needed only at extraction. The samples can differ from the console's
   decoder in rounding.
 - **Decided**: 2026-10-15 (FFmpeg at extraction time, with the user).
+
+### Particle pool limit
+
+- **What**: when the particle pool counts as full, which makes an
+  explosion skip its particles (and its random draws).
+- **Original**: 256 blocks of 128 particles. New particles only go into
+  the current block, then the next free one (`sub_82063100`); "full"
+  means the current block is the last and holds 128 (`sub_82062FC8`).
+  The step runs on six worker threads that claim blocks through an
+  atomic counter and each compact their survivors into their own blocks
+  (`sub_82063A38`); the list is then sorted and the current block set to
+  the last used one (`sub_82064110`, `sub_82062F28`). Partly filled
+  blocks before the current one are never refilled, so the real limit
+  lies between about 32,100 and 32,768 particles and depends on how the
+  threads were scheduled.
+- **Port**: full at 32,768 live particles. Below about 32,100 the two
+  agree exactly.
+- **Decided**: 2026-10-15.

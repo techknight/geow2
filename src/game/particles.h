@@ -38,7 +38,8 @@ class Particles {
  public:
   static constexpr size_t kCapacity = 256 * 128;
 
-  // sub_82062FC8: no room for another particle.
+  // sub_82062FC8: no room for another particle. The original's limit is
+  // per block and depends on its worker threads (DIFFERENCES.md).
   bool full() const { return live_.size() >= kCapacity; }
   // sub_82063100 (via sub_82063EF0): a new particle, intensity 4.0
   // (dat_820006F4).
