@@ -47,10 +47,12 @@ void player_spawned(PlayerLife& p) {
   p.bomb_latch = false;
 }
 
-void player_timers(PlayerLife& p, float step) {
+bool player_timers(PlayerLife& p, float step) {
+  bool blink = false;
   if (0.0f < p.shield) {
     p.shield = p.shield - step;
-    // (0 < t < 1 and int(60 t) mod 10 == 4: sound event 8.)
+    // 0 < t < 1 and int(60 t) mod 10 == 4: ShieldOff.
+    if (0.0f < p.shield && p.shield < 1.0f && blink_phase(p.shield) == 4) blink = true;
   }
   if (0.0f < p.bomb_wait) p.bomb_wait = p.bomb_wait - step;
   // Shown while t > 0, except over the last second when int(60 t) mod 10
@@ -62,22 +64,24 @@ void player_timers(PlayerLife& p, float step) {
     p.shield_shown = false;
   else
     p.shield_shown = true;
+  if (0 < p.wall_wait) --p.wall_wait;
+  return blink;
 }
 
-bool player_bomb(PlayerLife& p, float trigger, const ModeRules& rules) {
-  if (!(0 < rules.start_bombs || (rules.flags & 2) == 0)) return false;
+int player_bomb(PlayerLife& p, float trigger, const ModeRules& rules) {
+  if (!(0 < rules.start_bombs || (rules.flags & 2) == 0)) return 0;
   if (trigger <= 0.15f) {  // dat_82000D58
     p.bomb_latch = false;
-    return false;
+    return 0;
   }
-  if (p.bomb_latch) return false;
+  if (p.bomb_latch) return 0;
   p.bomb_latch = true;
-  if (!(p.bomb_wait <= 0.0f)) return false;
+  if (!(p.bomb_wait <= 0.0f)) return 0;
   p.bomb_wait = 0.2f;  // dat_82000D5C
-  if (p.bombs <= 0) return false;  // sound event 0x35
+  if (p.bombs <= 0) return 2;  // BombDryFire
   --p.bombs;
   p.bomb_used = true;
-  return true;
+  return 1;
 }
 
 void player_exhaust(World& w, const PlayerMotion& p) {

@@ -146,6 +146,12 @@ struct Game {
   uint32_t achieved = 0;
   uint32_t earned = 0;
   std::function<void(uint32_t bit)> unlocked;
+  // sub_82078A50: the menu music (false) or the mode's song (true).
+  std::function<void(bool in_game)> music;
+  bool end_sounded = false;  // dat_8219CE74: the game-over sounds played
+  // sub_82078520: the music's TransitionSwitch output (Sequence's
+  // between-levels screen moves on early above 0.5).
+  float transition_switch = 0.0f;
   // The achievements as the title's SPA (XDBF at 0x821FB480) lists them:
   // name, description, gamerscore and icon (English strings), with the
   // bit sub_820802E0 gives each id.
@@ -183,6 +189,16 @@ inline bool frozen(const Game& g) { return g.flow == 3; }
 // flags & 2 it is unlocked at once (else at the game's end); unless
 // flags & 1 sound event 0x24.
 void award_achievement(Game& g, uint32_t bit, int flags);
+// sub_82079BC0's per-frame values that come from the game.
+struct GameAudioState {
+  bool paused = false;
+  float distance_from_hill = 1000.0f;
+  float thrust = 0.0f;
+  float player_x = 0.0f, player_y = 0.0f;
+  int progression_level = 0, multiplier = 0, no_enemies = 0, time_left = 0, level_time_left = 0, bomb_kills = 0;
+  double score = 0.0;
+};
+GameAudioState audio_state(const Game& g);
 // sub_8207CA48: the single-player HUD into `out`.
 void draw_game_hud(const Game& g, LineBatch& out);
 // One simulation step (sub_820366A0) with this step's input.

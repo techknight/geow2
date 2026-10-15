@@ -12,8 +12,9 @@
 
 namespace geow2 {
 
-Entity* spawn_enemy(World& w, int type, float angle, float x, float y, bool flag) {
-  (void)flag;
+namespace {
+
+Entity* make_enemy(World& w, int type, float angle, float x, float y) {
   switch (type) {
     case 1:
       return w.add(std::make_unique<Wanderer>(w, x, y));
@@ -53,6 +54,42 @@ Entity* spawn_enemy(World& w, int type, float angle, float x, float y, bool flag
     default:
       return nullptr;
   }
+}
+
+// The spawn sound of each type (sub_8203BEE8).
+audio::Event spawn_sound(int type) {
+  switch (type) {
+    case 1: return audio::Event::kWandererSpawn;
+    case 2: return audio::Event::kGruntSpawn;
+    case 3: return audio::Event::kWeaverSpawn;
+    case 4: return audio::Event::kSpinnerSpawn;
+    case 5: return audio::Event::kGravityWellSpawn;
+    case 6: return audio::Event::kRepulsarSpawn;
+    case 8: return audio::Event::kSnakeSpawn;
+    case 11: return audio::Event::kAmoebaSpawn;
+    case 12: return audio::Event::kRocketSpawn;
+    case 14: return audio::Event::kProtonSpawn;
+    case 18: return audio::Event::kSentinelSpawn;
+    case 20: return audio::Event::kPinSpawn;
+    case 22: return audio::Event::kDuckSpawn;
+    default: return audio::Event(0xFF);
+  }
+}
+
+}  // namespace
+
+Entity* spawn_enemy(World& w, int type, float angle, float x, float y, bool flag) {
+  (void)flag;
+  Entity* e = make_enemy(w, type, angle, x, y);
+  // The type's sound (the gate makes its own), and NewEnemyType the first
+  // time a type spawns in a game.
+  const audio::Event s = spawn_sound(type);
+  if (s != audio::Event(0xFF)) w.play(s);
+  if (type >= 0 && type < int(w.spawned_type.size()) && !w.spawned_type[size_t(type)]) {
+    w.spawned_type[size_t(type)] = true;
+    w.play(audio::Event::kNewEnemyType);
+  }
+  return e;
 }
 
 Vec2 spawn_position(World& w, float dist) {

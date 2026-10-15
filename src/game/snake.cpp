@@ -119,6 +119,7 @@ void SnakeHead::kill(World& w, const Killer& k) {
   // The segments let go, dropping geoms later unless the kill was kind 0
   // or 2; then the usual death; sound event 0x4E.
   detach_all(!(k.kind == 0 || k.kind == 2));
+  w.play(audio::Event::kSnakeExplode);
   Entity::kill(w, k);
 }
 
@@ -242,6 +243,7 @@ void SnakeSegment::hit_by_shot(World& w, const Killer& k) {
   // A shot only flashes it (sound event 0x4F); anything else kills it.
   if (k.kind == 1) {
     flash = 1.0f;
+    w.play(audio::Event::kSnakeHitTail);
     return;
   }
   kill(w, k);

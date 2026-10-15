@@ -225,8 +225,9 @@ void Sequence::clear(World& w, bool blasts) {
 }
 
 void Sequence::end_level(World& w, int result) {
-  // Sounds 0x43 and 0x44 / 0x45 / 0x46.
   if (level < 20) outcome[level] = result;
+  w.play(audio::Event::kClockStopped);
+  if (result >= 1 && result <= 3) w.play(audio::Event(uint8_t(audio::Event::kResultSuccess) + uint8_t(result - 1)));
   clear(w, result == 2);
   phase = 4;
 }
@@ -345,7 +346,8 @@ void Sequence::step(World& w, const Inputs& in) {
       if (level == 0) {
         if (1.4f < screen_clock) {  // dat_82000FF8
           shown_level = 0;
-          phase = 2;  // (sound event 0x4C)
+          w.play(audio::Event::kSwooshOut);
+          phase = 2;
         }
       } else if (0.5f < screen_clock) {
         shown_level = level;
@@ -354,7 +356,10 @@ void Sequence::step(World& w, const Inputs& in) {
       break;
     case 1:
       // (Or sub_82078520() > 0.5: not traced.)
-      if (4.0f < screen_clock) phase = 2;  // dat_820006F4 (sound event 0x4C)
+      if (4.0f < screen_clock || 0.5f < in.transition) {  // dat_820006F4
+        w.play(audio::Event::kSwooshOut);
+        phase = 2;
+      }
       break;
     case 2:
       intro = std::fmaf(dt, 0.6666667f, intro);  // dat_82000FF4
@@ -370,14 +375,20 @@ void Sequence::step(World& w, const Inputs& in) {
         // The last player died: the level is failed once they are back.
         *in.after_death = 0;
         if (level < 20) outcome[level] = 2;
+        w.play(audio::Event::kClockStopped);
+        w.play(audio::Event::kResultDied);
         clear(w, true);
         phase = 4;
         *in.respawn_wait = 0.0f;
       } else if (0.0f < wait || cursor < commands.size() || 0 < w.enemy_count) {
-        // The level clock (sound event 0x42 on each whole second).
+        // The level clock, ticking each whole second.
+        const int second = int(level_timer);
         level_timer = level_timer + dt;
+        if (second != int(level_timer)) w.play(audio::Event::kTickClock);
         if (in.level_time <= level_timer) {
           if (level < 20) outcome[level] = 3;
+          w.play(audio::Event::kClockStopped);
+          w.play(audio::Event::kResultOutOfTime);
           clear(w, false);
           phase = 4;
           *in.respawn_wait = 0.0f;
@@ -399,7 +410,7 @@ void Sequence::step(World& w, const Inputs& in) {
       break;
     }
     case 5:
-      if (4.0f <= screen_clock) phase = 6;
+      if (4.0f <= screen_clock || 0.5f < in.transition) phase = 6;
       break;
     case 6:
       ending = ending + dt;

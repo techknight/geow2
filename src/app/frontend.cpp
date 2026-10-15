@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "audio/events.h"
 #include "game/rotation.h"
 
 namespace geow2 {
@@ -60,6 +61,8 @@ int LocalBoard::add(int64_t score, const std::string& name) {
 Frontend::Frontend(Game& g, const UiText& text, Profile& profile, std::array<LocalBoard, 6>& boards, Hooks hooks)
     : g_(g), text_(text), profile_(profile), boards_(boards), hooks_(std::move(hooks)) {}
 
+void Frontend::sound(audio::Event e) const { g_.world->play(e); }
+
 std::string Frontend::player_name() const {
   // Gamertags stand in as "%s %i" with text 0x82 and the pad (0x820049D0).
   return format("%s %i", text_(0x82).c_str(), game_pad_ + 1);
@@ -107,13 +110,14 @@ void Frontend::default_handler(const MenuInput& in) {
   const int n = int(screen_.items.size());
   if (n == 0) {
     if (p & (kStart | kA)) {
-      // Sound 0x18.
+      sound(audio::Event::kUiConfirm);
       if (screen_.accept)
         screen_.accept(in);
       else if (screen_.back)
         screen_.back(in);
     } else if ((p & kBack) && screen_.back) {
-      screen_.back(in);  // sound 0x17
+      sound(audio::Event::kUiDelete);
+      screen_.back(in);
     }
     return;
   }
@@ -133,7 +137,10 @@ void Frontend::default_handler(const MenuInput& in) {
       s = (s + n - 1) % n;
       for (int k = 0; k < n && !item_enabled(s); ++k) s = (s + n - 1) % n;
     }
-    if (moved) reset_pulse();  // sound 0x16
+    if (moved) {
+      reset_pulse();
+      sound(audio::Event::kUiChange);
+    }
   }
   if (p & kDown) {
     bool moved = true;
@@ -147,18 +154,25 @@ void Frontend::default_handler(const MenuInput& in) {
       s = (s + 1) % n;
       for (int k = 0; k < n && !item_enabled(s); ++k) s = (s + 1) % n;
     }
-    if (moved) reset_pulse();
+    if (moved) {
+      reset_pulse();
+      sound(audio::Event::kUiChange);
+    }
   }
   const Item& it = screen_.items[size_t(s)];
   if (p & (kStart | kA)) {
     // Sound 0x17 for an item that goes back, else 0x18 (none when
     // adjustable).
     if (it.action && item_enabled(s)) {
+      if (!it.adjust) sound(it.goes_back ? audio::Event::kUiDelete : audio::Event::kUiConfirm);
       const Action a = it.action;
       a(in, s, it.text);
     }
   } else if (p & kBack) {
-    if (screen_.back) screen_.back(in);
+    if (screen_.back) {
+      sound(audio::Event::kUiDelete);
+      screen_.back(in);
+    }
   } else if (p & (kLeft | kRight)) {
     if (it.adjust && it.action && item_enabled(s)) {
       const Action a = it.action;
@@ -294,7 +308,7 @@ void Frontend::playing(const MenuInput& in) {
     return;
   }
   if (in.pressed & kStart) {
-    // Sound 0x18.
+    sound(audio::Event::kUiConfirm);
     pause(true);
     g_.flow = 3;
   }
@@ -334,6 +348,7 @@ void Frontend::finish() {
   g_.end_reason = 0;
   g_.flow = 0;
   fade_ = 0.0f;
+  if (g_.music) g_.music(false);
   switch (reason) {
     case 1: after_game(); break;
     case 2: results(); break;
@@ -604,9 +619,11 @@ void Frontend::intro(const MenuInput& in) {
     if (intro_phase_ == 0) {
       intro_scale_ = intro_time_ = intro_fade_ = intro_speed_ = 0.0f;
       intro_phase_ = 1;
-      g_.bloom_level = 1.0f;  // (sound event 0x70)
+      g_.bloom_level = 1.0f;
+      sound(audio::Event::kBong);
     } else {
-      g_.bloom_level = 1.0f;  // (the menu music, sub_82078A50(0))
+      g_.bloom_level = 1.0f;
+      if (g_.music) g_.music(false);
       main_menu(false);
     }
   }
@@ -670,6 +687,7 @@ void Frontend::quit_confirm() {
   open(0, [this](const MenuInput&) { main_menu(false); }, {}, false, {}, 0x73);
   screen_.tips = [this](TextLayout& l) { tips_menu(l); };
   add_item(0x17, [this](const MenuInput&, int, int) { main_menu(false); });
+  screen_.items.back().goes_back = true;
   add_item(0x16, [this](const MenuInput&, int, int) {
     // XamLoaderLaunchTitle back to the dashboard: the program quits.
     if (hooks_.quit) hooks_.quit();
@@ -724,6 +742,7 @@ void Frontend::mode_select(bool reset) {
   for (int i = 0; i < 6; ++i)
     if (profile_.index_new(profile_index(mode_of_text(kModeItems[i])))) {
       s = i;
+      if (i != 0) sound(audio::Event::kUnlockedNewMode);
       break;
     }
 }
@@ -740,19 +759,22 @@ void Frontend::mode_select_update(const MenuInput& in) {
     // A locked tile cannot be selected (sub_820915C0).
     if (to != s && item_enabled(to)) {
       s = to;
-      reset_pulse();  // sound 0x16
+      reset_pulse();
+      sound(audio::Event::kUiChange);
       return true;
     }
     return false;
   };
   if (!navigate(in.pressed)) navigate((in.pressed ^ in.raw) & in.raw);
   if (in.pressed & kX) {
+    sound(audio::Event::kUiConfirm);
     // The rules screen, without a start item.
     const int x = profile_index(mode_of_text(kModeItems[selection_value()]));
     rules(x, [this](const MenuInput&) { mode_select(false); }, 0, {});
     return;
   }
   if (in.pressed & kY) {
+    sound(audio::Event::kUiConfirm);
     board_view(mode_of_text(kModeItems[selection_value()]), [this](const MenuInput&) { mode_select(false); });
     return;
   }
@@ -907,6 +929,7 @@ void Frontend::rules(int index, std::function<void(const MenuInput&)> back, int 
        [this](const MenuInput& in) {
          // sub_8207A658: without items, A or X go back.
          if (screen_.items.empty() && (in.pressed & (kA | kX))) {
+           sound(audio::Event::kUiDelete);
            if (screen_.back) screen_.back(in);
            return;
          }
@@ -966,6 +989,7 @@ void Frontend::pause(bool reset) {
   open(2, resume, [this](UiCanvas& c) { draw_game_hud(g_, c.lines); }, reset, {}, 0x44);
   screen_.tips = [this](TextLayout& l) { tips_menu(l); };
   add_item(0x08, [resume](const MenuInput& in, int, int) { resume(in); });
+  screen_.items.back().goes_back = true;
   add_item(0x05, [this](const MenuInput&, int, int) { help(true); });
   add_item(0x04, [this](const MenuInput&, int, int) { leaderboards(true); });
   add_item(0x10, [this](const MenuInput&, int, int) { achievements_screen(); });
@@ -977,6 +1001,7 @@ void Frontend::exit_confirm() {
        {}, 0x72);
   screen_.tips = [this](TextLayout& l) { tips_menu(l); };
   add_item(0x17, [this](const MenuInput&, int, int) { pause(false); });
+  screen_.items.back().goes_back = true;
   add_item(0x16, [this](const MenuInput&, int, int) { end_game(1); });
 }
 
@@ -1036,10 +1061,12 @@ void Frontend::controls() {
           if ((in.pressed & kLeft) && set) {
             profile_.controls &= ~bit;
             reset_pulse();
+            sound(audio::Event::kUiConfirm);
             dirty_ = true;
           } else if ((in.pressed & kRight) && !set) {
             profile_.controls |= bit;
             reset_pulse();
+            sound(audio::Event::kUiConfirm);
             dirty_ = true;
           }
         },
@@ -1072,12 +1099,18 @@ void Frontend::settings() {
         [this, v](const MenuInput& in, int, int) {
           float& x = profile_.*v;
           if (in.pressed & kLeft) {
-            if (0.0f < x) reset_pulse();
+            if (0.0f < x) {
+              reset_pulse();
+              sound(audio::Event::kUiConfirm);
+            }
             const float y = x - 0.05f;  // dat_82000D60
             x = y >= 0.0f ? (y - 1.0f >= 0.0f ? 1.0f : y) : 0.0f;
             dirty_ = true;
           } else if (in.pressed & kRight) {
-            if (x < 1.0f) reset_pulse();
+            if (x < 1.0f) {
+              reset_pulse();
+              sound(audio::Event::kUiConfirm);
+            }
             const float y = x + 0.05f;
             x = y >= 0.0f ? (y - 1.0f >= 0.0f ? 1.0f : y) : 0.0f;
             dirty_ = true;
@@ -1098,11 +1131,13 @@ void Frontend::settings() {
         if ((in.pressed & kLeft) && d != 0) {
           --d;
           reset_pulse();
+          sound(audio::Event::kUiConfirm);
           dirty_ = true;
         }
         if ((in.pressed & kRight) && uint32_t(d + 1) < 2) {
           ++d;
           reset_pulse();
+          sound(audio::Event::kUiConfirm);
           dirty_ = true;
         }
       },

@@ -111,6 +111,7 @@ void Entity::die(World& w, const Killer& k, uint32_t f) {
     w.award(*this, k);
     if (w.geom_shapes) drop_geoms(w, *this, k);
   }
+  if (!(f & 4)) w.play(audio::Event::kEnemyExplode);
   if (!(f & 8)) w.remove(*this);
 }
 
@@ -159,6 +160,7 @@ void World::new_game() {
   zones_captured = 0;
   bounce_kills = 0;
   bounce_hint = 0.0f;
+  spawned_type.fill(false);
 }
 
 void World::shatter(const UnitInfo* u, const Mat4& m, float px, float py, float radius, const Killer& k,
@@ -256,7 +258,9 @@ void World::update_entities() {
   for (size_t i = 0;;) {
     if (shots && j < shots->size() && (i >= entities.size() || (*shots)[j].order < entities[i]->order)) {
       Bullet& b = (*shots)[j++];
+      const bool was_hit = b.hit;
       if (!b.removed && !bullet_step(b, step, half_x, half_y, effects)) b.removed = true;
+      if (!was_hit && b.hit) play(audio::Event::kBulletHitWall);  // sub_82051AF0's first contact
       continue;
     }
     if (i >= entities.size()) break;

@@ -60,7 +60,11 @@ void GravityWell::update(World& w) {
   const float c = w.gm.cosf(phase) * 0.1f;
   pulse = w.gm.cosf(phase * 0.1f) * 0.3f;  // dat_82000708
   if (hits == kWellMaxHits) {
-    if (!ui) ++hum;  // (sound event 0x12 every 30)
+    // The warning every 30 updates at the limit.
+    if (!ui) {
+      if (hum % 30 == 0) w.play(audio::Event::kGravityWellWarning);
+      ++hum;
+    }
   } else {
     hum = 0;
   }
@@ -70,6 +74,7 @@ void GravityWell::update(World& w) {
     burst = true;
     swallowed = true;
     flags |= 0x40;
+    w.play(audio::Event::kGravityWellExplode);
     if (!ui) {
       static constexpr struct {
         int count;
@@ -79,6 +84,9 @@ void GravityWell::update(World& w) {
         for (int i = 0; i < ring.count; ++i)
           w.add(std::make_unique<Proton>(w, (float(i) * kTwoPi) * ring.share, ring.speed, x, y));
     }
+  } else if (!ui && active && w.well_hum) {
+    // The hum (sub_82078610).
+    w.well_hum(this, hits);
   }
   // Drifting toward its target.
   if (const PlayerTarget* t = w.target(*this)) {
@@ -222,6 +230,7 @@ void GravityWell::hit_by_shot(World& w, const Killer& k) {
   --hits;
   if (hits > 0) {
     w.effects.explosion(8.0f, x, y, 400);  // dat_82000D18
+    w.play(audio::Event::kGravityWellHit);
     return;
   }
   kill(w, k);
@@ -234,7 +243,8 @@ void GravityWell::kill(World& w, const Killer& k) {
   const float c[4] = {colour[0] * 0.35f, colour[1] * 0.35f, colour[2] * 0.35f, colour[3] * 0.35f};  // dat_82000704
   w.shatter(unit, placement(w), x, y, radius, k, c);
   w.remove(*this);
-  // (Sound event 0x10.) Brought to 0 by a shot or a blast: its own blast
+  if (!ui) w.play(audio::Event::kGravityWellDie);
+  // Brought to 0 by a shot or a blast: its own blast
   // (125, kind 2), which sets off the wells it reaches.
   if (hits <= 0 && (k.kind == 1 || k.kind == 3)) {
     const float speed = float(125.0f / w.step) * 0.0833333358f;  // dat_82001A20, dat_82001528

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "app/game.h"
+#include "audio/events.h"
 #include "game/profile.h"
 #include "game/ui.h"
 #include "game/ui_text.h"
@@ -95,6 +96,7 @@ class Frontend {
     Label label;
     Enabled enabled;
     bool adjust = false;
+    bool goes_back = false;  // its action is the screen's back callback (sound 0x17)
     Label describe;
   };
   // The screen record (0x821EBA20..): its callbacks and items.
@@ -125,6 +127,7 @@ class Frontend {
   void step_menu(const MenuInput& in);  // sub_82090CD8
   bool item_enabled(int i) const;
   void reset_pulse() { pulse_ = 0.0f; }  // sub_8208FFD8
+  void sound(audio::Event e) const;        // sub_820787F8
 
   // The flow.
   void request_game(int mode);    // sub_8208D410 → sub_820334F8

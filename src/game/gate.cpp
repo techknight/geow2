@@ -72,7 +72,7 @@ Entity* spawn_gate(World& w, float px, float py) {
   a->partner = b;
   b->partner = a;
   a->leader = true;
-  // (Sound event 0x31.)
+  w.play(audio::Event::kGateSpawn);
   return a;
 }
 
@@ -237,7 +237,7 @@ void gate_crossings(World& w) {
       if (w.clock - w.gate_chain_time > kChainTime || w.gate_chain >= 5) w.gate_chain = 0;
       ++w.gate_chain;
       w.gate_chain_time = w.clock;
-      // (Sound events 0x2A .. 0x2E by the chain.)
+      w.play(audio::Event(uint8_t(audio::Event::kGateScore1) + uint8_t(std::min(w.gate_chain, 5) - 1)));
       Killer k;
       k.x = p.x;
       k.y = p.y;
@@ -284,7 +284,7 @@ void bounce_off_beams(World& w, Bullet& s) {
     a.beam_flash = 1.0f;
     s.hit = false;
     ++s.bounces;
-    // (Sound events 0x34 / 0x33 alternating.)
+    w.play(audio::Event::kGateBounceBullet1);  // the pair alternates behind its gate
     return;
   }
 }

@@ -51,6 +51,7 @@ class Sequence {
     int* after_death = nullptr;     // dat_8219D288
     float* respawn_wait = nullptr;  // dat_8219CEB8
     float level_time = 30.0f;  // dat_8219D25C
+    float transition = 0.0f;   // sub_82078520: the music's TransitionSwitch
   };
 
   // sub_82039628 (every game start): records cleared, the start level,

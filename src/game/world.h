@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 
+#include "audio/events.h"
 #include "game/debris.h"
 #include "game/bullets.h"
 #include "game/effects.h"
@@ -224,6 +225,18 @@ class World {
   // The rest of sub_820408D0 after the score rises (extra lives and bombs
   // by score): the game handles it here.
   std::function<void()> scored;
+  // sub_820787F8: a sound event for the audio engine.
+  std::function<void(audio::Event)> sound;
+  void play(audio::Event e) const {
+    if (sound) sound(e);
+  }
+  // The repulsar's deflection sound has its own 35 ms gate (dat_8219FACC).
+  std::function<void()> repulsar_hit;
+  // sub_8203BEE8's first-spawn latches (dat_8219DB74, cleared at each game
+  // start): NewEnemyType on a type's first spawn.
+  std::array<bool, 0x1A> spawned_type{};
+  // sub_82078610: a gravity well reports its hits this frame (the hum).
+  std::function<void(const Entity*, int)> well_hum;
   // sub_82034CA0(slot 0, bit, flags): an achievement earned.
   std::function<void(uint32_t bit, int flags)> achieve;
   // Deadline's kills by shots that bounced off a gate (dat_8219CEF0) and

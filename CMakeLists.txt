@@ -115,8 +115,8 @@ if(GEOW2_BUILD_GAME)
   endforeach()
   add_custom_target(geow2_shaders DEPENDS ${SPIRV})
 
-  add_executable(geow2 src/app/audio.cpp src/app/frontend.cpp src/app/game.cpp src/app/main.cpp src/app/png.cpp src/app/renderer.cpp)
-  target_link_libraries(geow2 PRIVATE geow2_game SDL3::SDL3-static)
+  add_executable(geow2 src/app/frontend.cpp src/app/game.cpp src/app/main.cpp src/app/png.cpp src/app/renderer.cpp)
+  target_link_libraries(geow2 PRIVATE geow2_game geow2_audio SDL3::SDL3-static)
   add_dependencies(geow2 geow2_shaders)
 endif()
 
@@ -134,7 +134,6 @@ add_test(NAME game_tests COMMAND game_tests)
 # Audio engine: the AOBJ component graphs (sounds, mixers, filters,
 # scripts), the waves and the 5.1 mix; the SDL3 output when the game is
 # built.
-if(GEOW2_AUDIO OR EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/.complete)
 add_library(geow2_audio STATIC
   src/audio/aobj.cpp
   src/audio/components_control.cpp
@@ -154,4 +153,3 @@ endif()
 add_executable(audio_tests tests/audio_tests.cpp)
 target_link_libraries(audio_tests PRIVATE geow2_audio)
 add_test(NAME audio_tests COMMAND audio_tests)
-endif()

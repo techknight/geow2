@@ -60,12 +60,14 @@ void score_awards(Game& g) {
     p.bombs_pulse = 1.0f;  // dat_820006C4
     p.life_at = p.life_at * 10;
     life = true;
+    w.play(audio::Event::kPickupExtralife);
   }
   if ((g.rules.flags & 2) == 0 && p.bomb_at <= w.score) {
     if (p.bombs < 9) ++p.bombs;
     p.lives_pulse = 1.0f;
     p.bomb_at = p.bomb_at * 10;
     bomb = true;
+    w.play(audio::Event::kPickupSmartbomb);
   }
   if (!life && !bomb) return;
   const float f = life && bomb ? 5.0f : 0.0f;  // dat_820006F0, dat_820006CC
@@ -105,6 +107,7 @@ void kill_player(Game& g, Entity& killer) {
   // with the HUD.)
   p.removed = true;
   w.players[0].removed = true;
+  w.play(audio::Event::kPlayerDie);
   // No player is left (sub_8204E7D8): dat_8219D288 = 1.
   g.after_death = 1;
   update_scoring(g);
@@ -135,6 +138,7 @@ void player_touched(Game& g, const Touch& t) {
     k.kind = 2;
     e.kill(w, k);
     ++p.shield_kills;
+    w.play(audio::Event::kPlayerShieldedHitEnemy);
   } else if (e.flags & 0x8) {
     w.remove(e);
   }
@@ -205,7 +209,8 @@ void respawn(Game& g) {
       spawn = false;
   }
   if (!spawn) return;
-  spawn_player(g);  // sound event 3
+  spawn_player(g);
+  g.world->play(audio::Event::kPlayerSpawn);
   g.field_live = true;
   // King's first three zones come with the game's first spawn
   // (dat_8219CE70): at the centre, then two placed clear of the rest.
@@ -271,20 +276,31 @@ void update_player(Game& g, const Sticks& s) {
     // sub_8204EFD0: never in Pacifism; in King only inside a zone.
     const bool may_fire =
         g.rules.mode == 5 ? in_hill(w, g.player.radius, g.player.x, g.player.y) : g.rules.mode != 4;
+    const bool upgraded = 0.0f < g.weapon.upgrade_time;
     player_fire_step(g.player, g.weapon, fire, kStep, *g.gm, may_fire, g.bullets);
     for (size_t i = fired; i < g.bullets.size(); ++i) w.enlist(g.bullets[i]);
+    if (g.bullets.size() > fired) w.play(upgraded ? audio::Event::kFireSpecial : audio::Event::kFireNormal);
     // The larger trigger (axes 8 and 9) sets off a bomb: a blast from the
     // player's position, and the spawner backs off (sub_8203E4B0).
     const float lt = trigger_axis(s.left_trigger), rt = trigger_axis(s.right_trigger);
-    if (player_bomb(p, lt - rt < 0.0f ? rt : lt, g.rules)) {
+    const int bomb = player_bomb(p, lt - rt < 0.0f ? rt : lt, g.rules);
+    if (bomb == 1) {
+      w.play(audio::Event::kFireSmartbomb);
       w.add(std::make_unique<Shockwave>(w, 400.0f, 533.2f, g.player.x, g.player.y, 0));  // dat_82000F88, dat_82001C68
       g.spawner.bombed(w);
+    } else if (bomb == 2) {
+      w.play(audio::Event::kBombDryFire);
     }
-    player_timers(p, kStep);
+    if (player_timers(p, kStep)) w.play(audio::Event::kShieldOff);
     integrate(g.player, kStep);
   }
   Vec2 n;
-  if (arena_contact(g.player.radius, kArenaHalfX, kArenaHalfY, g.player.x, g.player.y, n)) player_wall(g.player, n);
+  if (arena_contact(g.player.radius, kArenaHalfX, kArenaHalfY, g.player.x, g.player.y, n)) {
+    player_wall(g.player, n);
+    // sub_8204E908: the wall sound, held off for two updates.
+    if (p.wall_wait < 1) w.play(audio::Event::kHitWall);
+    p.wall_wait = 2;
+  }
 }
 
 // The player's draw (vtable slot 2, sub_82050F30): the body (part 0) and,
@@ -570,14 +586,45 @@ void start_game(Game& g, int mode) {
   g.sequence.force_over = false;
   g.sequence.allow_end = g.rules.mode != 2;
   g.sequence.level_timer = 0.0f;
+  g.end_sounded = false;
   g.flow = 2;
+  if (g.music) g.music(true);
+}
+
+GameAudioState audio_state(const Game& g) {
+  GameAudioState s;
+  const World& w = *g.world;
+  s.paused = frozen(g);
+  const bool alive = g.life.alive();
+  // The smallest distance from a live player to a zone's edge (King).
+  for (const auto& e : w.entities) {
+    if (e->type != 0x1C || (e->flags & kEntityRemoved) || !alive) continue;
+    const float dx = e->x - g.player.x, dy = e->y - g.player.y;
+    const float d = std::sqrt(dx * dx + dy * dy) - e->radius;
+    const float m = d > 0.0f ? d : 0.0f;
+    if (m < s.distance_from_hill) s.distance_from_hill = m;
+  }
+  if (alive) {
+    s.thrust = g.player.thrust_level;
+    s.player_x = g.player.x;
+    s.player_y = g.player.y;
+  }
+  s.progression_level = g.sequence.shown_level;
+  s.multiplier = w.multiplier;
+  s.score = double(w.score);
+  s.no_enemies = w.enemy_count;
+  auto remaining = [](int limit, int elapsed) { return std::clamp(limit - elapsed, 0, limit); };
+  s.time_left = remaining(int(g.rules.length), int(g.elapsed));
+  s.level_time_left = remaining(int(g.rules.level_time), int(g.sequence.level_timer));
+  s.bomb_kills = w.bomb_kills;
+  return s;
 }
 
 void award_achievement(Game& g, uint32_t bit, int flags) {
   if (g.earned & bit) return;
   g.earned |= bit;
   if (g.achieved & bit) return;
-  // (Sound event 0x24 unless flags & 1.)
+  if (!(flags & 1)) g.world->play(audio::Event::kHiScoreAchieved);
   if (!(flags & 2)) {
     g.achieved |= bit;
     if (g.unlocked) g.unlocked(bit);
@@ -609,6 +656,7 @@ void step(Game& g, const Sticks& s) {
     in.after_death = &g.after_death;
     in.respawn_wait = &g.life.respawn_wait;
     in.level_time = g.rules.level_time;
+    in.transition = g.transition_switch;
     g.sequence.step(w, in);
   } else if (g.life.alive()) {
     if (g.rules.mode == 0)
@@ -616,8 +664,10 @@ void step(Game& g, const Sticks& s) {
     else
       g.waves.step(w, g.rules.mode, g.life.bomb_used || g.life.shield_hit, g.after_death);
   }
+  const int second = int(g.elapsed);
   g.elapsed = kStep + g.elapsed;
   w.clock = g.elapsed;
+  if (g.rules.mode == 0 && in_game(g) && second != int(g.elapsed)) w.play(audio::Event::kDeadlineTickClock);
   update_scoring(g);
   // Last step's kill markers go (sub_82043368).
   w.death_markers.clear();
@@ -656,6 +706,7 @@ void step(Game& g, const Sticks& s) {
   // No player left since one spawned: the field is cleared; then a slot
   // without a player may spawn one.
   if (g.field_live && !g.life.alive()) {
+    w.play(audio::Event::kPlayerDieMusic);
     clear_field(g);
     g.field_live = false;
   }
@@ -676,6 +727,11 @@ void step(Game& g, const Sticks& s) {
       end = end || g.rules.length <= w.clock;
     if (end) {
       g.over = true;
+      if (!g.end_sounded) {
+        g.end_sounded = true;
+        w.play(audio::Event::kGameOver);
+        w.play(audio::Event::kStopInGameMusic);
+      }
       if (g.sequence.allow_end) {
         clear_field(g);
         arm_end(g, 2);

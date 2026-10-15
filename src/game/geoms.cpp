@@ -181,6 +181,7 @@ void Geom::collect(World& w, size_t p) {
   // sounds 0x47 / 0x48 alternate.
   w.multiplier += value;
   w.spawn_geoms += value;  // sub_8203BBB8
+  w.play(audio::Event::kPickupGeom1);  // the pair alternates behind its gate
   if (w.multiplier < w.multiplier_milestone) {
     w.popups.add_small(x, y, 0.75f, 0, "x" + format_number(w.multiplier));  // dat_82000718
   } else {

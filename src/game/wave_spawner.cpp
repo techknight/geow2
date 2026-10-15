@@ -209,7 +209,8 @@ void WaveSpawner::evolved_start(World& w) {
     if (progress <= 20.0f) return;  // dat_82000CE8
     const float u = uniform(w);
     if (u < 0.075f) {
-      // State 1, corner streams (sound event 0x41).
+      // State 1, corner streams.
+      w.play(audio::Event::kBigWaveSoon);
       state = 1;
       if (uniform(w) < 0.5f) {
         group_type = 3;
@@ -243,7 +244,7 @@ void WaveSpawner::evolved_start(World& w) {
   }
   const float u = uniform(w);
   if (u < 0.03f) {  // dat_82001168
-    // State 1, corner streams, more as the game goes on (sound event 0x41).
+    // State 1, corner streams, more as the game goes on.
     timer = 1.0f;
     state = 1;
     const float u2 = uniform(w);
@@ -275,6 +276,7 @@ void WaveSpawner::evolved_start(World& w) {
         m = 4.0f;       // dat_820006F4
       group_count = int(float(group_count) * m);
     }
+    w.play(audio::Event::kBigWaveSoon);
     return;
   }
   if (u < 0.06f) {  // dat_82001154
@@ -434,7 +436,7 @@ void WaveSpawner::waves(World& w, bool refresh) {
     progress = t + 1.0f;
     timer = clamp_timer(3.5625f, t, 0.125f, 0.25f, 3.5f);  // dat_82001200, dat_82001218
   }
-  // (Sound event 0x38.)
+  w.play(audio::Event::kSpawnRocketWave);
 }
 
 void WaveSpawner::king(World& w) {

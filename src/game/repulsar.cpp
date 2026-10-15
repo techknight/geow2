@@ -93,7 +93,7 @@ void Repulsar::update(World& w) {
       if (std::fabs(d) < 0.2f) {  // dat_82000D5C
         timer = timer + dt;
         if (timer > aim_time) {
-          // Charge (sound event 0x14).
+          w.play(audio::Event::kStartRepulsarActive);
           timer = 0.0f;
           state = 1;
         }
@@ -186,7 +186,8 @@ void Repulsar::hit_by_shot(World& w, const Killer& k) {
     heading = f / std::fmaf(std::fabs(dl), kRepulsarDizzyScale, 1.0f) + heading;
   }
   flash = 1.0f;
-  // (Sound event 7, at most once per 0x23 ticks.)
+  // Sound event 7, at most once per 35 ms.
+  if (w.repulsar_hit) w.repulsar_hit();
 }
 
 void Repulsar::kill(World& w, const Killer& k) {

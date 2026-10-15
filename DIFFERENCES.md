@@ -163,6 +163,54 @@ Format for each entry:
   rate, so its feedback fades at the original's speed.
 - **Decided**: 2026-10-15.
 
+### Reverb
+
+- **What**: the music's and effects' reverb.
+- **Original**: the System object's mono wet output feeds an XAudio
+  I3DL2 reverb voice whose parameters follow the song (`sub_82078C88`,
+  `sub_82079318`, `sub_820EBAE0`).
+- **Port**: the wet send is computed and dropped: there is no reverb.
+  The reverb's internals are XAudio's own, not in the traced code.
+- **Decided**: 2026-10-15 (until the reverb can be traced).
+
+### Wave playback
+
+- **What**: how the waves start, loop and end.
+- **Original**: the XMA hardware decodes with some latency, loops by bit
+  offsets within the wave and drops a final partial 1024-sample buffer
+  (`sub_820F9C58`, `sub_820F90B0`).
+- **Port**: the extractor's decoded PCM plays through the traced XMA
+  player logic: it starts at once, loops the whole decoded wave and
+  reports a one-shot as finished on the render after its data ends.
+- **Decided**: 2026-10-15.
+
+### Speaker layout
+
+- **What**: the output channels.
+- **Original**: the mix is 5.1 floats at 48 kHz handed to XAudio
+  (`sub_820EC910`).
+- **Port**: the same 5.1 mix goes to SDL as six float channels and SDL
+  folds it down to the device's layout (stereo on most PCs).
+- **Decided**: 2026-10-15 (pending the user's confirmation).
+
+### Hardware estimates in the audio
+
+- **What**: the rounding of a few audio control values.
+- **Original**: the audio code uses `fres` / `frsqrte` estimates and VMX
+  dot products whose rounding is the hardware's.
+- **Port**: exact division, square roots and sums; results can differ in
+  the last bits.
+- **Decided**: 2026-10-15.
+
+### Undefined reads in the audio graphs
+
+- **What**: three reads outside their data.
+- **Original**: the bypass loop's wrap can read the sample before a
+  wave; the Array blend reads past its table; the Selector walk can run
+  past its last entry (whatever memory holds there).
+- **Port**: 0, 0, and the last entry respectively.
+- **Decided**: 2026-10-15.
+
 ### Audio decoding
 
 - **What**: how the compressed sound is decoded.

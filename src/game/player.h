@@ -49,6 +49,7 @@ struct PlayerLife {
   int bombs = 0;                 // dat_8219D09C
   int deaths = 0;                // dat_8219D0A4
   int shield_kills = 0;          // dat_8219D0D0
+  int wall_wait = 0;             // +0x94: the wall sound's hold-off (sub_8204E908)
   int64_t bomb_at = 100000;      // dat_8219D0B0: the next extra bomb's score
   int64_t life_at = 100000;      // dat_8219D0B8: the next extra life's score
   float lives_pulse = 0.0f;      // dat_8219D0C0: the HUD's lives row
@@ -67,14 +68,15 @@ float trigger_axis(uint8_t raw);
 void player_spawned(PlayerLife& p);
 
 // The end of the player update (sub_8204FF00): the shield and the bomb
-// wait count down; the shield blinks over its last second (sound event 8
-// on each blink is for the sound system).
-void player_timers(PlayerLife& p, float step);
+// wait count down; the shield blinks over its last second. Returns true on
+// the blink frames that sound event 8 (ShieldOff) marks.
+bool player_timers(PlayerLife& p, float step);
 
-// sub_8204F288: `trigger` is the larger trigger value. Returns true when a
+// sub_8204F288: `trigger` is the larger trigger value. Returns 1 when a
 // bomb goes off (a blast of 400 at 533.2 a second from the player, and
-// sub_8203E4B0); sound events 6 and 0x35 are for the sound system.
-bool player_bomb(PlayerLife& p, float trigger, const ModeRules& rules);
+// sub_8203E4B0; sound event 6), 2 when pressed without bombs (0x35), else
+// 0.
+int player_bomb(PlayerLife& p, float trigger, const ModeRules& rules);
 
 class World;
 

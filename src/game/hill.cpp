@@ -29,6 +29,7 @@ Hill::Hill(World& w, float px, float py) {
   colour[1] = 0.1f;
   colour[2] = 1.0f;
   colour[3] = 1.0f;
+  w.play(audio::Event::kKingCircleSpawn);
 }
 
 void Hill::draw(World& w, LineBatch& out) {
@@ -79,6 +80,7 @@ void Hill::update(World& w) {
         if (dy * dy + dx * dx < s * s) {
           state = 1;
           ++w.zones_captured;
+          w.play(audio::Event::kFirstEnterHill);
           break;
         }
       }
@@ -101,6 +103,7 @@ void Hill::update(World& w) {
         // Its successor (sound event 0x37).
         const Vec2 p = hill_position(w);
         w.add(std::make_unique<Hill>(w, p.x, p.y));
+        w.play(audio::Event::kKingCircleFade);
         state = 3;
       }
       break;

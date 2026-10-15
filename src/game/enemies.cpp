@@ -200,7 +200,7 @@ void Duck::update(World& w) {
         dir_y = 1.0f;
         break;
     }
-    // (Sound event 0x3A.)
+    w.play(audio::Event::kDuckMove);
   }
   heading_speed = std::fmaf(heading_target - heading, 0.2f, heading_speed * 0.8f);  // dat_82000D5C, dat_82000754
   heading = heading_speed + heading;
@@ -285,6 +285,7 @@ void Spinner::kill(World& w, const Killer& k) {
   // third of a turn apart from a random angle, each launched at 300 with
   // the shot's velocity; sound event 0x4D.
   if (k.object_type == 5) {
+    w.play(audio::Event::kSpinnerSplit);
     const float base = std::fmaf(float(w.rng.next()), kTwoPow31, -1.0f) * kPi;
     for (int i = 0; i < 3; ++i) {
       const float a = std::fmaf(float(i) * 6.28318548f, 0.333333343f, base);  // dat_82182318, dat_820010F0
@@ -516,7 +517,7 @@ void Rocket::update(World& w) {
         turning = true;
         sign = sign * -1.0f;
         turn_left = w.random_float(1.0f) > 0.5f ? kPi : -kPi;  // sub_82030430
-        // (Sound event 0x39.)
+        w.play(audio::Event::kRocketFlip);
       }
     }
   } else {

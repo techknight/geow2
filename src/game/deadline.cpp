@@ -119,6 +119,7 @@ void DeadlineSpawner::step(World& w, float elapsed) {
   w.spawn_geoms = 0;
   ++waves;
   budget = n;
+  w.play(audio::Event::kNewSpawnGroup);
 }
 
 void DeadlineSpawner::player_died(World& w, float time_left) {

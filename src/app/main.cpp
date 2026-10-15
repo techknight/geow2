@@ -28,9 +28,13 @@
 #include <vector>
 
 #include "app/frontend.h"
+#include "audio/device.h"
+#include "audio/engine.h"
+#include "audio/game_audio.h"
 #include "app/game.h"
 #include "app/png.h"
 #include "app/renderer.h"
+#include "game/gravity_well.h"
 #include "game/spawn.h"
 
 namespace fs = std::filesystem;
@@ -256,7 +260,7 @@ int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, 
   return 0;
 }
 
-int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& profile_dir) {
+int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& cache, const fs::path& profile_dir) {
   SDL_Window* window = SDL_CreateWindow("geow2", 1280, 720, SDL_WINDOW_RESIZABLE);
   if (!window || !SDL_ClaimWindowForGPUDevice(dev, window)) {
     SDL_Log("cannot open the window: %s", SDL_GetError());
@@ -270,6 +274,31 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& profile
   hooks.save_profile = [&]() { save_profile(profile_dir, profile); };
   hooks.save_boards = [&]() { save_boards(profile_dir, boards); };
   hooks.quit = [&]() { running = false; };
+  // The sound: the AOBJ graphs over the extracted waves, mixed in 5.1.
+  audio::AudioEngine sound;
+  std::string sound_error;
+  const bool has_sound = sound.init(cache, &sound_error);
+  if (!has_sound) SDL_Log("no sound: %s", sound_error.c_str());
+  audio::AudioDevice output;
+  if (has_sound) output.open(sound);
+  audio::GameAudio glue(sound);
+  if (has_sound) {
+    glue.start();
+    // The events behind rate gates or in alternating pairs go through the
+    // glue with the millisecond clock.
+    g.world->sound = [&](audio::Event e) {
+      const uint32_t now = uint32_t(SDL_GetTicks());
+      switch (e) {
+        case audio::Event::kPickupGeom1: glue.pickup_geom(now); break;
+        case audio::Event::kGateBounceBullet1: glue.gate_bounce_bullet(now); break;
+        case audio::Event::kPinRicochet1: glue.pin_ricochet(now); break;
+        default: glue.fire(e); break;
+      }
+    };
+    g.world->repulsar_hit = [&]() { glue.repulsar_hit_wall(uint32_t(SDL_GetTicks())); };
+    g.world->well_hum = [&](const Entity* w, int hits) { glue.gravity_well_hits(reinterpret_cast<uintptr_t>(w), hits); };
+    g.music = [&](bool in_game) { glue.select_music(in_game, g.rules.mode, frozen(g)); };
+  }
   Frontend fe(g, g.text, profile, boards, hooks);
   // The unlocked achievements, kept beside the profile.
   {
@@ -321,6 +350,28 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& profile
       fe.frame(state);
       const Sticks s = (g.flow == 2) ? sticks_from(state[0], profile) : Sticks{};
       tick(g, s, r, cmd);
+      if (has_sound) {
+        // sub_82078970 after the wells, then sub_82079BC0.
+        if (!frozen(g)) glue.gravity_wells_update(kWellMaxHits);
+        const GameAudioState a = audio_state(g);
+        audio::AudioFrame f;
+        f.paused = a.paused;
+        f.sfx_option = profile.sound_volume;
+        f.music_option = profile.music_volume;
+        f.distance_from_hill = a.distance_from_hill;
+        f.thrust = a.thrust;
+        f.player_x = a.player_x;
+        f.player_y = a.player_y;
+        f.progression_level = a.progression_level;
+        f.multiplier = a.multiplier;
+        f.score = a.score;
+        f.no_enemies = a.no_enemies;
+        f.time_left = a.time_left;
+        f.level_time_left = a.level_time_left;
+        f.bomb_kill_count = a.bomb_kills;
+        glue.frame(f);
+        g.transition_switch = sound.transition_switch();
+      }
       pending -= kStep;
     }
     if (pending > kStep) pending = 0.0;
@@ -439,7 +490,7 @@ int main(int argc, char** argv) {
   else if (headless)
     rc = run_headless(dev, renderer, game, frames, sticks, bomb_step, spawns, screenshot, shot_w, shot_h);
   else
-    rc = run_window(dev, renderer, game, profile_dir);
+    rc = run_window(dev, renderer, game, cache, profile_dir);
   renderer.release();
   SDL_DestroyGPUDevice(dev);
   SDL_Quit();
