@@ -37,6 +37,7 @@ add_library(geow2_game STATIC
   src/game/bloom_weights.cpp
   src/game/bullets.cpp
   src/game/camera.cpp
+  src/game/deadline.cpp
   src/game/display_gamma.cpp
   src/game/game_math.cpp
   src/game/grid.cpp
@@ -45,7 +46,11 @@ add_library(geow2_game STATIC
   src/game/model_geometry.cpp
   src/game/player_motion.cpp
   src/game/rotation.cpp
+  src/game/spawn.cpp
   src/game/stars.cpp
+  src/game/units.cpp
+  src/game/wanderer.cpp
+  src/game/world.cpp
 )
 target_link_libraries(geow2_game PUBLIC geow2_data)
 

@@ -15,6 +15,9 @@
 #include "game/model_geometry.h"
 #include "game/player_motion.h"
 #include "game/rotation.h"
+#include "game/spawn.h"
+#include "game/wanderer.h"
+#include "game/world.h"
 
 using namespace geow2;
 
@@ -404,7 +407,52 @@ static void test_walls() {
   expect(near(w[4].x, -304.5f) && near(w[4].y, -203.5f), "outer wall");
 }
 
+static void test_world() {
+  // Hash cells: 32-unit cells, wrapping at 32 (negative coordinates wrap).
+  expect(World::cell_of(0.0f, 0.0f) == 0 && World::cell_of(40.0f, 0.0f) == 1 && World::cell_of(0.0f, 33.0f) == 32,
+         "hash cells");
+  expect(World::cell_of(-5.5f, 10.0f) == 31, "hash cell wraps");
+  GameRng rng;
+  rng.seed(1);
+  Units units;
+  World w(kMath, rng, units);
+  // The four spawn angles: 0, pi/2, -pi (2 * pi / 4 rounds up past 0.5
+  // turns) and -pi/2 only.
+  for (int i = 0; i < 40; ++i) {
+    const float a = random_right_angle(w);
+    expect(a == 0.0f || near(a, 1.5707964f) || near(a, -3.1415927f) || near(a, -1.5707964f), "spawn angle");
+  }
+  // Placed groups: the wall nearest the player, in line with them.
+  w.players.resize(1);
+  w.players[0].x = 250.0f;
+  w.players[0].y = 20.0f;
+  const Placement p = placed_position(w);
+  expect(p.x == 292.0f && p.y == 20.0f && near(p.angle, -3.1415927f), "placed group on the right wall");
+  w.players[0].x = -10.0f;
+  w.players[0].y = -300.0f;
+  const Placement q = placed_position(w);
+  expect(q.y == -192.0f && q.x == -10.0f, "placed group clamped to the bottom wall");
+  // Spawn positions keep their distance from the players.
+  w.players[0] = PlayerTarget{};
+  for (int i = 0; i < 20; ++i) {
+    const Vec2 s = spawn_position(w, 165.0f);
+    expect(s.x * s.x + s.y * s.y >= 165.0f * 165.0f && std::fabs(s.x) <= 300.0f && std::fabs(s.y) <= 200.0f,
+           "spawn position away from the player");
+  }
+  // A wanderer fades in, then drifts at a little over 50 units a second.
+  Entity* e = spawn_enemy(w, 1, 0.0f, 100.0f, 50.0f);
+  expect(e && e->type == 0x12 && (e->flags & kEntityFadingIn) && w.enemy_count == 1, "wanderer spawned");
+  for (int i = 0; i < 300; ++i) w.update_entities();
+  const float speed = std::sqrt(e->vx * e->vx + e->vy * e->vy);
+  expect(!(e->flags & kEntityFadingIn) && e->fade == 1.0f, "wanderer faded in");
+  // Eased toward 50 after a random kick each step, so it runs a little
+  // faster on average.
+  expect(speed > 45.0f && speed < 70.0f, "wanderer speed near 50");
+  expect(std::fabs(e->x) <= 300.0f && std::fabs(e->y) <= 200.0f, "wanderer stays in the arena");
+}
+
 int main() {
+  test_world();
   test_walls();
   test_grid_lines();
   test_light_sprites();

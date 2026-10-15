@@ -27,6 +27,7 @@
 #include "extract/bytes.h"
 #include "game/bullets.h"
 #include "game/camera.h"
+#include "game/deadline.h"
 #include "game/game_math.h"
 #include "game/grid.h"
 #include "game/light_map.h"
@@ -35,6 +36,8 @@
 #include "game/player_motion.h"
 #include "game/rng.h"
 #include "game/stars.h"
+#include "game/units.h"
+#include "game/world.h"
 #include "game/rotation.h"
 
 namespace fs = std::filesystem;
@@ -101,6 +104,11 @@ struct Game {
   StarField stars;
   std::vector<StarVertex> star_vertices;  // this step's stars
   std::vector<GridVertex> walls;          // the arena walls (fixed)
+  // Enemies: the units of Data.bin, the playfield and Deadline's spawner.
+  std::unique_ptr<Units> units;
+  std::unique_ptr<World> world;
+  DeadlineSpawner spawner;
+  float elapsed = 0.0f;  // dat_8219CE68
 };
 
 bool load(Game& g, const fs::path& cache) {
@@ -141,6 +149,10 @@ bool load(Game& g, const fs::path& cache) {
   // (sub_82037C20), then the starfield draws from it (sub_82075318).
   g.rng.seed_from_ticks(SDL_GetTicksNS() / 1000000);
   g.stars.init(g.rng);
+  g.units = std::make_unique<Units>(Units::load(*g.db, *g.gm));
+  g.world = std::make_unique<World>(*g.gm, g.rng, *g.units);
+  g.world->players.resize(1);
+  g.world->players[0].radius = 5.0f;
   wall_quads(kArenaHalfX, kArenaHalfY, g.grid_tuning.depth, kWallOuterScale, g.walls);
   // Player constructor sub_82051448: radius +0x20 = 5.0 (dat_820006F0),
   // heading +0x14 = -pi/2 (dat_820010F4). Spawn position: the arena centre
@@ -170,6 +182,11 @@ struct Sticks {
 };
 
 void step(Game& g, const Sticks& s) {
+  World& w = *g.world;
+  // Deadline's spawner (sub_8203E7E8), then the clock (sub_820366A0).
+  g.spawner.step(w, g.elapsed);
+  g.elapsed = kStep + g.elapsed;
+
   // The player's update (sub_8204FF00): thrust, then firing; then the
   // common update integrates its position.
   const Vec2 move = stick_vector(stick_axis(s.move_x, false), stick_axis(s.move_y, true));
@@ -179,9 +196,15 @@ void step(Game& g, const Sticks& s) {
   integrate(g.player, kStep);
   Vec2 n;
   if (arena_contact(g.player.radius, kArenaHalfX, kArenaHalfY, g.player.x, g.player.y, n)) player_wall(g.player, n);
+  PlayerTarget& target = w.players[0];
+  target.x = g.player.x;
+  target.y = g.player.y;
+  target.vx = g.player.vx;
+  target.vy = g.player.vy;
   // Then the other entities, bullets included (the player list is updated
   // first, so bullets fired this step already move: to verify in the oracle).
   std::erase_if(g.bullets, [](Bullet& b) { return !bullet_step(b, kStep, kArenaHalfX, kArenaHalfY); });
+  w.update_entities();
   // The camera follows after the entity updates (sub_820366A0).
   camera_follow_single(g.camera, &g.player.x, &g.player.y, 1, kArenaHalfX, kArenaHalfY);
 
@@ -203,6 +226,7 @@ void step(Game& g, const Sticks& s) {
   // player): bullets size radius * Unit.Projectile.LightFactor (6.0),
   // colour * 8 (sub_82051DB8); the player its glow (sub_82050D00).
   g.lights.clear();
+  w.light_entities(g.lights);
   for (const Bullet& b : g.bullets) {
     const float c[3] = {b.colour[0] * 8.0f, b.colour[1] * 8.0f, b.colour[2] * 8.0f};
     emit_light(g.lights, b.radius * 6.0f, b.x, b.y, c);
@@ -213,11 +237,18 @@ void step(Game& g, const Sticks& s) {
   g.stars.update(*g.gm, 1.0f, g.star_vertices);
 }
 
-// The foreground lines: the ship's body (part 0), each line coloured as
-// sub_82061DA0 does (line colour times the draw colour) with the model's
-// cap size, and the shots' shapes (sub_82061908) in their colour.
+// The foreground lines: the enemies' models, the shots' shapes
+// (sub_82061908) in their colour and the ship's body (part 0), each line
+// coloured as sub_82061DA0 does (line colour times the draw colour) with
+// the model's cap size.
 void foreground(const Game& g, LineBatch& out) {
   out.clear();
+  // The pre-render pass's list order: enemies, shots, then the player.
+  g.world->draw_entities(out);
+  // The glow sprite of the shots is not drawn yet.
+  for (const Bullet& b : g.bullets)
+    for (const Segment& s : bullet_segments(b, g.bullet_shape, *g.gm))
+      emit_line(out, kLineWidthUnit, kShapeCapSize, s.a, s.b, b.colour);
   if (!g.ship.parts.empty()) {
     const Mat4 world = placement_style_none(*g.gm, g.player.x, g.player.y, g.player.heading);
     for (const ModelLine& l : g.ship.parts[0]) {
@@ -225,10 +256,6 @@ void foreground(const Game& g, LineBatch& out) {
       emit_line(out, kLineWidthUnit, g.ship.cap_size, mul(l.p0, world), mul(l.p1, world), colour);
     }
   }
-  // The glow sprite of the shots is not drawn yet.
-  for (const Bullet& b : g.bullets)
-    for (const Segment& s : bullet_segments(b, g.bullet_shape, *g.gm))
-      emit_line(out, kLineWidthUnit, kShapeCapSize, s.a, s.b, b.colour);
 }
 
 void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format,
@@ -285,9 +312,10 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sti
   const auto* px = static_cast<const uint8_t*>(SDL_MapGPUTransferBuffer(dev, down, false));
   write_png(out, w, h, {px, size_t(w) * h * 4});
   SDL_UnmapGPUTransferBuffer(dev, down);
-  SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets",
+  SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets, "
+          "%zu enemies",
           out.string().c_str(), frames, g.player.x, g.player.y, g.player.heading, g.camera.x, g.camera.y,
-          g.camera.zoom, g.bullets.size());
+          g.camera.zoom, g.bullets.size(), g.world->entities.size());
   SDL_ReleaseGPUTransferBuffer(dev, down);
   SDL_ReleaseGPUTexture(dev, tex);
   return 0;
