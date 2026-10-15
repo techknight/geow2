@@ -21,6 +21,7 @@
 namespace geow2 {
 
 class World;
+class Entity;
 
 // Who killed an entity (the record passed to vtable slots 7 and 9): the
 // shot, its owner (a player) and the kind of kill (1 a shot; 2 and 4 score
@@ -29,6 +30,7 @@ struct Killer {
   float x = 0, y = 0, vx = 0, vy = 0;  // the shot's position and velocity
   int kind = 0;
   int object_type = 0;                 // the killer object's type code (5: a player shot)
+  const Entity* source = nullptr;      // the killer object itself, when the code needs it
   int shot_bounces = 0;                // the shot's +0xA0
 };
 
@@ -89,9 +91,17 @@ class Entity {
   // The points sub_820408D0 gives the types it scores by their own state
   // (rocket, gravity well, gate); 0 for the rest.
   virtual int special_points() const { return 0; }
+  // The geoms sub_8204E108 drops for the types it counts by their own
+  // state (gravity well, snake segment); 0 for the rest.
+  virtual int special_geoms() const { return 0; }
+  // The destructor's side effects (unlinking), when the object is deleted.
+  virtual void on_delete(World&) {}
 
   // sub_82045CF0: the world matrix by the unit's style.
   Mat4 placement(World& w);
+  // sub_82046D88 with a tint: the model's part 0 in `tint`, or while fading
+  // in two growing ghosts in it with their alpha.
+  void draw_unit(World& w, LineBatch& out, const float tint[4]);
 
   float x = 0, y = 0;          // +0x04
   float vx = 0, vy = 0;        // +0x0C

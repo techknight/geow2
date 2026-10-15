@@ -59,11 +59,12 @@ Format for each entry:
 
 ### Reciprocal estimates
 
-- **What**: line widths, grid spring lengths, particle forces and the
-  geoms' pull use an exact 1/x and 1/sqrt.
+- **What**: line widths, grid spring lengths, particle forces, the
+  geoms' pull and the snake's segments use an exact 1/x and 1/sqrt.
 - **Original**: the line quad emitter (`sub_8205EB58`), the grid
   simulation (`sub_8205B880`), the wall quads (`sub_8205CC70`), the
-  particle step (`sub_82063448`) and the geom pull (`sub_8204D410`) use
+  particle step (`sub_82063448`), the geom pull (`sub_8204D410`) and the
+  snake segments' follow (`sub_82056CD8`) use
   `frsqrte` and `fres`, the PowerPC hardware estimates, whose exact
   results on the Xbox 360 CPU are not documented.
 - **Port**: computes the exact values. Lines, the grid and particles can
@@ -71,7 +72,9 @@ Format for each entry:
   The geom pull is gameplay: a geom being pulled in moves by the pull
   direction, whose length the estimate leaves within about 1/4096 of 1,
   so a geom can reach the player a step earlier or later than on the
-  console.
+  console. Snake segments trail their leader by a distance and pull read
+  from the estimates, so their positions differ from the console's in
+  the low bits.
 - **Decided**: 2026-10-15.
 
 ### Render target precision

@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "game/enemies.h"
+#include "game/snake.h"
 #include "game/wanderer.h"
 
 namespace geow2 {
@@ -18,6 +19,11 @@ Entity* spawn_enemy(World& w, int type, float angle, float x, float y, bool flag
       return w.add(std::make_unique<Weaver>(w, x, y));
     case 4:
       return w.add(std::make_unique<Spinner>(w, x, y));
+    case 8: {
+      auto* head = static_cast<SnakeHead*>(w.add(std::make_unique<SnakeHead>(w, x, y)));
+      head->build_segments(w);
+      return head;
+    }
     case 12:
     case 13:
       return w.add(std::make_unique<Rocket>(w, angle, x, y, type == 13));

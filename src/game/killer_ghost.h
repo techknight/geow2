@@ -9,7 +9,7 @@ namespace geow2 {
 // white for a second while the rest of the field explodes.
 class KillerGhost : public Entity {
  public:
-  KillerGhost(World& w, Entity& killer);
+  KillerGhost(World& w, Entity& killer, const float tint[4]);
   void update(World& w) override;                 // sub_82044820
   void draw(World& w, LineBatch& out) override;   // sub_82044918
 
@@ -24,9 +24,10 @@ class KillerGhost : public Entity {
   int killer_points = 0;        // +0x60: the copied shape table's size
 };
 
-// sub_82044FA8: the killer gives way to its ghost and is removed. (Types
-// 3, 0xD/0xE, 0x14/0x15 and 0x18 have their own cases: they come with
-// those enemies.)
+// sub_82044FA8: the killer gives way to its ghost and is removed. A snake
+// (head or attached segment) leaves the whole snake, a detached segment
+// nothing. (Types 3, 0x14/0x15 and 0x18 have their own cases: they come
+// with those enemies.)
 void replace_killer(World& w, Entity& killer);
 
 }  // namespace geow2

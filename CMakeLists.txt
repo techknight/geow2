@@ -55,6 +55,7 @@ add_library(geow2_game STATIC
   src/game/rotation.cpp
   src/game/shockwave.cpp
   src/game/shots.cpp
+  src/game/snake.cpp
   src/game/spawn.cpp
   src/game/stars.cpp
   src/game/units.cpp

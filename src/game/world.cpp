@@ -48,11 +48,15 @@ void Entity::light(World& w, std::vector<LightVertex>& out) {
 }
 
 void Entity::draw(World& w, LineBatch& out) {
+  const float white[4] = {1, 1, 1, 1};
+  draw_unit(w, out, white);
+}
+
+void Entity::draw_unit(World& w, LineBatch& out, const float tint[4]) {
   if (!unit || !unit->has_model) return;
   const Mat4 m = placement(w);
   if (!(flags & kEntityFadingIn)) {
-    const float white[4] = {1, 1, 1, 1};
-    draw_model_part(out, unit->model, 0, m, white);
+    draw_model_part(out, unit->model, 0, m, tint);
     return;
   }
   // Fading in: two ghosts from g = fmod(fade * 3, 1) + i: alpha g folded
@@ -66,7 +70,7 @@ void Entity::draw(World& w, LineBatch& out) {
     Mat4 scaled = m;
     for (int r = 0; r < 3; ++r)
       for (int c = 0; c < 4; ++c) scaled.m[r * 4 + c] = m.m[r * 4 + c] * s;  // sub_82040F28 then A * B
-    const float ghost[4] = {1, 1, 1, f};
+    const float ghost[4] = {tint[0], tint[1], tint[2], tint[3] * f};
     draw_model_part(out, unit->model, 0, scaled, ghost);
   }
 }
@@ -160,6 +164,7 @@ void World::purge() {
     }
     // The unit destructor (sub_82046B08) takes it off the enemy count.
     if (e.flags & kEntityCounted) --enemy_count;
+    e.on_delete(*this);
     it = entities.erase(it);
   }
 }

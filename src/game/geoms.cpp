@@ -201,7 +201,8 @@ void drop_geoms(World& w, const Entity& victim, const Killer& k) {
       break;
     default:
       // Types 3 (5 + 3 x its +0x9C, clamped to 0..12) and 0xE (1 for
-      // every fourth, by +0x9C) come with those enemies.
+      // every fourth segment) count by their own state.
+      n = victim.special_geoms();
       break;
   }
   if (w.mode == 5) {

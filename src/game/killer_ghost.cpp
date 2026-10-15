@@ -2,9 +2,11 @@
 
 #include <algorithm>
 
+#include "game/snake.h"
+
 namespace geow2 {
 
-KillerGhost::KillerGhost(World& w, Entity& killer) {
+KillerGhost::KillerGhost(World& w, Entity& killer, const float tint[4]) {
   // Base sub_82045830 at the killer's position, type 7; heading, scale and
   // colour copied; radius 0; flags 0xC0 (never touches).
   x = killer.x;
@@ -21,6 +23,7 @@ KillerGhost::KillerGhost(World& w, Entity& killer) {
     base_colour[i] = killer.colour[i];
   }
   killer_type = killer.type;
+  for (int i = 0; i < 4; ++i) draw_colour[i] = tint[i];
   if (killer.shape_points > 0) killer_points = killer.shape_points;
   // A touchable unit with a model leaves its model and placement.
   if ((killer.flags & kEntityTouchable) && killer.unit && killer.unit->has_model) {
@@ -56,7 +59,24 @@ void KillerGhost::draw(World& w, LineBatch& out) {
 }
 
 void replace_killer(World& w, Entity& killer) {
-  w.add(std::make_unique<KillerGhost>(w, killer));
+  const float white[4] = {1, 1, 1, 1};  // dat_820006C4
+  if (killer.type == 0xD || killer.type == 0xE) {
+    Entity* head = killer.type == 0xD ? &killer : snake_head_of(killer);
+    if (!head) return;
+    w.add(std::make_unique<KillerGhost>(w, *head, white));
+    w.remove(*head);
+    // Every segment of that head (list 0x82181414, construction order),
+    // tinted with its own colour.
+    for (size_t i = 0; i < w.entities.size(); ++i) {
+      Entity& e = *w.entities[i];
+      if (e.type != 0xE || snake_head_of(e) != head) continue;
+      const float tint[4] = {e.colour[0], e.colour[1], e.colour[2], e.colour[3]};
+      w.add(std::make_unique<KillerGhost>(w, e, tint));
+      w.remove(e);
+    }
+    return;
+  }
+  w.add(std::make_unique<KillerGhost>(w, killer, white));
   w.remove(killer);
 }
 

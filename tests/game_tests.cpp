@@ -492,7 +492,7 @@ static void test_shot_kills() {
 static void test_enemies() {
   // Each Deadline type spawns, fades in, moves and stays in the arena
   // with a player to chase.
-  for (int type : {2, 3, 4, 12, 13, 22}) {
+  for (int type : {2, 3, 4, 8, 12, 13, 22}) {
     GameRng rng;
     rng.seed(3);
     Units units;
@@ -533,6 +533,32 @@ static void test_enemies() {
   for (auto& e : w.entities)
     if (e->type == 0xA) ++tiny2;
   expect(tiny2 == 3, "bombed spinner does not split");
+  // A snake: a head and 23 segments trailing it; bombing a segment kills
+  // the head, and the segments die one by one after it, then are deleted.
+  {
+    GameRng r2;
+    r2.seed(9);
+    World s(kMath, r2, units);
+    s.players.resize(1);
+    Entity* head = spawn_enemy(s, 8, 0.0f, 0.0f, 0.0f);
+    expect(head && s.entities.size() == 24 && s.enemy_count == 1, "snake of 24 parts");
+    for (int i = 0; i < 300; ++i) s.update_entities();
+    Entity* tail = s.entities[1].get();
+    Killer bomb;
+    bomb.kind = 4;
+    tail->kill(s, bomb);
+    expect((head->flags & kEntityRemoved) && (tail->flags & kEntityRemoved), "segment bomb kills the head");
+    s.purge();
+    for (int i = 0; i < 30; ++i) {
+      s.update_entities();
+      s.purge();
+    }
+    int geoms = 0, others = 0;
+    for (auto& e : s.entities) (e->type == 0x22 ? geoms : others)++;
+    // Segments 0, 4, ..., 20 drop a geom each (the tail tip with the head
+    // too, the head none here: the test world has no geom shapes).
+    expect(others == 0 && geoms == 6 && s.enemy_count == 0, "detached segments die");
+  }
 }
 
 int main() {

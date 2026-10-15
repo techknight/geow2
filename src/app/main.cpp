@@ -2,11 +2,12 @@
 //
 //   geow2 [--data <cache-dir>]
 //   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> [--size <w> <h>] [--stick <x> <y>]
-//         [--fire <x> <y>] [--bomb <step>]
+//         [--fire <x> <y>] [--bomb <step>] [--spawn <type> <x> <y>]...
 //
 // The second form runs n simulation steps without a window (input: a fixed
 // raw stick value, XInput convention; --bomb pulls the trigger on one
-// step) and saves the final frame.
+// step; --spawn adds an enemy of a spawn type at the start, for
+// development captures) and saves the final frame.
 //
 // Early development build: Deadline's arena with the player (shots,
 // shield, bombs, death and respawn) and its wanderers, drawn as the
@@ -47,6 +48,7 @@
 #include "game/world.h"
 #include "game/rotation.h"
 #include "game/shots.h"
+#include "game/spawn.h"
 
 namespace fs = std::filesystem;
 using namespace geow2;
@@ -552,8 +554,14 @@ void tick(Game& g, const Sticks& s, Renderer& r, SDL_GPUCommandBuffer* cmd) {
   r.update_light_map(cmd, g.warp_mesh, g.lights);
 }
 
+struct DevSpawn {
+  int type;
+  float x, y;
+};
+
 int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sticks& sticks, int bomb_step,
-                 const fs::path& out, uint32_t w, uint32_t h) {
+                 const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h) {
+  for (const DevSpawn& d : spawns) spawn_enemy(*g.world, d.type, 0.0f, d.x, d.y);
   for (int i = 0; i < frames; ++i) {
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     Sticks s = sticks;
@@ -678,6 +686,7 @@ int main(int argc, char** argv) {
   uint32_t shot_w = 1280, shot_h = 720;
   int64_t seed = -1;
   int bomb_step = -1;
+  std::vector<DevSpawn> spawns;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--data" && i + 1 < argc) cache = argv[++i];
@@ -690,6 +699,11 @@ int main(int argc, char** argv) {
     } else if (a == "--stick" && i + 2 < argc) {
       sticks.move_x = clamp16(std::atoi(argv[++i]));
       sticks.move_y = clamp16(std::atoi(argv[++i]));
+    } else if (a == "--spawn" && i + 3 < argc) {
+      const int type = std::atoi(argv[++i]);
+      const float x = float(std::atof(argv[++i]));
+      const float y = float(std::atof(argv[++i]));
+      spawns.push_back({type, x, y});
     } else if (a == "--bomb" && i + 1 < argc) {
       bomb_step = std::atoi(argv[++i]);
     } else if (a == "--fire" && i + 2 < argc) {
@@ -698,7 +712,7 @@ int main(int argc, char** argv) {
     } else {
       std::fprintf(stderr,
                    "usage: geow2 [--data <cache>] [--seed <n>] [--frames <n> --screenshot <png> [--size <w> <h>]"
-                   " [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>]]\n");
+                   " [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--spawn <type> <x> <y>]...]\n");
       return 2;
     }
   }
@@ -718,7 +732,7 @@ int main(int argc, char** argv) {
   Renderer renderer;
   if (!renderer.init(dev, fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "shaders")) return 1;
   const int rc =
-      headless ? run_headless(dev, renderer, game, frames, sticks, bomb_step, screenshot, shot_w, shot_h) : run_window(dev, renderer, game);
+      headless ? run_headless(dev, renderer, game, frames, sticks, bomb_step, spawns, screenshot, shot_w, shot_h) : run_window(dev, renderer, game);
   renderer.release();
   SDL_DestroyGPUDevice(dev);
   SDL_Quit();
