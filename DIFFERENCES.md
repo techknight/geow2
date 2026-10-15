@@ -55,16 +55,18 @@ Format for each entry:
   interpolated.
 - **Decided**: 2026-10-14; bloom sizes 2026-10-15.
 
-### Reciprocal square root estimates
+### Reciprocal estimates
 
-- **What**: line widths and grid spring lengths use an exact 1/sqrt.
-- **Original**: the line quad emitter (`sub_8205EB58`) and the grid
-  simulation (`sub_8205B880`) normalise with `frsqrte`, the PowerPC
-  hardware estimate, whose exact results on the Xbox 360 CPU are not
+- **What**: line widths, grid spring lengths and particle forces use an
+  exact 1/x and 1/sqrt.
+- **Original**: the line quad emitter (`sub_8205EB58`), the grid
+  simulation (`sub_8205B880`), the wall quads (`sub_8205CC70`) and the
+  particle step (`sub_82063448`) use `frsqrte` and `fres`, the PowerPC
+  hardware estimates, whose exact results on the Xbox 360 CPU are not
   documented.
-- **Port**: computes the exact reciprocal square root in double. Lines
-  and the grid can differ from the original by the estimate's error
-  (small; visual only, gameplay never reads these values).
+- **Port**: computes the exact values. Lines, the grid and particles can
+  differ from the original by the estimates' error (small; visual only,
+  gameplay never reads these values).
 - **Decided**: 2026-10-15.
 
 ### Render target precision
