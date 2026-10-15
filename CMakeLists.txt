@@ -109,7 +109,7 @@ if(GEOW2_BUILD_GAME)
   endforeach()
   add_custom_target(geow2_shaders DEPENDS ${SPIRV})
 
-  add_executable(geow2 src/app/audio.cpp src/app/main.cpp src/app/png.cpp src/app/renderer.cpp)
+  add_executable(geow2 src/app/audio.cpp src/app/game.cpp src/app/main.cpp src/app/png.cpp src/app/renderer.cpp)
   target_link_libraries(geow2 PRIVATE geow2_game SDL3::SDL3-static)
   add_dependencies(geow2 geow2_shaders)
 endif()
