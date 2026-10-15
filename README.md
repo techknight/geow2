@@ -9,7 +9,8 @@ your own copy of the Xbox Live Arcade release (title ID 584108FF). The
 port reads that package and extracts what it needs; nothing from the game
 is stored here.
 
-Status: early work. Nothing is playable yet.
+Status: early work. The player ship flies in an empty arena; nothing else
+is in yet.
 
 ## What you need
 
@@ -35,6 +36,15 @@ Then turn your package into the cache the port reads:
 The extractor accepts only the release the port was traced against
 (title 584108FF, version 0x102); it checks every file's SHA-1 and every
 hash inside `default.xex`.
+
+Run the game (it looks for `cache` next to the executable, or pass
+`--data`):
+
+    build\geow2 --data cache
+
+The build needs network access the first time (CMake fetches SDL3) and
+the Vulkan SDK's `glslc` for the shaders. Configure with
+`-DGEOW2_BUILD_GAME=OFF` to build only the extractor and the tests.
 
 Before committing, enable the guard that refuses game data:
 
