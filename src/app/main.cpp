@@ -260,7 +260,14 @@ int capture(SDL_GPUDevice* dev, Renderer& r, const Game& g, const UiCanvas& ui, 
 
 int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std::array<Sticks, 4>& sticks,
                  int bomb_step, const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h,
-                 bool exact_720p) {
+                 bool exact_720p, const fs::path& trace_path) {
+  // --trace: after each step, the clock and slot 0's object (x, y, vx,
+  // vy) at full precision, as the oracle's memory reads give them.
+  std::ofstream trace;
+  if (!trace_path.empty()) {
+    trace.open(trace_path, std::ios::trunc);
+    trace << "step,clock,x,y,vx,vy\n";
+  }
   // Type 16 (0x10) is a power-up item; the rest are enemies.
   for (const DevSpawn& d : spawns)
     if (d.type == 0x10)
@@ -275,6 +282,13 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
     if (i == bomb_step) s[0].right_trigger = 255;
     tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
     SDL_SubmitGPUCommandBuffer(cmd);
+    if (trace.is_open()) {
+      const PlayerMotion& m = g.ships[0].motion;
+      char line[256];
+      std::snprintf(line, sizeof(line), "%d,%.9g,%.9g,%.9g,%.9g,%.9g\n", i + 1, double(g.elapsed), double(m.x),
+                    double(m.y), double(m.vx), double(m.vy));
+      trace << line;
+    }
   }
   Profile profile;
   std::array<LocalBoard, 6> boards;
@@ -567,6 +581,7 @@ int main(int argc, char** argv) {
   std::array<LobbyPad, 4> lobby{};
   bool versus = false, multiplayer = false;
   fs::path screenshot;
+  fs::path trace_path;
   uint32_t shot_w = 1280, shot_h = 720;
   int64_t seed = -1;
   int bomb_step = -1;
@@ -587,6 +602,7 @@ int main(int argc, char** argv) {
     else if (a == "--mode" && i + 1 < argc) mode = std::clamp(std::atoi(argv[++i]), 0, 5);
     else if (a == "--level" && i + 1 < argc) start_level = std::clamp(std::atoi(argv[++i]), 0, 19);
     else if (a == "--frontend") frontend = true;
+    else if (a == "--trace" && i + 1 < argc) trace_path = argv[++i];
     else if (a == "--language" && i + 1 < argc) language = language_code(argv[++i]);
     else if (a == "--fullscreen" || a == "--windowed") fullscreen = a == "--fullscreen";
     else if (a == "--720p" || a == "--native") exact_720p = a == "--720p";
@@ -690,7 +706,7 @@ int main(int argc, char** argv) {
     std::array<Sticks, 4> per_pad{};
     for (size_t p = 0; p < 4; ++p) per_pad[p] = pad_sticks[p] ? *pad_sticks[p] : sticks;
     rc = run_headless(dev, renderer, game, frames, per_pad, bomb_step, spawns, screenshot, shot_w, shot_h,
-                      exact_720p == 1);
+                      exact_720p == 1, trace_path);
   } else {
     Display d = load_display(profile_dir);
     if (fullscreen >= 0) d.fullscreen = fullscreen != 0;
