@@ -35,6 +35,9 @@ struct Killer {
   const Entity* source = nullptr;      // the killer object itself, when the code needs it
   int blast_kind = -1;                 // a blast killer's kind (+0x68)
   int shot_bounces = 0;                // the shot's +0xA0
+  // The player credited (the shot's or blast's owner, +0x48): an index
+  // into World::players.
+  size_t player = 0;
 };
 
 // Entity flags (+0x24), named by what the code does with them.
@@ -138,7 +141,25 @@ struct PlayerTarget {
   bool fading = false;             // flag 0x10
   float radius = 0;
   bool removed = false;    // flag 1
-  float hidden = 0;        // +0xE0: targeted only while <= 0
+  float hidden = 0;        // +0xE0: targeted only while <= 0 (the freeze power-up)
+  int record = 0;          // +0xA4: its score record
+  int colour = 0;          // +0xA0: colour id (0 single player, 1..4 the team)
+  bool magnet = false;     // +0xDC > 0: pulls geoms from four times as far
+  // Its slot's gate chain (+0x34 count, +0x30 time; dat_8219CEE8 / CEE4).
+  int gate_chain = 0;
+  float gate_chain_time = 0.0f;
+};
+
+// A score record (0x8219D068 + 0x78 r): score (+0x28), multiplier (+0x40;
+// the HUD shows x1 at the start), the next multiplier milestone (+0x44, 10
+// from the record constructor 0x82034868), kills (+0x38, dat_8219D0A0)
+// and King's zones touched (+0x64, dat_8219D0CC).
+struct ScoreRecord {
+  int64_t score = 0;
+  int multiplier = 1;
+  int milestone = 10;
+  int kills = 0;
+  int zones = 0;
 };
 
 // The record a touch hands the player (vtable slot 12, sub_8204E8A0):
@@ -222,12 +243,13 @@ class World {
   // The spawners' feedback: kills by weight (DB50, sub_8203BAC8) and geom
   // value collected (DB54, sub_8203BBB8).
   int spawn_kills = 0, spawn_geoms = 0;
-  // sub_82040818: whether a kill scores now (Deadline: before time is up;
-  // the lives modes: while the player is in the game or can come back).
-  bool scoring_open = true;
-  // The rest of sub_820408D0 after the score rises (extra lives and bombs
-  // by score): the game handles it here.
-  std::function<void()> scored;
+  // sub_82040818 per record: whether its kills score now (Deadline: before
+  // time is up; the lives modes: while one of its ships is in the game or
+  // can come back).
+  std::array<bool, 4> scoring_open{true, true, true, true};
+  // The rest of sub_820408D0 after a record's score rises (extra lives and
+  // bombs by score): the game handles it here.
+  std::function<void(int record, size_t player)> scored;
   // sub_820787F8: a sound event for the audio engine.
   std::function<void(audio::Event)> sound;
   void play(audio::Event e) const {
@@ -250,21 +272,20 @@ class World {
   float bounce_hint = 0.0f;
   // The C runtime's rand() (Evolved's spawner).
   CrtRand crt;
-  // The player's gate chain (slot record +0x34 / +0x30).
-  int gate_chain = 0;
-  float gate_chain_time = 0.0f;
   // Kill markers (sub_82043418, type 0x19, list 0x82181420): they live one
   // step and push the grid (radius 32, strength 6).
   std::vector<Vec2> death_markers;
-  // The player's score state (0x8219D068 + 0x78 * player): score (+0x28)
-  // and multiplier (+0x40; the HUD shows x1 at the start).
-  int64_t score = 0;
-  int multiplier = 1;
-  int multiplier_milestone = 10;        // +0x44 (the record constructor, 0x82034868)
+  // The score records (one in single player and co-op, one per team in
+  // versus).
+  std::array<ScoreRecord, 4> records{};
+  ScoreRecord& record_of(size_t player) { return records[size_t(players[player].record)]; }
+  const ScoreRecord& record_of(size_t player) const { return records[size_t(players[player].record)]; }
+  // The player a kill being scored is credited to (the special points of
+  // gates read its chain).
+  size_t scorer = 0;
+  bool multiplayer = false;             // dat_8219D275
   Popups popups;
   std::string bonus_multiplier_text = "Bonus multiplier";  // ID_X_BONUS_MULTIPLIER (0x79)
-  int kills = 0;                        // dat_8219D0A0
-  int zones_captured = 0;               // dat_8219D0CC: King's zones touched
   // Particles and the effects that make them.
   Particles particles;
   ParticleTuning particle_tuning;

@@ -68,7 +68,7 @@ bool player_timers(PlayerLife& p, float step) {
   return blink;
 }
 
-int player_bomb(PlayerLife& p, float trigger, const ModeRules& rules) {
+int player_bomb(PlayerLife& p, LifeRecord& r, float trigger, const ModeRules& rules) {
   if (!(0 < rules.start_bombs || (rules.flags & 2) == 0)) return 0;
   if (trigger <= 0.15f) {  // dat_82000D58
     p.bomb_latch = false;
@@ -78,9 +78,9 @@ int player_bomb(PlayerLife& p, float trigger, const ModeRules& rules) {
   p.bomb_latch = true;
   if (!(p.bomb_wait <= 0.0f)) return 0;
   p.bomb_wait = 0.2f;  // dat_82000D5C
-  if (p.bombs <= 0) return 2;  // BombDryFire
-  --p.bombs;
-  p.bomb_used = true;
+  if (r.bombs <= 0) return 2;  // BombDryFire
+  --r.bombs;
+  r.bomb_used = true;
   return 1;
 }
 

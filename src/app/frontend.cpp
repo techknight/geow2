@@ -330,12 +330,14 @@ void Frontend::finish() {
     const int mode = g_.rules.mode;
     const std::string name = player_name();
     if (mode >= 0 && mode < 6) {
-      g_.tables[size_t(mode)].insert(g_.world->score, g_.world->multiplier, name);
+      const ScoreRecord& rec = g_.world->records[0];
+      g_.tables[size_t(mode)].insert(rec.score, rec.multiplier, name);
       // The local board in place of the Live score write (sub_8207E490).
-      last_row_ = boards_[size_t(mode)].add(g_.world->score, name);
+      last_row_ = boards_[size_t(mode)].add(rec.score, name);
       if (last_row_ >= 0 && hooks_.save_boards) hooks_.save_boards();
     }
-    if (profile_.game_ended(mode, g_.world->kills, g_.world->score) && hooks_.save_profile) hooks_.save_profile();
+    if (profile_.game_ended(mode, g_.world->records[0].kills, g_.world->records[0].score) && hooks_.save_profile)
+      hooks_.save_profile();
     // Millionaire (every mode over 1,000,000) and Unlocked All Modes, then
     // the game's silent achievements are written.
     if (profile_.millions == 0x3F) award_achievement(g_, 0x020, 3);

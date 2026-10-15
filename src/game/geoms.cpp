@@ -179,16 +179,19 @@ void Geom::collect(World& w, size_t p) {
   // (dat_8219D0AC: +10 below 100, +50 below 1000, else +100) a bigger one
   // 4 below ("%s x%s", ID_X_BONUS_MULTIPLIER, 1.25 s, dat_82001D6C);
   // sounds 0x47 / 0x48 alternate.
-  w.multiplier += value;
+  // The collecting player's record (sub_8204D118).
+  ScoreRecord& rec = w.record_of(p);
+  const int colour = w.players[p].colour;
+  rec.multiplier += value;
   w.spawn_geoms += value;  // sub_8203BBB8
   w.play(audio::Event::kPickupGeom1);  // the pair alternates behind its gate
   if (w.geom_collected) w.geom_collected(value);  // sub_820390F0
-  if (w.multiplier < w.multiplier_milestone) {
-    w.popups.add_small(x, y, 0.75f, 0, "x" + format_number(w.multiplier));  // dat_82000718
+  if (rec.multiplier < rec.milestone) {
+    w.popups.add_small(x, y, 0.75f, colour, "x" + format_number(rec.multiplier));  // dat_82000718
   } else {
-    w.popups.add_big(x, y + 4.0f, 1.25f, 0, w.bonus_multiplier_text + " x" + format_number(w.multiplier_milestone));
-    const int m = w.multiplier_milestone;
-    w.multiplier_milestone = m < 100 ? m + 10 : m < 1000 ? m + 50 : m + 100;
+    w.popups.add_big(x, y + 4.0f, 1.25f, colour, w.bonus_multiplier_text + " x" + format_number(rec.milestone));
+    const int m = rec.milestone;
+    rec.milestone = m < 100 ? m + 10 : m < 1000 ? m + 50 : m + 100;
   }
   vx = 0.0f;
   vy = 0.0f;
@@ -250,8 +253,8 @@ void collect_geoms(World& w) {
         const PlayerTarget& p = w.players[i];
         const float dy = p.y - g.y, dx = p.x - g.x;
         const float d2 = dy * dy + dx * dx;
-        const float reach = (p.radius + g.radius) + w.motes.magnet_range;
-        // (A player with +0xDC above 0 reaches four times as far.)
+        // The magnet power-up (+0xDC > 0) reaches four times as far.
+        const float reach = ((p.radius + g.radius) + w.motes.magnet_range) * (p.magnet ? 4.0f : 1.0f);
         if (d2 < reach * reach && (target < 0 || d2 < best)) {
           best = d2;
           target = int(i);

@@ -73,13 +73,14 @@ void Hill::update(World& w) {
   switch (state) {
     case 0:
       // The first player touching it captures it (sound event 0x4A).
-      for (const PlayerTarget& p : w.players) {
+      for (size_t pi = 0; pi < w.players.size(); ++pi) {
+        const PlayerTarget& p = w.players[pi];
         if (p.removed) continue;
         const float s = p.radius + radius;
         const float dx = x - p.x, dy = y - p.y;
         if (dy * dy + dx * dx < s * s) {
           state = 1;
-          ++w.zones_captured;
+          ++w.record_of(pi).zones;
           w.play(audio::Event::kFirstEnterHill);
           break;
         }

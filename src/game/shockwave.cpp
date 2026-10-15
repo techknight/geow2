@@ -49,6 +49,7 @@ void Shockwave::blast(World& w) {
   k.object_type = 0xF;
   k.blast_kind = kind;
   k.source = this;
+  k.player = player;
   std::vector<Entity*> hit;
   w.for_each_near(x, y, r, [&](Entity& e) {
     if ((e.flags & 0x13) || e.type == 0x1C || &e == this) return;

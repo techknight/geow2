@@ -154,15 +154,9 @@ void World::new_game() {
   bomb_kills = 0;
   clock = 0.0f;
   spawn_kills = spawn_geoms = 0;
-  scoring_open = true;
-  gate_chain = 0;
-  gate_chain_time = 0.0f;
+  scoring_open.fill(true);
   death_markers.clear();
-  score = 0;
-  multiplier = 1;
-  multiplier_milestone = 10;
-  kills = 0;
-  zones_captured = 0;
+  records.fill(ScoreRecord{});
   bounce_kills = 0;
   bounce_hint = 0.0f;
   spawned_type.fill(false);
@@ -203,8 +197,13 @@ void World::purge() {
 void World::award(const Entity& victim, const Killer& k) {
   // sub_820408D0. Points by the victim's type code (+0x44).
   if (k.kind == 0 || k.kind == 2 || k.kind == 4) return;
-  if (!scoring_open) return;
-  ++kills;
+  // The credited player's record (the shooter, +0x48, or the blast's).
+  const size_t pi = k.player < players.size() ? k.player : 0;
+  const int ri = players.empty() ? 0 : players[pi].record;
+  if (!scoring_open[size_t(ri)]) return;
+  ScoreRecord& rec = records[size_t(ri)];
+  scorer = pi;
+  ++rec.kills;
   int base = 0;
   switch (victim.type) {
     case 2: case 4: case 10: case 0x1F: case 0x25: base = 50; break;
@@ -218,7 +217,7 @@ void World::award(const Entity& victim, const Killer& k) {
     default: base = victim.special_points(*this); break;  // types 3, 0x16, 0x18
   }
   // A gate end killed with the chain past 4: Slalom (bit 1).
-  if (victim.type == 0x18 && gate_chain > 4 && achieve) achieve(0x001, 0);
+  if (victim.type == 0x18 && !players.empty() && players[pi].gate_chain > 4 && achieve) achieve(0x001, 0);
   // sub_8203BAC8: the spawners' kill weight.
   switch (victim.type) {
     case 2: case 0x16: spawn_kills += 2; break;
@@ -229,7 +228,7 @@ void World::award(const Entity& victim, const Killer& k) {
   }
   // multiplier * points * 0.25 (dat_82000720), doubled in King, rounded
   // down to a multiple of 5.
-  int64_t fives = int64_t(float(multiplier) * float(base) * 0.25f);
+  int64_t fives = int64_t(float(rec.multiplier) * float(base) * 0.25f);
   if (king_mode) fives <<= 1;
   fives /= 5;
   int64_t points = fives * 5;
@@ -240,16 +239,16 @@ void World::award(const Entity& victim, const Killer& k) {
   if ((k.object_type == 3 || k.object_type == 0x18) || (k.object_type == 0xF && (k.blast_kind == 1 || k.blast_kind == 2)) ||
       (k.object_type == 5 && k.shot_bounces > 0))
     points = fives * 25;
-  if (k.object_type == 5 && k.shot_bounces > 0 && mode == 0) {
+  if (k.object_type == 5 && k.shot_bounces > 0 && mode == 0 && !multiplayer) {
     // Deadline counts these for Rebound, the hint showing while below 76.
     ++bounce_kills;
     if (bounce_kills < 0x4C) bounce_hint = 4.0f;  // dat_820006F4
   }
-  score += points;
-  if (scored) scored();
-  // The points linger where the victim was (size 1, the player's colour:
-  // index 0 in single player; "%s", dat_82000CD4).
-  popups.add_small(victim.x, victim.y, 1.0f, 0, format_number(points));
+  rec.score += points;
+  if (scored) scored(ri, pi);
+  // The points linger where the victim was (size 1, the player's colour;
+  // "%s", dat_82000CD4).
+  popups.add_small(victim.x, victim.y, 1.0f, players.empty() ? 0 : players[pi].colour, format_number(points));
 }
 
 int World::cell_of(float x, float y) { return (int(y) & 0x3E0) | (int(x) >> 5 & 0x1F); }

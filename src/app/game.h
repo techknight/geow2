@@ -14,6 +14,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -81,18 +82,55 @@ struct Sticks {
   uint8_t left_trigger = 0, right_trigger = 0;               // raw
 };
 
+// A player unit's look (sub_82051448): its model, its tint (rgb times
+// alpha, alpha 1) and its light (glowColour rgb times alpha, glowSize;
+// sub_82050D00).
+struct ShipLook {
+  ModelGeometry model;
+  float tint[4] = {1, 1, 1, 1};
+  float glow[3] = {0, 0, 0};
+  float glow_size = 0.0f;
+  const UnitInfo* unit = nullptr;
+};
+
+// A ship: its slot (0x8219CEB4 + 0x6C k) and its player object
+// (sub_82051448).
+struct Ship {
+  PlayerMotion motion;
+  PlayerWeapon weapon;
+  PlayerLife life;
+  int pilot = 0;    // +0x58 (dat_8219CF0C): the joined index that moves it
+  int copilot = 0;  // +0x5C (dat_8219CF10): the joined index that fires
+  int record = 0;   // +0x60 (dat_8219CF14)
+  int colour = 0;   // +0x64 (dat_8219CF18): team + 1; 0 in single player
+  int number = 0;   // +0x68 (dat_8219CF1C): the lower pad of the ship
+  // The looks (Game::looks) of the model unit (+0x78) and the colour unit
+  // (+0xF0): "player" (0) in single player, player1..4 (1..4) else.
+  int model_look = 0;
+  int colour_look = 0;
+};
+
 // Everything the game keeps: the user's data, the playfield and its
-// effects, the player, the mode's rules and spawners, and what each step
+// effects, the ships, the mode's rules and spawners, and what each step
 // produces for drawing.
 struct Game {
   std::unique_ptr<Flask> db;
   std::unique_ptr<GameMath> gm;
-  ModelGeometry ship;
-  float tint[4] = {1, 1, 1, 1};  // player colour (constructor: unit tint, rgb times alpha)
-  PlayerMotion player;
+  // The units "player" and "player1".."player4" (dat_82000F18,
+  // 0x82001EB0 / 1E98 / 1EA0 / 1EA8).
+  std::array<ShipLook, 5> looks{};
+  // The ships (slot count dat_8219CEB0), their score records' lives and
+  // bombs (count dat_8219D064), and the player list: the ships' objects
+  // in creation order (the order the list is walked).
+  std::array<Ship, 4> ships{};
+  int ship_count = 1;
+  std::array<LifeRecord, 4> recs{};
+  int record_count = 1;
+  std::vector<size_t> player_list;
+  bool multiplayer = false;  // dat_8219D275
+  bool versus = false;       // dat_8218E7C0
   CameraState camera;
   float camera_idle = 0.0f;  // dat_8219D3CC: time out of a game
-  PlayerWeapon weapon;
   std::vector<Bullet> bullets;
   BulletShape bullet_shape;
   // The HUD: the font, its strings and the UI transform.
@@ -100,10 +138,6 @@ struct Game {
   HudText hud_text;
   Mat4 ui{};
   GeomShapes geom_shapes;
-  // The player's light: unit glowColour (rgb times alpha) and glowSize
-  // (sub_82050D00).
-  float glow[3] = {0, 0, 0};
-  float glow_size = 0.0f;
   // The background grid and what each step produces for drawing.
   Grid grid;
   GridTuning grid_tuning;
@@ -173,12 +207,9 @@ struct Game {
   std::array<ScoreTable, 6> tables{};
   bool first_spawn = true;  // dat_8219CE70
   int after_death = 0;      // dat_8219D288: the last player died (sub_8204E7D8)
-  // The player's life and the mode's rules.
-  PlayerLife life;
   ModeRules rules;
   std::string plus_life_text = "Extra life";  // ID_X_PLUS_ONE_LIFE (0x83)
   std::string plus_bomb_text = "Extra bomb";  // ID_X_PLUS_ONE_BOMB (0x84)
-  const UnitInfo* player_unit = nullptr;
   bool field_live = false;   // dat_8219CE7D: a player spawned since the last clear
   bool was_fading = false;   // dat_8219D3D0: a player was fading in last step
 };
@@ -210,13 +241,14 @@ struct GameAudioState {
 GameAudioState audio_state(const Game& g);
 // sub_8207CA48: the single-player HUD into `out`.
 void draw_game_hud(const Game& g, LineBatch& out);
-// One simulation step (sub_820366A0) with this step's input.
-void step(Game& g, const Sticks& s);
+// One simulation step (sub_820366A0) with this step's input, by joined
+// index (dat_8219CE90).
+void step(Game& g, std::span<const Sticks> pads);
 // The frame's picture into `target` (w x h).
 void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format,
             uint32_t w, uint32_t h, const Game& g, const UiCanvas& ui);
 // One simulation step and its light map update (one per step, as the
 // original renders one frame per step).
-void tick(Game& g, const Sticks& s, Renderer& r, SDL_GPUCommandBuffer* cmd);
+void tick(Game& g, std::span<const Sticks> pads, Renderer& r, SDL_GPUCommandBuffer* cmd);
 
 }  // namespace geow2

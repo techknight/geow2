@@ -26,6 +26,7 @@ struct Bullet {
   float gravity = 1.0f;         // +0x88: how much wells bend it (1.25 for centre shots)
   uint64_t order = 0;           // its place in the object list (creation order)
   bool removed = false;         // flag 1: hit something, gone
+  size_t owner = 0;             // +0x48: the ship that fired it (World::players)
 };
 
 // The line shape player bullets draw with (+0x40 / +0x3C when +0x7C != 1):

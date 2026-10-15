@@ -26,9 +26,8 @@ struct ModeRules {
 // (Pacifism), sub_82035130 (King).
 ModeRules mode_rules(int mode);
 
-// A player's life outside its movement: the object's shield and bomb
-// state, its slot record (0x8219CEA8 + 0x6C per slot) and its score
-// record (0x8219D068 + 0x78 per player).
+// A ship's life outside its movement: the player object's shield and bomb
+// state and its slot record (0x8219CEB4 + 0x6C per slot).
 struct PlayerLife {
   // The object (sub_82051448). `present` is the slot's object pointer
   // (dat_8219CEB4), cleared when the removed object is deleted.
@@ -44,20 +43,25 @@ struct PlayerLife {
   float respawn_wait = 0.25f;    // dat_8219CEB8 (dat_82000720 at the reset)
   float spawn_x = 0.0f, spawn_y = 0.0f;  // dat_8219CEC0 / dat_8219CEC4
   bool free_spawn = true;        // dat_8219CEE0: the next spawn costs no life
-  // The score record.
-  int lives = 0;                 // dat_8219D098
-  int bombs = 0;                 // dat_8219D09C
-  int deaths = 0;                // dat_8219D0A4
-  int shield_kills = 0;          // dat_8219D0D0
   int wall_wait = 0;             // +0x94: the wall sound's hold-off (sub_8204E908)
-  int64_t bomb_at = 100000;      // dat_8219D0B0: the next extra bomb's score
-  int64_t life_at = 100000;      // dat_8219D0B8: the next extra life's score
-  float lives_pulse = 0.0f;      // dat_8219D0C0: the HUD's lives row
-  float bombs_pulse = 0.0f;      // dat_8219D0C4: the HUD's bombs row
-  bool bomb_used = false;        // dat_8219D0C8
-  bool shield_hit = false;       // dat_8219D0C9
-
   bool alive() const { return present && !removed; }
+};
+
+// A score record's lives and bombs (0x8219D068 + 0x78 per record; the
+// score, multiplier and kills are World::records).
+struct LifeRecord {
+  int lives = 0;                 // +0x30 (dat_8219D098)
+  int bombs = 0;                 // +0x34 (dat_8219D09C)
+  int deaths = 0;                // +0x3C (dat_8219D0A4)
+  int shield_kills = 0;          // +0x68 (dat_8219D0D0)
+  int64_t bomb_at = 100000;      // +0x48 (dat_8219D0B0): the next extra bomb's score
+  int64_t life_at = 100000;      // +0x50 (dat_8219D0B8): the next extra life's score
+  float lives_pulse = 0.0f;      // +0x58 (dat_8219D0C0): the HUD's lives row
+  float bombs_pulse = 0.0f;      // +0x5C (dat_8219D0C4): the HUD's bombs row
+  bool bomb_used = false;        // +0x60 (dat_8219D0C8)
+  bool shield_hit = false;       // +0x61 (dat_8219D0C9)
+  int rank = 0;                  // +0x6C (dat_8219D0D4): 0 first
+  bool tie = true;               // +0x70 (dat_8219D0D8)
 };
 
 // sub_82037EA0 axes 8 and 9: a trigger's raw byte to [0, 1].
@@ -76,7 +80,7 @@ bool player_timers(PlayerLife& p, float step);
 // bomb goes off (a blast of 400 at 533.2 a second from the player, and
 // sub_8203E4B0; sound event 6), 2 when pressed without bombs (0x35), else
 // 0.
-int player_bomb(PlayerLife& p, float trigger, const ModeRules& rules);
+int player_bomb(PlayerLife& p, LifeRecord& r, float trigger, const ModeRules& rules);
 
 class World;
 

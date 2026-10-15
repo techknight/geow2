@@ -211,7 +211,7 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sti
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     Sticks s = sticks;
     if (i == bomb_step) s.right_trigger = 255;
-    tick(g, s, r, cmd);
+    tick(g, std::span<const Sticks>(&s, 1), r, cmd);
     SDL_SubmitGPUCommandBuffer(cmd);
   }
   Profile profile;
@@ -224,10 +224,11 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sti
   SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets, "
           "%zu entities, score %lld x%d, %zu particles, %zu debris, %zu linger quads, %d deaths, %d bombs left, "
           "%d bomb kills, %d lives%s; sequence phase %d level %d",
-          out.string().c_str(), frames, g.player.x, g.player.y, g.player.heading, g.camera.x, g.camera.y,
-          g.camera.zoom, g.bullets.size(), g.world->entities.size(), (long long)g.world->score, g.world->multiplier,
-          g.world->particles.size(), g.world->debris.size(), g.linger_lines.body.size() / 4, g.life.deaths, g.life.bombs,
-          g.world->bomb_kills, g.life.lives, g.over ? ", game over" : "", g.sequence.phase, g.sequence.level);
+          out.string().c_str(), frames, g.ships[0].motion.x, g.ships[0].motion.y, g.ships[0].motion.heading,
+          g.camera.x, g.camera.y, g.camera.zoom, g.bullets.size(), g.world->entities.size(),
+          (long long)g.world->records[0].score, g.world->records[0].multiplier, g.world->particles.size(),
+          g.world->debris.size(), g.linger_lines.body.size() / 4, g.recs[0].deaths, g.recs[0].bombs,
+          g.world->bomb_kills, g.recs[0].lives, g.over ? ", game over" : "", g.sequence.phase, g.sequence.level);
   return 0;
 }
 
@@ -252,7 +253,7 @@ int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, 
     }
     fe.frame(pads);
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
-    tick(g, Sticks{}, r, cmd);
+    tick(g, {}, r, cmd);
     SDL_SubmitGPUCommandBuffer(cmd);
   }
   UiCanvas ui;
@@ -353,7 +354,7 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& cache, 
       keyboard_pad(state[0], g.flow == 2);
       fe.frame(state);
       const Sticks s = (g.flow == 2) ? sticks_from(state[0], profile) : Sticks{};
-      tick(g, s, r, cmd);
+      tick(g, std::span<const Sticks>(&s, 1), r, cmd);
       if (has_sound) {
         // sub_82078970 after the wells, then sub_82079BC0.
         if (!frozen(g)) glue.gravity_wells_update(kWellMaxHits);

@@ -200,7 +200,8 @@ void GateEnd::on_delete(World&) {
 
 int GateEnd::special_points(const World& w) const {
   // The chain count squared, times 100 (at most 5).
-  const int c = w.gate_chain < 1 ? 1 : std::min(w.gate_chain, 5);
+  const int chain = w.players.empty() ? 0 : w.players[w.scorer].gate_chain;
+  const int c = chain < 1 ? 1 : std::min(chain, 5);
   return c * c * 100;
 }
 
@@ -218,7 +219,8 @@ void gate_crossings(World& w) {
     const float ux = inv * ex, uy = inv * ey;
     const float nx = uy, ny = -ux;
     const float epx = b.prev_x - a.prev_x, epy = b.prev_y - a.prev_y;
-    for (PlayerTarget& p : w.players) {
+    for (size_t pi = 0; pi < w.players.size(); ++pi) {
+      PlayerTarget& p = w.players[pi];
       if (p.removed) continue;
       // Which side the player was on (against last step's beam) and is
       // on, 6 either side of the line (dat_82001414).
@@ -232,12 +234,12 @@ void gate_crossings(World& w) {
       // Two blasts (70, over a sixth of 70 / step a second, kind 1), the
       // chain counted, both ends destroyed (kind 5).
       const float speed = float(70.0f / w.step) * 0.166666672f;  // dat_820018EC, dat_82000700
-      w.add(std::make_unique<Shockwave>(w, 70.0f, speed, a.x, a.y, 1));
-      w.add(std::make_unique<Shockwave>(w, 70.0f, speed, b.x, b.y, 1));
-      if (w.clock - w.gate_chain_time > kChainTime || w.gate_chain >= 5) w.gate_chain = 0;
-      ++w.gate_chain;
-      w.gate_chain_time = w.clock;
-      w.play(audio::Event(uint8_t(audio::Event::kGateScore1) + uint8_t(std::min(w.gate_chain, 5) - 1)));
+      static_cast<Shockwave*>(w.add(std::make_unique<Shockwave>(w, 70.0f, speed, a.x, a.y, 1)))->player = pi;
+      static_cast<Shockwave*>(w.add(std::make_unique<Shockwave>(w, 70.0f, speed, b.x, b.y, 1)))->player = pi;
+      if (w.clock - p.gate_chain_time > kChainTime || p.gate_chain >= 5) p.gate_chain = 0;
+      ++p.gate_chain;
+      p.gate_chain_time = w.clock;
+      w.play(audio::Event(uint8_t(audio::Event::kGateScore1) + uint8_t(std::min(p.gate_chain, 5) - 1)));
       Killer k;
       k.x = p.x;
       k.y = p.y;
@@ -245,6 +247,7 @@ void gate_crossings(World& w) {
       k.vy = p.vy;
       k.kind = 5;
       k.object_type = 1;  // the player
+      k.player = pi;
       a.kill(w, k);
       b.kill(w, k);
       break;

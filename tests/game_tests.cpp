@@ -479,18 +479,18 @@ static void test_shot_kills() {
   shots[0].vx = 600.0f;
   shot_collisions(w, shots);
   expect(shots[0].removed && near(shots[0].x, 50.0f), "shot moves to the closest point of its path");
-  expect((e->flags & kEntityRemoved) && w.death_markers.size() == 1 && w.score == 5, "wanderer killed, 5 points");
+  expect((e->flags & kEntityRemoved) && w.death_markers.size() == 1 && w.records[0].score == 5, "wanderer killed, 5 points");
   w.purge();
   expect(w.entities.empty() && w.enemy_count == 0, "killed wanderer deleted");
   // At x4 the same kill is worth 25.
-  w.multiplier = 4;
+  w.records[0].multiplier = 4;
   Entity* f = spawn_enemy(w, 1, 0.0f, 50.0f, 0.0f);
   f->flags &= ~kEntityFadingIn;
   std::vector<Bullet> more(1);
   more[0].prev_x = 30.0f;
   more[0].x = 60.0f;
   shot_collisions(w, more);
-  expect(w.score == 30, "x4 wanderer worth 25");
+  expect(w.records[0].score == 30, "x4 wanderer worth 25");
 }
 
 static void test_enemies() {
@@ -527,7 +527,7 @@ static void test_enemies() {
   int tiny = 0;
   for (auto& e : w.entities)
     if (e->type == 0xA && !(e->flags & kEntityFadingIn) && (e->flags & kEntityTouches)) ++tiny;
-  expect(tiny == 3 && w.score == 25, "spinner splits into three");
+  expect(tiny == 3 && w.records[0].score == 25, "spinner splits into three");
   // A bombed spinner does not split.
   Entity* sp2 = spawn_enemy(w, 4, 0.0f, -50.0f, 0.0f);
   Killer k;
@@ -591,8 +591,8 @@ static void test_gate() {
   int blasts = 0;
   for (auto& e : w.entities)
     if (e->type == 0xF) ++blasts;
-  expect((ga.flags & kEntityRemoved) && (gb.flags & kEntityRemoved) && blasts == 2 && w.gate_chain == 1 &&
-             w.score == 50,
+  expect((ga.flags & kEntityRemoved) && (gb.flags & kEntityRemoved) && blasts == 2 && w.players[0].gate_chain == 1 &&
+             w.records[0].score == 50,
          "gate set off by crossing");
   // Shots only flash the ends.
   rng.seed(12);
@@ -645,7 +645,7 @@ static void test_gravity_well() {
   int blasts = 0;
   for (auto& o : w2.entities)
     if (o->type == 0xF) ++blasts;
-  expect((h->flags & kEntityRemoved) && blasts == 1 && w2.score == 25, "well shot to 0 bursts (100 points)");
+  expect((h->flags & kEntityRemoved) && blasts == 1 && w2.records[0].score == 25, "well shot to 0 bursts (100 points)");
 }
 
 void test_sequence_parser() {

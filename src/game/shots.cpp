@@ -38,6 +38,7 @@ void sweep(World& w, Bullet& b) {
     k.kind = 1;
     k.object_type = 5;
     k.shot_bounces = b.bounces;
+    k.player = b.owner;
     o.hit_by_shot(w, k);
     // The shot's slot 6 (sub_82051E58): gone, unless what it hit bounces
     // it (type codes 0x11 and 0x1F, not ported yet).

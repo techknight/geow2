@@ -16,6 +16,7 @@ class Shockwave : public Entity {
 
   float max_radius = 0, speed = 0, r = 0;  // +0x6C, +0x70, +0x74
   int kind = 0;                            // +0x68
+  size_t player = 0;                       // +0x48: the player it is credited to
 
  private:
   void blast(World& w);  // sub_82056850
