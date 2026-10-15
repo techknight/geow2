@@ -619,10 +619,12 @@ void Proton::draw(World& w, LineBatch& out) {
     return;
   }
   for (int i = 0; i < 2; ++i) {
-    float f = float(std::fmod(double(fade * 3.0f), 1.0)) + float(i);
+    // The alpha folds back above 1; the size does not (sub_82053A80).
+    const float g = float(std::fmod(double(fade * 3.0f), 1.0)) + float(i);
+    float f = g;
     if (f >= 1.0f) f = 2.0f - f;
     if (!(f >= 0.025f)) continue;  // dat_82000D64
-    const float q = std::fmaf(f, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
+    const float q = std::fmaf(g, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
     Mat4 scaled = m;
     for (int r = 0; r < 3; ++r)
       for (int c = 0; c < 4; ++c) scaled.m[r * 4 + c] = m.m[r * 4 + c] * q;

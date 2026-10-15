@@ -278,7 +278,8 @@ void GravityWell::draw(World& w, LineBatch& out) {
     float f = g;
     if (f >= 1.0f) f = float(2.0 - double(f));
     if (f < 0.025f) continue;
-    const float q = std::fmaf(f, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
+    // The size from the unfolded value (sub_820490A0).
+    const float q = std::fmaf(g, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
     Mat4 scaled = m;
     for (int r = 0; r < 3; ++r)
       for (int col = 0; col < 4; ++col) scaled.m[r * 4 + col] = m.m[r * 4 + col] * q;
