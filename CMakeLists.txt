@@ -17,6 +17,7 @@ endif()
 # Extractor: reads the user's XBLA package and writes the cache the game uses.
 add_library(geow2_extract STATIC
   src/extract/aes128.cpp
+  src/extract/audio.cpp
   src/extract/io.cpp
   src/extract/sha1.cpp
   src/extract/lzx.cpp

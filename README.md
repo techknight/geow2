@@ -31,7 +31,9 @@ From a "x64 Native Tools Command Prompt for VS 2022":
     cmake --build build
     ctest --test-dir build
 
-Then turn your package into the cache the port reads:
+Then turn your package into the cache the port reads (the sound needs
+`ffmpeg` on PATH, or its path in the environment variable `GEOW2_FFMPEG`,
+to decode the game's XMA audio; without it the game is partly silent):
 
     build\geow2-extract unpack <path to the LIVE package or extracted folder> cache
     build\geow2-extract verify cache

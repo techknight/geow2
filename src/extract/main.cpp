@@ -3,6 +3,7 @@
 //
 //   geow2-extract unpack <package-file | extracted-folder> <cache-dir>
 //   geow2-extract verify <cache-dir>
+//   geow2-extract audio <cache-dir>       (redo the sound only: needs ffmpeg)
 //   geow2-extract dump-db <cache-dir>     (developer aid: every Data.bin value)
 
 #include <cmath>
@@ -14,6 +15,7 @@
 #include "data/flask.h"
 #include "data/xtlo.h"
 #include "game/model_geometry.h"
+#include "extract/audio.h"
 #include "extract/known_files.h"
 #include "extract/sha1.h"
 #include "extract/stfs.h"
@@ -101,6 +103,8 @@ int unpack(const std::string& source, const std::string& cache) {
   for (const auto& [path, data] : files) write_file(root / "files" / path, data);
   write_xex(files.at("default.xex"), root / "xex");
   std::printf("unpacked %zu files to %s\n", files.size(), cache.c_str());
+  // The sound banks as PCM (XMA through ffmpeg).
+  extract_audio(root / "files" / "audio", root / "audio");
   return 0;
 }
 
@@ -232,10 +236,14 @@ int main(int argc, char** argv) {
     const std::string cmd = argc > 1 ? argv[1] : "";
     if (cmd == "unpack" && argc == 4) return unpack(argv[2], argv[3]);
     if (cmd == "verify" && argc == 3) return verify(argv[2]);
+    if (cmd == "audio" && argc == 3) {
+      extract_audio(fs::path(argv[2]) / "files" / "audio", fs::path(argv[2]) / "audio");
+      return 0;
+    }
     if (cmd == "dump-db" && argc == 3) return dump_db(argv[2]);
     std::fprintf(stderr,
                  "usage:\n  geow2-extract unpack <package-file | extracted-folder> <cache-dir>\n"
-                 "  geow2-extract verify <cache-dir>\n");
+                 "  geow2-extract verify <cache-dir>\n  geow2-extract audio <cache-dir>\n");
     return 2;
   } catch (const std::exception& e) {
     std::fprintf(stderr, "error: %s\n", e.what());
