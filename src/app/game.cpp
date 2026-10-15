@@ -631,6 +631,14 @@ void award_achievement(Game& g, uint32_t bit, int flags) {
   }
 }
 
+void delete_objects(Game& g) {
+  g.world->delete_objects();
+  g.bullets.clear();
+  g.life.present = false;
+  g.life.removed = true;
+  g.field_live = false;
+}
+
 void ScoreTable::insert(int64_t score, int multiplier, const std::string& name) {
   entry[0] = {score, multiplier, name};
   if (entry[1].score < score) entry[1] = entry[0];

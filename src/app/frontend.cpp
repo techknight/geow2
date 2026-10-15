@@ -323,7 +323,8 @@ void Frontend::end_game(int reason) {
 }
 
 void Frontend::finish() {
-  // sub_820338D8 (menu music, sub_82078A50(0)).
+  // sub_820338D8: every object deleted, the menu music (sub_82078A50(0)).
+  delete_objects(g_);
   const int reason = g_.end_reason;
   if (reason == 2) {
     const int mode = g_.rules.mode;

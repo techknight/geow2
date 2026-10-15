@@ -141,10 +141,15 @@ Entity* World::add(std::unique_ptr<Entity> e) {
 
 void World::remove(Entity& e) { e.flags |= kEntityRemoved; }
 
-void World::new_game() {
+void World::delete_objects() {
   entities.clear();
   for (auto& c : cells) c.clear();
   enemy_count = 0;
+  for (PlayerTarget& p : players) p.removed = true;
+}
+
+void World::new_game() {
+  delete_objects();
   frozen = false;
   bomb_kills = 0;
   clock = 0.0f;

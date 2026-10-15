@@ -182,6 +182,8 @@ bool load(Game& g, const std::filesystem::path& cache, int64_t seed, int mode);
 // sub_82033148: a new game of `mode` (the game block reset, the mode's
 // setup, the playfield and spawners reset); the flow goes to playing.
 void start_game(Game& g, int mode);
+// sub_82035A70: every object deleted, the ship and the shots with them.
+void delete_objects(Game& g);
 // sub_82033610 / sub_82033638 / sub_82034588.
 inline bool in_game(const Game& g) { return g.flow == 2 || g.flow == 3; }
 inline bool ending(const Game& g) { return g.flow == 4 || 0.0f < g.end_timer; }
