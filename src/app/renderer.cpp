@@ -249,7 +249,7 @@ void Renderer::release() {
     if (s) SDL_ReleaseGPUSampler(device_, s);
   for (SDL_GPUTexture* t : {sprite_, star_sprite_})
     if (t) SDL_ReleaseGPUTexture(device_, t);
-  for (Buffer* b : {&lines_, &ui_lines_, &particle_vertices_, &grid_vertices_, &wall_vertices_, &warp_vertices_, &sprite_vertices_, &star_vertices_,
+  for (Buffer* b : {&lines_, &ui_lines_, &linger_lines_, &particle_vertices_, &grid_vertices_, &wall_vertices_, &warp_vertices_, &sprite_vertices_, &star_vertices_,
                     &quad_index_, &warp_index_}) {
     if (b->buf) SDL_ReleaseGPUBuffer(device_, b->buf);
     if (b->staging) SDL_ReleaseGPUTransferBuffer(device_, b->staging);
@@ -493,7 +493,8 @@ SDL_GPUGraphicsPipeline* Renderer::composite_pipeline(SDL_GPUTextureFormat forma
 void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextureFormat format, uint32_t out_w,
                     uint32_t out_h, const Mat4& vp, const std::vector<StarVertex>& stars,
                     const std::vector<GridVertex>* grid, const std::vector<GridVertex>& walls,
-                    const std::vector<LineVertex>& particles, const LineBatch& foreground, const LineBatch& ui,
+                    const std::vector<LineVertex>& particles, const LineBatch& linger, const LineBatch& foreground,
+                    const LineBatch& ui,
                     const Mat4& ui_transform) {
   // The 16:9 picture, letterboxed into the output.
   uint32_t pw = out_w, ph = uint32_t(float(out_w) / kAspect + 0.5f);
@@ -513,7 +514,12 @@ void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextu
   std::vector<LineVertex> uv(ui.body);
   uv.insert(uv.end(), ui.caps.begin(), ui.caps.end());
   const uint32_t ui_body = uint32_t(ui.body.size() / 4), ui_caps = uint32_t(ui.caps.size() / 4);
-  quad_indices(cmd, std::max({body_quads + cap_quads, grid_quads, particle_quads, ui_body + ui_caps}));
+  std::vector<LineVertex> lv(linger.body);
+  lv.insert(lv.end(), linger.caps.begin(), linger.caps.end());
+  const uint32_t linger_body = uint32_t(linger.body.size() / 4), linger_caps = uint32_t(linger.caps.size() / 4);
+  upload(cmd, linger_lines_, SDL_GPU_BUFFERUSAGE_VERTEX, lv.data(), uint32_t(lv.size() * sizeof(LineVertex)));
+  quad_indices(cmd, std::max({body_quads + cap_quads, grid_quads, particle_quads, ui_body + ui_caps,
+                              linger_body + linger_caps}));
   upload(cmd, ui_lines_, SDL_GPU_BUFFERUSAGE_VERTEX, uv.data(), uint32_t(uv.size() * sizeof(LineVertex)));
   upload(cmd, particle_vertices_, SDL_GPU_BUFFERUSAGE_VERTEX, particles.data(),
          uint32_t(particles.size() * sizeof(LineVertex)));
@@ -583,6 +589,16 @@ void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextu
     const SDL_GPUBufferBinding vb{particle_vertices_.buf, 0};
     SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
     SDL_DrawGPUIndexedPrimitives(rp, particle_quads * 6, 1, 0, 0, 0);
+  }
+  // The lingering numbers (Render.Layer.Linger): UI lines in world space
+  // with the world camera and the line presets 0x821B4694 / 0x821B46B8.
+  if (linger_body + linger_caps) {
+    const SDL_GPUBufferBinding vb{linger_lines_.buf, 0};
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    SDL_BindGPUGraphicsPipeline(rp, body_);
+    if (linger_body) SDL_DrawGPUIndexedPrimitives(rp, linger_body * 6, 1, 0, 0, 0);
+    SDL_BindGPUGraphicsPipeline(rp, caps_);
+    if (linger_caps) SDL_DrawGPUIndexedPrimitives(rp, linger_caps * 6, 1, 0, int32_t(linger_body * 4), 0);
   }
   SDL_EndGPURenderPass(rp);
 

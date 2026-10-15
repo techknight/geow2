@@ -126,6 +126,7 @@ struct Game {
   std::vector<GridVertex> walls;          // the arena walls (fixed)
   std::vector<LineVertex> particle_quads;  // this step's particle streaks
   LineBatch debris_lines;                  // this step's line debris
+  LineBatch linger_lines;                  // this step's lingering numbers
   // Enemies: the units of Data.bin, the playfield and Deadline's spawner.
   std::unique_ptr<Units> units;
   std::unique_ptr<World> world;
@@ -377,6 +378,7 @@ bool load(Game& g, const fs::path& cache, int64_t seed) {
     };
     if (auto t = text.find("ID_X_SCORE")) g.hud_text.score = narrow(*t);
     if (auto t = text.find("ID_X_HIGH_SCORE")) g.hud_text.high_score = narrow(*t);
+    if (auto t = text.find("ID_X_BONUS_MULTIPLIER")) g.world->bonus_multiplier_text = narrow(*t);
   } catch (const std::exception& e) {
     SDL_Log("cannot read the text (%s): the HUD uses its built-in labels", e.what());
   }
@@ -526,6 +528,10 @@ void step(Game& g, const Sticks& s) {
   g.debris_lines.clear();
   w.debris.draw(g.debris_lines, g.lights);
   w.debris.step(w.smash, kStep, w.half_x, w.half_y);
+  // The lingering numbers likewise (sub_8205A8F0, then sub_8205A7F0).
+  g.linger_lines.clear();
+  w.popups.draw(g.font, g.linger_lines);
+  w.popups.step(kStep);
 
   // The stars' step (sub_82075548, on the render worker each frame).
   g.stars.update(*g.gm, 1.0f, g.star_vertices);
@@ -600,7 +606,7 @@ void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_
   hud.lives_mode = g.rules.lives_mode;
   draw_hud(g.font, g.hud_text, hud, ui);
   r.draw(cmd, target, format, w, h, camera_view_projection(g.camera, *g.gm), g.star_vertices,
-         g.grid_visible ? &g.grid_lines : nullptr, g.walls, g.particle_quads, front, ui, g.ui);
+         g.grid_visible ? &g.grid_lines : nullptr, g.walls, g.particle_quads, g.linger_lines, front, ui, g.ui);
 }
 
 // One simulation step and its light map update (one per step, as the
@@ -658,10 +664,11 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sti
   write_png(out, w, h, {px, size_t(w) * h * 4});
   SDL_UnmapGPUTransferBuffer(dev, down);
   SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets, "
-          "%zu entities, score %lld x%d, %zu particles, %zu debris, %d deaths, %d bombs left, %d bomb kills",
+          "%zu entities, score %lld x%d, %zu particles, %zu debris, %zu linger quads, %d deaths, %d bombs left, "
+          "%d bomb kills",
           out.string().c_str(), frames, g.player.x, g.player.y, g.player.heading, g.camera.x, g.camera.y,
           g.camera.zoom, g.bullets.size(), g.world->entities.size(), (long long)g.world->score, g.world->multiplier, g.world->particles.size(),
-          g.world->debris.size(), g.life.deaths, g.life.bombs, g.world->bomb_kills);
+          g.world->debris.size(), g.linger_lines.body.size() / 4, g.life.deaths, g.life.bombs, g.world->bomb_kills);
   SDL_ReleaseGPUTransferBuffer(dev, down);
   SDL_ReleaseGPUTexture(dev, tex);
   return 0;

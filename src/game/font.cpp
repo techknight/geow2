@@ -12,9 +12,8 @@ constexpr uint32_t kGlyphs = 0x821826A0;
 constexpr int kGlyphCount = 123;
 constexpr uint32_t kGlyphSize = 0x16C;
 
-// Render.Ui.LineWidth (0x821A3054, value 0x821A3074) times dat_821825F4
-// (1.0 outside the linger effect) times 0.75 (dat_82000718).
-constexpr float kUiHalfWidth = (1.75f * 1.0f) * 0.75f;
+// Render.Ui.LineWidth (0x821A3054, value 0x821A3074).
+constexpr float kUiLineWidth = 1.75f;
 
 float be_float(std::span<const uint8_t> image, uint32_t address) {
   const size_t o = address - kBase;
@@ -54,7 +53,7 @@ struct UiLine {
   double X0, Y0, X1, Y1, A, B, zx, zy, Dx, ux, uy, hw;
 };
 
-UiLine ui_line(float x0, float y0, float x1, float y1) {
+UiLine ui_line(float x0, float y0, float x1, float y1, float factor) {
   // Render.Ui.TextX / TextY / TextZ (0x821A38B4, 0x821A40F4, 0x821A4934)
   // are 0.
   const float X0 = 0.0f + x0, X1 = 0.0f + x1, Y0 = 0.0f + y0, Y1 = 0.0f + y1;
@@ -66,7 +65,8 @@ UiLine ui_line(float x0, float y0, float x1, float y1) {
   u.Y0 = Y0;
   u.X1 = X1;
   u.Y1 = Y1;
-  u.hw = kUiHalfWidth;
+  // Half-width: (LineWidth * dat_821825F4) * 0.75 (dat_82000718).
+  u.hw = (kUiLineWidth * factor) * 0.75f;
   u.ux = i * dx;
   u.uy = i * dy;
   u.A = u.hw * u.uy;
@@ -83,8 +83,8 @@ LineVertex vertex(double x, double y, float side, const float rgb[3], float a) {
 
 }  // namespace
 
-void emit_ui_line(LineBatch& out, float x0, float y0, float x1, float y1, const float colour[4]) {
-  const UiLine u = ui_line(x0, y0, x1, y1);
+void emit_ui_line(LineBatch& out, float x0, float y0, float x1, float y1, const float colour[4], float factor) {
+  const UiLine u = ui_line(x0, y0, x1, y1, factor);
   const float rgb[3] = {colour[0] * 8.0f, colour[1] * 8.0f, colour[2] * 8.0f};  // dat_82000D18
   const float a = colour[3];
   out.body.push_back(vertex((u.X0 - u.A) - u.zx, (u.Y0 - u.B) - u.zy, -1.0f, rgb, a));
@@ -102,8 +102,8 @@ void emit_ui_line(LineBatch& out, float x0, float y0, float x1, float y1, const 
 }
 
 void emit_ui_body(LineBatch& out, float x0, float y0, float x1, float y1, const float colour0[4],
-                  const float colour1[4]) {
-  const UiLine u = ui_line(x0, y0, x1, y1);
+                  const float colour1[4], float factor) {
+  const UiLine u = ui_line(x0, y0, x1, y1, factor);
   const float c0[3] = {colour0[0] * 8.0f, colour0[1] * 8.0f, colour0[2] * 8.0f};
   const float c1[3] = {colour1[0] * 8.0f, colour1[1] * 8.0f, colour1[2] * 8.0f};
   out.body.push_back(vertex((u.X0 - u.A) - u.zx, (u.Y0 - u.B) - u.zy, -1.0f, c0, colour0[3]));
@@ -212,9 +212,9 @@ float Font::glyph(LineBatch& out, float x, float y, float w, float h, int c, con
     const float x0 = std::fmaf(s[0], W, x), y0 = std::fmaf(s[1], H, Y);
     const float x1 = std::fmaf(s[2], W, x), y1 = std::fmaf(s[3], H, Y);
     if (k < capped)
-      emit_ui_line(out, x0, y0, x1, y1, colour);
+      emit_ui_line(out, x0, y0, x1, y1, colour, line_factor_);
     else
-      emit_ui_body(out, x0, y0, x1, y1, colour, colour);
+      emit_ui_body(out, x0, y0, x1, y1, colour, colour, line_factor_);
   }
   return adv;
 }

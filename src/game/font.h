@@ -13,10 +13,11 @@ namespace geow2 {
 // The UI line emitter sub_8205FBA8: a line in UI units (640 x 360) as a
 // body quad and two square end caps, half-width Render.Ui.LineWidth (1.75)
 // times 0.75, colour rgb times 8 with its alpha.
-void emit_ui_line(LineBatch& out, float x0, float y0, float x1, float y1, const float colour[4]);
+// `factor` is dat_821825F4 (1, or 0.667 while the linger layer draws).
+void emit_ui_line(LineBatch& out, float x0, float y0, float x1, float y1, const float colour[4], float factor = 1.0f);
 // sub_820603C0: the body quad only, a colour per end.
 void emit_ui_body(LineBatch& out, float x0, float y0, float x1, float y1, const float colour0[4],
-                  const float colour1[4]);
+                  const float colour1[4], float factor = 1.0f);
 
 // The vector font (123 glyphs at 0x821826A0 in the user's image, 0x16C
 // bytes each: code, width, up to 22 segments in a 1 x 1 box), with the
@@ -25,6 +26,8 @@ void emit_ui_body(LineBatch& out, float x0, float y0, float x1, float y1, const 
 class Font {
  public:
   static Font from_image(std::span<const uint8_t> image);
+  // dat_821825F4: the line width factor text is drawn with.
+  void set_line_factor(float f) const { line_factor_ = f; }
 
   // sub_82075AD8: the advance after character c (followed by `next`), in
   // units of the width scale; codes 4 and 7 toggle raised and half-height
@@ -57,6 +60,7 @@ class Font {
   std::vector<Glyph> glyphs_;
   std::array<uint8_t, 256> map_{};
   std::array<uint8_t, 256> full_size_{};  // 0: drawn as a small capital
+  mutable float line_factor_ = 1.0f;
 };
 
 // sub_8205D740: a number with thousands separators (',' in English).

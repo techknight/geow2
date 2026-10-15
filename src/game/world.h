@@ -11,6 +11,7 @@
 #include "game/effects.h"
 #include "game/game_math.h"
 #include "game/particles.h"
+#include "game/popups.h"
 #include "game/light_map.h"
 #include "game/line_quads.h"
 #include "game/math.h"
@@ -217,6 +218,9 @@ class World {
   // and multiplier (+0x40; the HUD shows x1 at the start).
   int64_t score = 0;
   int multiplier = 1;
+  int multiplier_milestone = 10;        // +0x44 (the record constructor, 0x82034868)
+  Popups popups;
+  std::string bonus_multiplier_text = "Bonus multiplier";  // ID_X_BONUS_MULTIPLIER (0x79)
   int kills = 0;                        // dat_8219D0A0
   // Particles and the effects that make them.
   Particles particles;
