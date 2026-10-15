@@ -23,7 +23,8 @@
 // step by step from a CSV with a step column and raw lx, ly, rx, ry, lt,
 // rt columns for pad 0 and p1_lx .. p3_rt for the others (a step without
 // a row keeps the previous one; a pad without columns keeps its
-// --stick / --fire). With a seq_phase column (Sequence's phase in the
+// --stick / --fire); --positions writes every unit after each step. With
+// a seq_phase column (Sequence's phase in the
 // recorded game) the music's TransitionSwitch, which the original reads
 // from its audio thread, is raised on the steps where that phase went
 // from 1 to 2 or from 5 to 6. The third runs the front end instead,
@@ -352,7 +353,7 @@ bool transition_at(const StepInputs& in, size_t step) {
 int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std::array<Sticks, 4>& sticks,
                  const StepInputs& inputs, int bomb_step, const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h,
                  bool exact_720p, const fs::path& trace_path, const fs::path& rng_path, int rng_step,
-                 const fs::path& dump_path, int dump_step) {
+                 const fs::path& dump_path, int dump_step, const fs::path& positions_path) {
   // --trace: after each step, the clock and slot 0's object (x, y, vx,
   // vy) at full precision, as the oracle's memory reads give them.
   std::ofstream trace;
@@ -366,6 +367,10 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
       g.world->add(std::make_unique<PowerUp>(*g.world, d.x, d.y, 3));
     else
       spawn_enemy(*g.world, d.type, 0.0f, d.x, d.y);
+  // --positions: every unit (creation order) after each step, as
+  // "step type:x:y ...".
+  std::ofstream positions;
+  if (!positions_path.empty()) positions.open(positions_path, std::ios::trunc);
   for (int i = 0; i < frames; ++i) {
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     // By joined index, from each joined pad.
@@ -401,6 +406,16 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
         std::snprintf(line, sizeof(line), "%d %.9g %.9g\n", e->type, double(e->x), double(e->y));
         f << line;
       }
+    }
+    if (positions.is_open()) {
+      positions << (i + 1);
+      for (const auto& e : g.world->entities) {
+        if (!e->unit_based || (e->flags & kEntityRemoved)) continue;
+        char u[96];
+        std::snprintf(u, sizeof(u), " %d:%.9g:%.9g", e->type, double(e->x), double(e->y));
+        positions << u;
+      }
+      positions << '\n';
     }
     if (trace.is_open()) {
       const PlayerMotion& m = g.ships[0].motion;
@@ -714,7 +729,7 @@ int main(int argc, char** argv) {
   std::array<LobbyPad, 4> lobby{};
   bool versus = false, multiplayer = false;
   fs::path screenshot;
-  fs::path trace_path, rng_path, dump_path, inputs_path;
+  fs::path trace_path, rng_path, dump_path, inputs_path, positions_path;
   int rng_step = -1, dump_step = -1;
   uint32_t shot_w = 1280, shot_h = 720;
   int64_t seed = -1;
@@ -738,6 +753,7 @@ int main(int argc, char** argv) {
     else if (a == "--frontend") frontend = true;
     else if (a == "--trace" && i + 1 < argc) trace_path = argv[++i];
     else if (a == "--inputs" && i + 1 < argc) inputs_path = argv[++i];
+    else if (a == "--positions" && i + 1 < argc) positions_path = argv[++i];
     else if (a == "--rng-state" && i + 2 < argc) {
       rng_path = argv[++i];
       rng_step = std::atoi(argv[++i]);
@@ -853,7 +869,7 @@ int main(int argc, char** argv) {
     for (size_t p = 0; p < 4; ++p) per_pad[p] = pad_sticks[p] ? *pad_sticks[p] : sticks;
     const StepInputs inputs = inputs_path.empty() ? StepInputs{} : load_inputs(inputs_path);
     rc = run_headless(dev, renderer, game, frames, per_pad, inputs, bomb_step, spawns, screenshot, shot_w, shot_h,
-                      exact_720p == 1, trace_path, rng_path, rng_step, dump_path, dump_step);
+                      exact_720p == 1, trace_path, rng_path, rng_step, dump_path, dump_step, positions_path);
   } else {
     Display d = load_display(profile_dir);
     if (fullscreen >= 0) d.fullscreen = fullscreen != 0;
