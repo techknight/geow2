@@ -203,7 +203,7 @@ void Sequence::reset(World& w) {
   geom_target.fill(0);
   geom_got.fill(0);
   wait = 0.0f;
-  level = 0;  // Level.StartLevel (0x8219D438, default 0)
+  level = 0;  // Level.StartLevel (record 0x8219D438, value 0x8219D458, default 0)
   cursor = 0;
   shown_level = level;
   reset_screen(w);
@@ -249,7 +249,7 @@ void Sequence::start_level(World& w) {
   wait = 0.0f;
   if (level >= 0 && level < 20) geom_target[size_t(level)] = 0;
   cursor = 0;
-  // sub_8203A2B8: Level.TestLevel (0x8219D404, default -1) would replace
+  // sub_8203A2B8: Level.TestLevel (value 0x8219D424, default -1) would replace
   // the index; the first record with that level.
   commands.clear();
   const int want = test_level != -1 ? test_level : level;

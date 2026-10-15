@@ -475,7 +475,7 @@ int main(int argc, char** argv) {
   }
   Game game;
   if (!load(game, cache, seed, mode)) return 1;
-  // Level.StartLevel (0x8219D438) for development: Sequence starts at
+  // Level.StartLevel (value 0x8219D458) for development: Sequence starts at
   // that level (sub_82039628 sets both the level and the one shown).
   if (start_level >= 0) game.sequence.level = game.sequence.shown_level = start_level;
   SDL_GPUDevice* dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
