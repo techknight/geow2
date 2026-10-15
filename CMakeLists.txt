@@ -42,10 +42,12 @@ add_library(geow2_game STATIC
   src/game/display_gamma.cpp
   src/game/effects.cpp
   src/game/enemies.cpp
+  src/game/font.cpp
   src/game/game_math.cpp
   src/game/gate.cpp
   src/game/geoms.cpp
   src/game/grid.cpp
+  src/game/hud.cpp
   src/game/gravity_well.cpp
   src/game/killer_ghost.cpp
   src/game/light_map.cpp
@@ -86,7 +88,7 @@ if(GEOW2_BUILD_GAME)
   find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" ${VULKAN_SDK_BINS} REQUIRED)
   set(SHADER_OUT ${CMAKE_CURRENT_BINARY_DIR}/shaders)
   set(SPIRV)
-  foreach(shader line.vert line_body.frag line_cap.frag fullscreen.vert downsample.frag blur.frag combine.frag
+  foreach(shader line.vert ui_line.vert line_body.frag line_cap.frag fullscreen.vert downsample.frag blur.frag combine.frag
           composite.frag grid.vert grid.frag light_warp.vert light_warp.frag light_sprite.vert light_sprite.frag
           light_combine.frag light_feedback.frag star.vert star.frag
           wall.vert wall.frag particle.frag)

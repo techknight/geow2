@@ -50,4 +50,19 @@ Mat4 camera_view_projection(const CameraState& c, const GameMath& gm) {
   return mul(inverse(basis), perspective(gm, fov, kAspect, 1.0f, 10000.0f));
 }
 
+Mat4 ui_transform(const GameMath& gm) {
+  Mat4 m = Mat4::identity();
+  for (int r = 0; r < 3; ++r)
+    for (int c = 0; c < 4; ++c) m.m[r * 4 + c] = m.m[r * 4 + c] * 2.0f;  // dat_820006FC
+  m.m[12] = -640.0f;  // dat_82002DC4
+  m.m[13] = -360.0f;  // dat_820022A0
+  m.m[15] = 1.0f + 1.0f;
+  // Direction normalise(0, TargetY - PositionY, -PositionZ) = (0, 0, -1).
+  const float pz = 170.0f;  // Ui.PositionZ (0x821B4104, dat_82002EE8)
+  const float len = std::sqrt(0.0f + pz * pz);
+  const Mat4 basis = look_at_basis({0.0f, 0.0f, pz, 1.0f}, {0.0f, 0.0f, -pz / len, 0.0f}, {0.0f, -1.0f, 0.0f, 0.0f});
+  const float fov = kDegToRad / kRenderZoom * kFovDegrees;
+  return mul(m, mul(inverse(basis), perspective(gm, fov, kAspect, 1.0f, 10000.0f)));
+}
+
 }  // namespace geow2

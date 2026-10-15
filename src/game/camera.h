@@ -24,4 +24,10 @@ void camera_follow_single(CameraState& c, const float* xs, const float* ys, int 
 // times zoom over Render.Zoom (1.0), aspect 16:9, near 1, far 10000.
 Mat4 camera_view_projection(const CameraState& c, const GameMath& gm);
 
+// The UI transform (sub_82067E40): UI units (640 x 360, y down) to clip
+// space: M (x - 320, y - 180, z, via rows doubled and w = 2) times the view
+// from (0, Ui.PositionY 0, Ui.PositionZ 170) looking down -z with up
+// (0, -1, 0), times the 36 degree, 16:9 projection.
+Mat4 ui_transform(const GameMath& gm);
+
 }  // namespace geow2

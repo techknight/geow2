@@ -106,6 +106,7 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   constexpr auto V = SDL_GPU_SHADERSTAGE_VERTEX;
   constexpr auto F = SDL_GPU_SHADERSTAGE_FRAGMENT;
   SDL_GPUShader* line_vs = shader("line.vert.spv", V, 0, 1);
+  SDL_GPUShader* ui_vs = shader("ui_line.vert.spv", V, 0, 1);
   SDL_GPUShader* body_fs = shader("line_body.frag.spv", F, 0, 0);
   SDL_GPUShader* cap_fs = shader("line_cap.frag.spv", F, 0, 0);
   SDL_GPUShader* grid_vs = shader("grid.vert.spv", V, 0, 1);
@@ -134,6 +135,9 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   constexpr auto F4 = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
   body_ = make_pipeline(device, line_vs, body_fs, kLayerFormat, true, sizeof(LineVertex), {{F4, 0}, {F4, 16}});
   caps_ = make_pipeline(device, line_vs, cap_fs, kLayerFormat, true, sizeof(LineVertex), {{F4, 0}, {F4, 16}});
+  // The UI's line presets 0x821B45B0 / 0x821B45BC: the same pixel shaders.
+  ui_body_ = make_pipeline(device, ui_vs, body_fs, kLayerFormat, true, sizeof(LineVertex), {{F4, 0}, {F4, 16}});
+  ui_caps_ = make_pipeline(device, ui_vs, cap_fs, kLayerFormat, true, sizeof(LineVertex), {{F4, 0}, {F4, 16}});
   grid_ = make_pipeline(device, grid_vs, grid_fs, kLayerFormat, true, sizeof(GridVertex), {{F3, 0}, {F2, 20}});
   warp_ = make_pipeline(device, warp_vs, warp_fs, kLayerFormat, false, sizeof(GridVertex), {{F2, 0}, {F2, 12}});
   sprites_ = make_pipeline(device, sprite_vs, sprite_fs, kLayerFormat, true, sizeof(LightVertex),
@@ -182,7 +186,7 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   light_combined_ = make_target(kLightW, kLightH);
   make_chain(light_chain_, kLightW, kLightH, false);
 
-  if (!body_ || !caps_ || !grid_ || !warp_ || !sprites_ || !stars_ || !walls_ || !particles_ || !star_sprite_ || !downsample_ || !blur_ || !combine_ || !light_combine_ ||
+  if (!body_ || !caps_ || !ui_body_ || !ui_caps_ || !grid_ || !warp_ || !sprites_ || !stars_ || !walls_ || !particles_ || !star_sprite_ || !downsample_ || !blur_ || !combine_ || !light_combine_ ||
       !feedback_ || !sampler_ || !sprite_sampler_ || !sprite_ || !light_.tex) {
     SDL_Log("cannot create the render resources: %s", SDL_GetError());
     return false;
@@ -236,7 +240,7 @@ void Renderer::release() {
   resize(0, 0);
   for (Target* t : {&light_, &light_warped_, &light_new_, &light_combined_}) free_target(*t);
   free_chain(light_chain_);
-  for (SDL_GPUGraphicsPipeline* p : {body_, caps_, grid_, warp_, sprites_, stars_, walls_, particles_, downsample_, blur_, combine_,
+  for (SDL_GPUGraphicsPipeline* p : {body_, caps_, ui_body_, ui_caps_, grid_, warp_, sprites_, stars_, walls_, particles_, downsample_, blur_, combine_,
                                      light_combine_, feedback_, composite_})
     if (p) SDL_ReleaseGPUGraphicsPipeline(device_, p);
   for (SDL_GPUShader* s : shaders_)
@@ -245,7 +249,7 @@ void Renderer::release() {
     if (s) SDL_ReleaseGPUSampler(device_, s);
   for (SDL_GPUTexture* t : {sprite_, star_sprite_})
     if (t) SDL_ReleaseGPUTexture(device_, t);
-  for (Buffer* b : {&lines_, &particle_vertices_, &grid_vertices_, &wall_vertices_, &warp_vertices_, &sprite_vertices_, &star_vertices_,
+  for (Buffer* b : {&lines_, &ui_lines_, &particle_vertices_, &grid_vertices_, &wall_vertices_, &warp_vertices_, &sprite_vertices_, &star_vertices_,
                     &quad_index_, &warp_index_}) {
     if (b->buf) SDL_ReleaseGPUBuffer(device_, b->buf);
     if (b->staging) SDL_ReleaseGPUTransferBuffer(device_, b->staging);
@@ -489,7 +493,8 @@ SDL_GPUGraphicsPipeline* Renderer::composite_pipeline(SDL_GPUTextureFormat forma
 void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextureFormat format, uint32_t out_w,
                     uint32_t out_h, const Mat4& vp, const std::vector<StarVertex>& stars,
                     const std::vector<GridVertex>* grid, const std::vector<GridVertex>& walls,
-                    const std::vector<LineVertex>& particles, const LineBatch& foreground) {
+                    const std::vector<LineVertex>& particles, const LineBatch& foreground, const LineBatch& ui,
+                    const Mat4& ui_transform) {
   // The 16:9 picture, letterboxed into the output.
   uint32_t pw = out_w, ph = uint32_t(float(out_w) / kAspect + 0.5f);
   if (ph > out_h) {
@@ -505,7 +510,11 @@ void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextu
   const uint32_t body_quads = uint32_t(foreground.body.size() / 4), cap_quads = uint32_t(foreground.caps.size() / 4);
   const uint32_t grid_quads = grid ? uint32_t(grid->size() / 4) : 0;
   const uint32_t particle_quads = uint32_t(particles.size() / 4);
-  quad_indices(cmd, std::max({body_quads + cap_quads, grid_quads, particle_quads}));
+  std::vector<LineVertex> uv(ui.body);
+  uv.insert(uv.end(), ui.caps.begin(), ui.caps.end());
+  const uint32_t ui_body = uint32_t(ui.body.size() / 4), ui_caps = uint32_t(ui.caps.size() / 4);
+  quad_indices(cmd, std::max({body_quads + cap_quads, grid_quads, particle_quads, ui_body + ui_caps}));
+  upload(cmd, ui_lines_, SDL_GPU_BUFFERUSAGE_VERTEX, uv.data(), uint32_t(uv.size() * sizeof(LineVertex)));
   upload(cmd, particle_vertices_, SDL_GPU_BUFFERUSAGE_VERTEX, particles.data(),
          uint32_t(particles.size() * sizeof(LineVertex)));
   upload(cmd, lines_, SDL_GPU_BUFFERUSAGE_VERTEX, v.data(), uint32_t(v.size() * sizeof(LineVertex)));
@@ -587,6 +596,17 @@ void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextu
     if (body_quads) SDL_DrawGPUIndexedPrimitives(rp, body_quads * 6, 1, 0, 0, 0);
     SDL_BindGPUGraphicsPipeline(rp, caps_);
     if (cap_quads) SDL_DrawGPUIndexedPrimitives(rp, cap_quads * 6, 1, 0, int32_t(body_quads * 4), 0);
+  }
+  // The UI (Render.Layer.Ui in layer B): bodies 0x821A4108, caps
+  // 0x821A4948, with the UI transform, additive.
+  if (ui_body + ui_caps) {
+    SDL_PushGPUVertexUniformData(cmd, 0, ui_transform.m, sizeof(ui_transform.m));
+    const SDL_GPUBufferBinding vb{ui_lines_.buf, 0};
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    SDL_BindGPUGraphicsPipeline(rp, ui_body_);
+    if (ui_body) SDL_DrawGPUIndexedPrimitives(rp, ui_body * 6, 1, 0, 0, 0);
+    SDL_BindGPUGraphicsPipeline(rp, ui_caps_);
+    if (ui_caps) SDL_DrawGPUIndexedPrimitives(rp, ui_caps * 6, 1, 0, int32_t(ui_body * 4), 0);
   }
   SDL_EndGPURenderPass(rp);
 

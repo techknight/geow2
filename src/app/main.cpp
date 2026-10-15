@@ -28,15 +28,18 @@
 #include "app/png.h"
 #include "app/renderer.h"
 #include "data/flask.h"
+#include "data/xtlo.h"
 #include "extract/bytes.h"
 #include "game/bullets.h"
 #include "game/camera.h"
 #include "game/deadline.h"
 #include "game/game_math.h"
+#include "game/font.h"
 #include "game/gate.h"
 #include "game/geoms.h"
 #include "game/gravity_well.h"
 #include "game/grid.h"
+#include "game/hud.h"
 #include "game/killer_ghost.h"
 #include "game/light_map.h"
 #include "game/line_quads.h"
@@ -100,6 +103,10 @@ struct Game {
   PlayerWeapon weapon;
   std::vector<Bullet> bullets;
   BulletShape bullet_shape;
+  // The HUD: the font, its strings and the UI transform.
+  Font font;
+  HudText hud_text;
+  Mat4 ui{};
   GeomShapes geom_shapes;
   // The player's light: unit glowColour (rgb times alpha) and glowSize
   // (sub_82050D00).
@@ -351,6 +358,7 @@ bool load(Game& g, const fs::path& cache, int64_t seed) {
   try {
     const auto image = read_file(cache / "xex" / "image.bin");
     g.bullet_shape = BulletShape::from_image(image);
+    g.font = Font::from_image(image);
     g.geom_shapes = GeomShapes::from_image(image);
   } catch (const std::exception& e) {
     SDL_Log("cannot read the shot and geom shapes: %s", e.what());
@@ -358,6 +366,20 @@ bool load(Game& g, const fs::path& cache, int64_t seed) {
   }
   g.world->geom_shapes = &g.geom_shapes;
   g.world->shots = &g.bullets;
+  g.ui = ui_transform(*g.gm);
+  // The HUD's strings in English (the slot conversion keeps Latin-1).
+  try {
+    const TextTable text(read_file(cache / "files" / "Text-en.loc"), "english");
+    auto narrow = [](const std::u16string& w) {
+      std::string out;
+      for (char16_t c : w) out.push_back(c <= 0xFF ? char(c) : '?');
+      return out;
+    };
+    if (auto t = text.find("ID_X_SCORE")) g.hud_text.score = narrow(*t);
+    if (auto t = text.find("ID_X_HIGH_SCORE")) g.hud_text.high_score = narrow(*t);
+  } catch (const std::exception& e) {
+    SDL_Log("cannot read the text (%s): the HUD uses its built-in labels", e.what());
+  }
   g.world->mode = g.rules.mode;
   return true;
 }
@@ -562,10 +584,22 @@ void foreground(const Game& g, LineBatch& out) {
 
 void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format,
             uint32_t w, uint32_t h, const Game& g) {
-  static LineBatch front;
+  static LineBatch front, ui;
   foreground(g, front);
+  // The HUD (sub_8207CA48, from the UI layer). No local score table yet:
+  // the high score shown is this game's. The bombs' pulse (dat_8219D0C4)
+  // only rises when a bomb is earned, which Deadline never does.
+  ui.clear();
+  HudState hud;
+  hud.score = g.world->score;
+  hud.multiplier = g.world->multiplier;
+  hud.bombs = g.life.bombs;
+  hud.clock = g.elapsed;
+  hud.length = g.rules.length;
+  hud.lives_mode = g.rules.lives_mode;
+  draw_hud(g.font, g.hud_text, hud, ui);
   r.draw(cmd, target, format, w, h, camera_view_projection(g.camera, *g.gm), g.star_vertices,
-         g.grid_visible ? &g.grid_lines : nullptr, g.walls, g.particle_quads, front);
+         g.grid_visible ? &g.grid_lines : nullptr, g.walls, g.particle_quads, front, ui, g.ui);
 }
 
 // One simulation step and its light map update (one per step, as the
