@@ -44,6 +44,39 @@ target_link_libraries(geow2_game PUBLIC geow2_data)
 add_executable(geow2-extract src/extract/main.cpp)
 target_link_libraries(geow2-extract PRIVATE geow2_extract geow2_data geow2_game)
 
+# The game: SDL3 (window, input, GPU) and SPIR-V shaders compiled with glslc.
+option(GEOW2_BUILD_GAME "Build the game (needs network access for SDL3 and the Vulkan SDK's glslc)" ON)
+if(GEOW2_BUILD_GAME)
+  include(FetchContent)
+  set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+  set(SDL_STATIC ON CACHE BOOL "" FORCE)
+  set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+  FetchContent_Declare(SDL3
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+    GIT_TAG release-3.4.18
+    GIT_SHALLOW TRUE)
+  FetchContent_MakeAvailable(SDL3)
+
+  file(GLOB VULKAN_SDK_BINS "C:/VulkanSDK/*/Bin")
+  find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" ${VULKAN_SDK_BINS} REQUIRED)
+  set(SHADER_OUT ${CMAKE_CURRENT_BINARY_DIR}/shaders)
+  set(SPIRV)
+  foreach(shader line.vert line.frag)
+    set(out ${SHADER_OUT}/${shader}.spv)
+    add_custom_command(OUTPUT ${out}
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADER_OUT}
+      COMMAND ${GLSLC} ${CMAKE_CURRENT_SOURCE_DIR}/src/app/shaders/${shader} -o ${out}
+      DEPENDS src/app/shaders/${shader}
+      COMMENT "glslc ${shader}")
+    list(APPEND SPIRV ${out})
+  endforeach()
+  add_custom_target(geow2_shaders DEPENDS ${SPIRV})
+
+  add_executable(geow2 src/app/main.cpp src/app/png.cpp)
+  target_link_libraries(geow2 PRIVATE geow2_game SDL3::SDL3-static)
+  add_dependencies(geow2 geow2_shaders)
+endif()
+
 enable_testing()
 add_executable(extract_tests tests/extract_tests.cpp)
 target_link_libraries(extract_tests PRIVATE geow2_extract)
