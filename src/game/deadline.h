@@ -12,16 +12,15 @@ class DeadlineSpawner {
   // One step; `elapsed` is the game time so far (dat_8219CE68).
   void step(World& w, float elapsed);
   // The bomb's effect on the next waves (sub_8203E4B0).
-  void bombed();
+  void bombed(World& w);
   // A player's death with no player left (sub_8203E2B8, single player):
   // the next wave waits 3 seconds and the budget drops by a share that
   // shrinks as the clock runs out. `time_left` is dat_8219D258 minus the
   // game time.
-  void player_died(float time_left);
+  void player_died(World& w, float time_left);
 
   float wave_timer = 0.0f;   // DB48: seconds to the next wave
   float start_delay = 1.0f;  // DB4C: seconds before the first wave
-  int db50 = 0, db54 = 0;    // budget adjustments (raised elsewhere)
   int budget = 0;            // DB58: the last wave's budget
   int waves = 0;             // DB5C
   int well_wait = 0;         // DB60: waves until a gravity well may come

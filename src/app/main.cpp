@@ -184,7 +184,7 @@ void player_touched(Game& g, const Touch& t) {
   if (!(p.bomb_wait <= 0.0f)) return;
   if (p.shield <= 0.0f) {
     kill_player(g, *t.enemy);
-    if (g.rules.mode == 0) g.spawner.player_died(g.rules.length - g.elapsed);
+    if (g.rules.mode == 0) g.spawner.player_died(w, g.rules.length - g.elapsed);
     return;
   }
   // The shield destroys what touches it (sound event 9): a kind 2 kill by
@@ -422,7 +422,7 @@ void update_player(Game& g, const Sticks& s) {
     const float lt = trigger_axis(s.left_trigger), rt = trigger_axis(s.right_trigger);
     if (player_bomb(p, lt - rt < 0.0f ? rt : lt, g.rules)) {
       w.add(std::make_unique<Shockwave>(w, 400.0f, 533.2f, g.player.x, g.player.y, 0));  // dat_82000F88, dat_82001C68
-      g.spawner.bombed();
+      g.spawner.bombed(w);
     }
     player_timers(p, kStep);
     integrate(g.player, kStep);
@@ -439,6 +439,8 @@ void step(Game& g, const Sticks& s) {
   if (g.life.alive()) g.spawner.step(w, g.elapsed);
   g.elapsed = kStep + g.elapsed;
   w.clock = g.elapsed;
+  // sub_82040818 for the time-limit rule: kills score until time is up.
+  w.scoring_open = g.rules.lives_mode != 2 || w.clock < g.rules.length;
   // Last step's kill markers go (sub_82043368).
   w.death_markers.clear();
 

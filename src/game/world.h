@@ -208,6 +208,11 @@ class World {
   std::function<void(const Touch&)> touch;
   int bomb_kills = 0;                   // dat_8219D284: shockwave kills this step
   float clock = 0.0f;                   // dat_8219CE68: the game time
+  // The spawners' feedback: kills by weight (DB50, sub_8203BAC8) and geom
+  // value collected (DB54, sub_8203BBB8).
+  int spawn_kills = 0, spawn_geoms = 0;
+  // sub_82040818: whether a kill scores now (Deadline: before time is up).
+  bool scoring_open = true;
   // The player's gate chain (slot record +0x34 / +0x30).
   int gate_chain = 0;
   float gate_chain_time = 0.0f;

@@ -175,6 +175,7 @@ void World::purge() {
 void World::award(const Entity& victim, const Killer& k) {
   // sub_820408D0. Points by the victim's type code (+0x44).
   if (k.kind == 0 || k.kind == 2 || k.kind == 4) return;
+  if (!scoring_open) return;
   ++kills;
   int base = 0;
   switch (victim.type) {
@@ -187,6 +188,14 @@ void World::award(const Entity& victim, const Killer& k) {
     case 0x14: base = 500; break;
     case 0x1B: base = 75; break;
     default: base = victim.special_points(*this); break;  // types 3, 0x16, 0x18
+  }
+  // sub_8203BAC8: the spawners' kill weight.
+  switch (victim.type) {
+    case 2: case 0x16: spawn_kills += 2; break;
+    case 6: case 9: spawn_kills += 4; break;
+    case 0xD: spawn_kills += 8; break;
+    case 0x12: case 0x21: spawn_kills += 1; break;
+    default: break;
   }
   // multiplier * points * 0.25 (dat_82000720), doubled in King, rounded
   // down to a multiple of 5.

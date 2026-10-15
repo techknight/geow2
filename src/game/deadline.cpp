@@ -38,7 +38,8 @@ void DeadlineSpawner::step(World& w, float elapsed) {
   if (wave_timer > 0.0f) return;
 
   // Budget: between the last one and 1.5 times it plus 5.
-  int n = (db50 - int(float(db54) * -0.5f)) + 2;
+  // Raised by kills (DB50, sub_8203BAC8) and geoms (DB54, sub_8203BBB8).
+  int n = (w.spawn_kills - int(float(w.spawn_geoms) * -0.5f)) + 2;
   const int hi = int(std::fmaf(float(budget), 1.5f, 5.0f));
   if (n < budget)
     n = budget;
@@ -114,16 +115,16 @@ void DeadlineSpawner::step(World& w, float elapsed) {
     if (n <= spent) break;
   }
   wave_timer = 5.0f;  // dat_820006F0
-  db50 = 0;
-  db54 = 0;
+  w.spawn_kills = 0;
+  w.spawn_geoms = 0;
   ++waves;
   budget = n;
 }
 
-void DeadlineSpawner::player_died(float time_left) {
-  db50 = 0;
+void DeadlineSpawner::player_died(World& w, float time_left) {
+  w.spawn_kills = 0;
   wave_timer = 0.0f;
-  db54 = 0;
+  w.spawn_geoms = 0;
   start_delay = 3.0f;  // dat_820006F8
   // dat_82000D50 (120), dat_82000CE0 (60), dat_82000CDC (30): shares
   // dat_82000FF4, dat_82001160, dat_82000724, dat_820010F0.
@@ -142,13 +143,13 @@ void DeadlineSpawner::player_died(float time_left) {
   if (budget < 0) budget = 0;
 }
 
-void DeadlineSpawner::bombed() {
+void DeadlineSpawner::bombed(World& w) {
   // sub_8203E4B0: the wave comes at once, the budget drops by 30% (at
   // most 10).
   wave_timer = 0.0f;
   start_delay = 1.5f;
-  db50 = 0;
-  db54 = 0;
+  w.spawn_kills = 0;
+  w.spawn_geoms = 0;
   int cut = int(float(budget) * 0.3f);
   if (cut > 10) cut = 10;
   budget = budget - cut;

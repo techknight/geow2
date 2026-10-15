@@ -172,6 +172,7 @@ void Geom::collect(World& w, size_t p) {
   // 4 below ("%s x%s", ID_X_BONUS_MULTIPLIER, 1.25 s, dat_82001D6C);
   // sounds 0x47 / 0x48 alternate.
   w.multiplier += value;
+  w.spawn_geoms += value;  // sub_8203BBB8
   if (w.multiplier < w.multiplier_milestone) {
     w.popups.add_small(x, y, 0.75f, 0, "x" + format_number(w.multiplier));  // dat_82000718
   } else {
