@@ -9,6 +9,7 @@
 #include <map>
 #include <string>
 
+#include "data/xtlo.h"
 #include "extract/known_files.h"
 #include "extract/sha1.h"
 #include "extract/stfs.h"
@@ -99,8 +100,31 @@ int unpack(const std::string& source, const std::string& cache) {
   return 0;
 }
 
+// Parses every language file the way the game does and counts IDs that resolve.
+int check_text(const fs::path& files) {
+  static const char* const kLanguages[][2] = {
+      {"en", "english"}, {"de", "german"}, {"fr", "french"}, {"es", "spanish"}, {"it", "italian"}};
+  int bad = 0;
+  for (const auto& [code, name] : kLanguages) {
+    const fs::path path = files / (std::string("Text-") + code + ".loc");
+    try {
+      TextTable tt(read_file(path), name);
+      size_t found = 0;
+      for (const auto& id : tt.ids()) found += tt.find(id).has_value();
+      std::printf("text %s: %zu IDs, %zu resolve\n", code, tt.ids().size(), found);
+      if (found != tt.ids().size()) ++bad;
+    } catch (const std::exception& e) {
+      std::printf("text %s: %s\n", code, e.what());
+      ++bad;
+    }
+  }
+  return bad;
+}
+
 int verify(const std::string& cache) {
-  int bad = check(collect(fs::path(cache) / "files"));
+  const fs::path files = fs::path(cache) / "files";
+  int bad = check(collect(files));
+  if (!bad) bad += check_text(files);
   std::printf(bad ? "%d problem(s)\n" : "all files good\n", bad);
   return bad ? 1 : 0;
 }
