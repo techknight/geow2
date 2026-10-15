@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "game/debris.h"
+#include "game/bullets.h"
 #include "game/effects.h"
 #include "game/game_math.h"
 #include "game/particles.h"
@@ -85,6 +86,9 @@ class Entity {
   virtual void hit_by_shot(World& w, const Killer& k) { kill(w, k); }
   // Slot 9 (sub_82046010(self, killer, 0) for units): destroyed.
   virtual void kill(World& w, const Killer& k);
+  // The points sub_820408D0 gives the types it scores by their own state
+  // (rocket, gravity well, gate); 0 for the rest.
+  virtual int special_points() const { return 0; }
 
   // sub_82045CF0: the world matrix by the unit's style.
   Mat4 placement(World& w);
@@ -196,6 +200,8 @@ class World {
   Effects effects;
   std::vector<ParticleAttractor> attractors;
   std::vector<ParticleRepulsor> repulsors;
+  // The player shots (their hash dat_8219F9AC is read by weavers).
+  const std::vector<Bullet>* shots = nullptr;
   // Line debris (Render.Layer.Smash).
   Debris debris;
   SmashTuning smash;

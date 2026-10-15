@@ -9,6 +9,7 @@
 #include "game/bullets.h"
 #include "game/camera.h"
 #include "game/display_gamma.h"
+#include "game/enemies.h"
 #include "game/grid.h"
 #include "game/light_map.h"
 #include "game/line_quads.h"
@@ -488,7 +489,54 @@ static void test_shot_kills() {
   expect(w.score == 30, "x4 wanderer worth 25");
 }
 
+static void test_enemies() {
+  // Each Deadline type spawns, fades in, moves and stays in the arena
+  // with a player to chase.
+  for (int type : {2, 3, 4, 12, 13, 22}) {
+    GameRng rng;
+    rng.seed(3);
+    Units units;
+    World w(kMath, rng, units);
+    w.players.resize(1);
+    w.players[0].radius = 5.0f;
+    Entity* e = spawn_enemy(w, type, 1.5707964f, 150.0f, 100.0f);
+    expect(e != nullptr && w.enemy_count == 1, "enemy spawned");
+    if (!e) continue;
+    for (int i = 0; i < 600; ++i) w.update_entities();
+    const float speed = std::sqrt(e->vx * e->vx + e->vy * e->vy);
+    expect(!(e->flags & kEntityFadingIn) && speed > 1.0f && std::fabs(e->x) <= 300.0f && std::fabs(e->y) <= 200.0f,
+           "enemy moves inside the arena");
+  }
+  // A shot spinner splits into three tiny spinners (no geoms: none drop
+  // without shapes anyway) and scores 100 * x1 / 4 = 25.
+  GameRng rng;
+  rng.seed(5);
+  Units units;
+  World w(kMath, rng, units);
+  Entity* sp = spawn_enemy(w, 4, 0.0f, 50.0f, 0.0f);
+  sp->flags &= ~kEntityFadingIn;
+  std::vector<Bullet> shots(1);
+  shots[0].prev_x = 30.0f;
+  shots[0].x = 60.0f;
+  shots[0].vx = 600.0f;
+  shot_collisions(w, shots);
+  int tiny = 0;
+  for (auto& e : w.entities)
+    if (e->type == 0xA && !(e->flags & kEntityFadingIn) && (e->flags & kEntityTouches)) ++tiny;
+  expect(tiny == 3 && w.score == 25, "spinner splits into three");
+  // A bombed spinner does not split.
+  Entity* sp2 = spawn_enemy(w, 4, 0.0f, -50.0f, 0.0f);
+  Killer k;
+  k.kind = 4;
+  sp2->kill(w, k);
+  int tiny2 = 0;
+  for (auto& e : w.entities)
+    if (e->type == 0xA) ++tiny2;
+  expect(tiny2 == 3, "bombed spinner does not split");
+}
+
 int main() {
+  test_enemies();
   test_shot_kills();
   test_world();
   test_walls();

@@ -351,6 +351,7 @@ bool load(Game& g, const fs::path& cache, int64_t seed) {
     return false;
   }
   g.world->geom_shapes = &g.geom_shapes;
+  g.world->shots = &g.bullets;
   g.world->mode = g.rules.mode;
   return true;
 }

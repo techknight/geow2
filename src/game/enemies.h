@@ -70,4 +70,37 @@ class TinySpinner : public Entity {
   float move_x = 0.0f, move_y = 0.0f;
 };
 
+// The weaver (spawn type 3, type code 6, unit "weaver"; constructor
+// sub_82059C18, vtable 0x820026F0): darts toward its target with a
+// sideways push it redraws every 0.2 to 0.4 seconds, and swerves away from
+// the most threatening player shot within 64.
+class Weaver : public Entity {
+ public:
+  Weaver(World& w, float px, float py);
+  void update(World& w) override;        // sub_82059CD0
+  void wall(World& w, Vec2 n) override;  // 0x82059BD0
+
+  float timer = 0.0f;  // +0x80: until the next sideways push
+  float side = 0.0f;   // +0x84
+};
+
+// The rocket (spawn types 12 and 13, type code 0x16, unit "rocket";
+// constructor sub_82054BC8, vtable 0x8200212C): flies along a fixed axis
+// and turns back when about to reach a wall.
+class Rocket : public Entity {
+ public:
+  Rocket(World& w, float angle, float px, float py, bool variant);
+  void update(World& w) override;            // sub_82054E30
+  void wall(World& w, Vec2 n) override;      // 0x82054B80
+  Mat4 custom_placement(World& w) override;  // sub_82054D08
+  int special_points() const override { return variant ? 125 : 75; }
+
+  float sign = 1.0f;     // +0x80: thrust direction along the axis
+  float axis = 0.0f;     // +0x84: travel angle
+  bool turning = false;  // +0x88
+  float turn_left = 0.0f;  // +0x8C
+  float roll = 0.0f;     // +0x90
+  bool variant = false;  // +0x94: spawn type 13
+};
+
 }  // namespace geow2

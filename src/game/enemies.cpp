@@ -45,6 +45,14 @@ bool home(World& w, Entity& e, float pull) {
 
 constexpr Vec4 kUp{0, 1, 0, 0};
 
+// The angle wrap rockets, snakes and spinners' children use: in double,
+// a / 2pi minus its nearest integer (fctid), times 2pi (dat_82000D00,
+// dat_82000CF8, both f64), rounded once.
+float wrap_angle(float a) {
+  const double t = double(a) * 0.15915494309137826;
+  return float((t - std::nearbyint(t)) * 6.2831853072);
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -280,8 +288,7 @@ void Spinner::kill(World& w, const Killer& k) {
     const float base = std::fmaf(float(w.rng.next()), kTwoPow31, -1.0f) * kPi;
     for (int i = 0; i < 3; ++i) {
       const float a = std::fmaf(float(i) * 6.28318548f, 0.333333343f, base);  // dat_82182318, dat_820010F0
-      const double t = double(a) * 0.15915494309137826;  // dat_82000D00
-      const float angle = float((t - std::nearbyint(t)) * 6.2831853072);  // fctid, dat_82000CF8
+      const float angle = wrap_angle(a);
       auto* c = static_cast<TinySpinner*>(
           w.add(std::make_unique<TinySpinner>(w, angle, 300.0f, x, y, k.vx, k.vy)));  // dat_82000CF4
       c->x = c->x + c->move_x;
@@ -332,6 +339,213 @@ void TinySpinner::draw(World& w, LineBatch& out) {
   const Mat4 m = mul(rotation_axis(w.gm, heading, 0, 0, 1), basis);
   const float white[4] = {1, 1, 1, 1};
   draw_model_part(out, unit->model, 0, m, white);
+}
+
+// ---------------------------------------------------------------------------
+// Weaver
+
+namespace {
+
+// Unit.Weaver.Colour (0x821A05C0; dat_82000720, dat_820006C4, dat_820011B0).
+constexpr float kWeaverColour[4] = {0.25f, 1.0f, 0.00999999978f, 1.0f};
+
+// How directly shot `b` flies at the point (px, py): (cos of the angle
+// between its velocity and the way from it to the point + 1) / 2; and the
+// unit way from the shot to the point.
+float aim(const Bullet& b, float px, float py, float& dxn, float& dyn) {
+  const float dx = px - b.x, dy = py - b.y;
+  const float invd = 1.0f / std::sqrt(dy * dy + dx * dx);
+  const float invv = 1.0f / std::sqrt(b.vy * b.vy + b.vx * b.vx);
+  dxn = invd * dx;
+  dyn = invd * dy;
+  const float vxn = invv * b.vx, vyn = b.vy * invv;
+  return ((vyn * dyn + vxn * dxn) + 1.0f) * 0.5f;  // dat_82000724
+}
+
+// sub_82052860(r, &p): of the shots in the cells around p within r, the
+// one with the lowest (1 - aim / 2) * distance squared. The cells are
+// walked as the spatial hash walks (x fastest, wrapping at 32); within a
+// cell the port takes the shots in firing order.
+const Bullet* threat(const World& w, float r, float px, float py) {
+  if (!w.shots) return nullptr;
+  const uint32_t x0 = uint32_t(int(px - r) >> 5) & 0x1F, y0 = uint32_t(int(py - r) >> 5) & 0x1F;
+  const uint32_t x1 = uint32_t(int(px + r) >> 5) & 0x1F, y1 = uint32_t(int(py + r) >> 5) & 0x1F;
+  const Bullet* best = nullptr;
+  float best_score = 0.0f;
+  uint32_t cx = (x0 - 1) & 0x1F, cy = y0;
+  for (;;) {
+    if (cx == x1) {
+      if (cy == y1) break;
+      cy = (cy + 1) & 0x1F;
+      cx = x0;
+    } else {
+      cx = (cx + 1) & 0x1F;
+    }
+    const int cell = int(cy << 5 | cx);
+    for (const Bullet& b : *w.shots) {
+      if (b.removed || World::cell_of(b.x, b.y) != cell) continue;
+      const float dx = px - b.x, dy = py - b.y;
+      const float d2 = dy * dy + dx * dx;
+      if (!(d2 <= r * r)) continue;
+      float dxn, dyn;
+      const float a = aim(b, px, py, dxn, dyn);
+      const float score = std::fmaf(-a, 0.5f, 1.0f) * d2;
+      if (!best || score < best_score) {
+        best = &b;
+        best_score = score;
+      }
+    }
+  }
+  return best;
+}
+
+}  // namespace
+
+Weaver::Weaver(World& w, float px, float py) {
+  x = px;
+  y = py;
+  unit = w.units.find("weaver");
+  type = 6;
+  flags |= 0x900;
+  timer = 0.0f;
+  side = 0.0f;
+  flags |= 0x14;
+  for (int i = 0; i < 4; ++i) colour[i] = kWeaverColour[i];
+  shape_points = 16;  // 0x82182528
+  radius = 6.0f;      // dat_82001414
+  count_enemy(w, *this);
+}
+
+void Weaver::update(World& w) {
+  for (int i = 0; i < 4; ++i) colour[i] = kWeaverColour[i];
+  if (const PlayerTarget* t = w.target(*this)) {
+    // Away from the shot most likely to hit: 90 per step times 1 - (a -
+    // 0.95) * 20 above 0.95, sqrt(a) above 0.375, else nothing.
+    if (const Bullet* b = threat(w, 64.0f, x, y)) {  // dat_82001A0C
+      float dxn, dyn;
+      const float a = aim(*b, x, y, dxn, dyn);
+      float g = 0.0f;
+      if (a > 0.95f)  // dat_82001174
+        g = std::fmaf(-(a - 0.95f), 20.0f, 1.0f);  // dat_82000CE8
+      else if (a > 0.375f)  // dat_820022FC
+        g = std::sqrt(a);
+      g = g * 90.0f;  // dat_82001100
+      vx = vx + dxn * g;
+      vy = vy + dyn * g;
+    }
+    timer = timer - w.step;
+    const float tx = t->x - x, ty = t->y - y;
+    if (timer <= 0.0f) {
+      side = std::fmaf(float(w.rng.next()), kTwoPow31, -1.0f) * 9.0f;  // sub_82030220(dat_82001B14)
+      timer = std::fmaf(float(w.rng.next()), kTwoPow32, 1.0f) * 0.2f;  // dat_82000D5C
+    }
+    const float len = std::sqrt(ty * ty + tx * tx);
+    const float inv = 1.0f / len;
+    const float nx = inv * tx, ny = inv * ty;
+    if (0.001f < len) {
+      vx = nx * 18.0f + vx;  // dat_82002728
+      vy = ny * 18.0f + vy;
+      vx = vx + ny * side;
+      vy = vy + (-nx) * side;
+    }
+    vx = vx * 0.9f;  // dat_82000D70
+    vy = vy * 0.9f;
+  }
+  // It turns with the square of its speed.
+  const float m = std::sqrt(vy * vy + vx * vx) * w.step;
+  heading = std::fmaf(m * m, 0.01f, heading);  // dat_820011B0
+  w.separate(*this, radius, 1.0f);
+}
+
+void Weaver::wall(World&, Vec2 n) { reflect(*this, n); }
+
+// ---------------------------------------------------------------------------
+// Rocket
+
+namespace {
+
+// Unit.Rocket.Colour (0x8219FE58; dat_820006C4, dat_82000720, dat_820011B0).
+constexpr float kRocketColour[4] = {1.0f, 0.25f, 0.00999999978f, 1.0f};
+// Unit.Rocket tuning (values at 0x8219FD40 .. 0x8219FE44).
+constexpr float kRocketSpeed = 12.5f;
+constexpr float kRocketDrag = 0.95f;
+constexpr float kRocketBrake = 0.95f;
+constexpr float kRocketLookAhead = 70.0f;
+constexpr float kRocketDampRotation = 0.25f;
+constexpr float kRocketMaxRotation = 0.15f;
+
+}  // namespace
+
+Rocket::Rocket(World& w, float angle, float px, float py, bool v) {
+  x = px;
+  y = py;
+  unit = w.units.find("rocket");
+  type = 0x16;
+  flags |= 0x900;
+  variant = v;
+  radius = 5.5f;  // dat_8200152C
+  flags |= 0x14;
+  sx = sy = 9.0f;  // dat_82001B14
+  heading = angle;
+  turning = false;
+  axis = angle;
+  turn_left = 0.0f;
+  sign = 1.0f;
+  roll = std::fmaf(float(w.rng.next()), kTwoPow31, -1.0f) * kPi;  // dat_82002128
+  for (int i = 0; i < 4; ++i) colour[i] = kRocketColour[i];
+  shape_points = 8;  // 0x82181E90
+  count_enemy(w, *this);
+}
+
+void Rocket::update(World& w) {
+  for (int i = 0; i < 4; ++i) colour[i] = kRocketColour[i];
+  if (!turning) {
+    const float s = w.gm.sinf(axis), c = w.gm.cosf(axis);
+    const float ay = sign * s, ax = sign * c;
+    vy = vy + ay * kRocketSpeed;
+    vx = vx + ax * kRocketSpeed;
+    vx = kRocketDrag * vx;
+    vy = vy * kRocketDrag;
+    // Looking 70 ahead: past a wall while heading out, it turns back.
+    float lx = ax * kRocketLookAhead + x, ly = y + ay * kRocketLookAhead;
+    Vec2 n;
+    if (arena_contact(radius, w.half_x, w.half_y, lx, ly, n)) {
+      const float s2 = w.gm.sinf(axis), c2 = w.gm.cosf(axis);
+      const float dot = (s2 * sign) * n.y + (c2 * sign) * n.x;
+      if (dot < -0.5f) {  // dat_82001230
+        turning = true;
+        sign = sign * -1.0f;
+        turn_left = w.random_float(1.0f) > 0.5f ? kPi : -kPi;  // sub_82030430
+        // (Sound event 0x39.)
+      }
+    }
+  } else {
+    // Turning by a quarter of what is left, at most 0.15 a step, braking.
+    const float t = turn_left * kRocketDampRotation;
+    float st = -kRocketMaxRotation - t >= 0.0f ? -kRocketMaxRotation : t;
+    st = t - kRocketMaxRotation >= 0.0f ? kRocketMaxRotation : st;
+    const float h = st + heading;
+    turn_left = turn_left - st;
+    heading = wrap_angle(h);
+    vx = vx * kRocketBrake;
+    vy = vy * kRocketBrake;
+    if (std::fabs(turn_left) < 0.01f) {  // dat_820011B0
+      heading = turn_left + heading;
+      turn_left = 0.0f;
+      turning = false;
+    }
+  }
+  roll = wrap_angle(roll + 0.1f);  // dat_82000714
+}
+
+void Rocket::wall(World&, Vec2 n) { reflect(*this, n); }
+
+Mat4 Rocket::custom_placement(World& w) {
+  // Rolled about its x axis, then turned by the heading, then moved.
+  Mat4 m = mul(rotation_axis(w.gm, roll, 1, 0, 0), rotation_axis(w.gm, heading, 0, 0, 1));
+  m.m[12] = m.m[12] + x;
+  m.m[13] = m.m[13] + y;
+  return m;
 }
 
 }  // namespace geow2

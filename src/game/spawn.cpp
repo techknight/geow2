@@ -8,15 +8,19 @@
 namespace geow2 {
 
 Entity* spawn_enemy(World& w, int type, float angle, float x, float y, bool flag) {
-  (void)angle;
   (void)flag;
   switch (type) {
     case 1:
       return w.add(std::make_unique<Wanderer>(w, x, y));
     case 2:
       return w.add(std::make_unique<Grunt>(w, x, y));
+    case 3:
+      return w.add(std::make_unique<Weaver>(w, x, y));
     case 4:
       return w.add(std::make_unique<Spinner>(w, x, y));
+    case 12:
+    case 13:
+      return w.add(std::make_unique<Rocket>(w, angle, x, y, type == 13));
     case 22:
       return w.add(std::make_unique<Duck>(w, x, y));
     default:

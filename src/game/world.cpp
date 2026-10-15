@@ -178,7 +178,7 @@ void World::award(const Entity& victim, const Killer& k) {
     case 0x12: case 0x21: base = 25; break;
     case 0x14: base = 500; break;
     case 0x1B: base = 75; break;
-    default: break;  // types 3, 0x16, 0x18 come with their enemies
+    default: base = victim.special_points(); break;  // types 3, 0x16, 0x18
   }
   // multiplier * points * 0.25 (dat_82000720), doubled in King, rounded
   // down to a multiple of 5.
