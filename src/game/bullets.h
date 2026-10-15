@@ -52,4 +52,14 @@ struct Segment {
 };
 std::vector<Segment> bullet_segments(const Bullet& b, const BulletShape& shape, const GameMath& gm);
 
+// The shape transform of sub_82061908 / sub_82061A30: the table's points
+// in pairs (one segment each), scaled, turned by `heading` and moved to
+// (x, y), with the original's fused operations.
+std::vector<Segment> shape_segments(std::span<const Vec2> points, float x, float y, float heading, float sx, float sy,
+                                    const GameMath& gm);
+
+// `count` points (x, y floats, big-endian) of a shape table in the user's
+// image at `address`.
+std::vector<Vec2> read_shape(std::span<const uint8_t> image, uint32_t address, int count);
+
 }  // namespace geow2

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "game/geoms.h"
 #include "game/rotation.h"
 
 namespace geow2 {
@@ -94,12 +95,12 @@ Mat4 Entity::custom_placement(World& w) { return placement_style_none(w.gm, x, y
 
 void Entity::kill(World& w, const Killer& k) {
   // sub_82046010 with no flags: the unit's killed effect, line debris (not
-  // ported yet), a kill marker, the score, geoms (not ported yet), sound
-  // 2, and removal.
+  // ported yet), a kill marker, the score, geoms, sound 2, and removal.
   if (flags & kEntityRemoved) return;
   if (unit) w.effects.trigger(unit->killed, x, y);
   w.death_markers.push_back({x, y});
   w.award(*this, k);
+  if (w.geom_shapes) drop_geoms(w, *this, k);
   w.remove(*this);
 }
 

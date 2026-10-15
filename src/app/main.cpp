@@ -32,6 +32,7 @@
 #include "game/camera.h"
 #include "game/deadline.h"
 #include "game/game_math.h"
+#include "game/geoms.h"
 #include "game/grid.h"
 #include "game/killer_ghost.h"
 #include "game/light_map.h"
@@ -95,6 +96,7 @@ struct Game {
   PlayerWeapon weapon;
   std::vector<Bullet> bullets;
   BulletShape bullet_shape;
+  GeomShapes geom_shapes;
   // The player's light: unit glowColour (rgb times alpha) and glowSize
   // (sub_82050D00).
   float glow[3] = {0, 0, 0};
@@ -197,9 +199,9 @@ void spawn_player(Game& g) {
 }
 
 // sub_82036358, when no player is left after one spawned (sound event
-// 0x50): every unit but the players is destroyed (kind 0: no score) and the
-// shots and blasts go. (Lists 0x821813D0 and 0x82181454 come with their
-// objects.)
+// 0x50): every unit but the players is destroyed (kind 0: no score or
+// geoms) and the shots, geoms and blasts go. (List 0x821813D0 comes with
+// its objects.)
 void clear_field(Game& g) {
   World& w = *g.world;
   for (size_t i = 0; i < w.entities.size(); ++i) {
@@ -215,7 +217,7 @@ void clear_field(Game& g) {
   }
   g.bullets.clear();
   for (auto& e : w.entities)
-    if (e->type == 0xF && !(e->flags & kEntityRemoved)) w.remove(*e);
+    if ((e->type == 0x22 || e->type == 0xF) && !(e->flags & kEntityRemoved)) w.remove(*e);
 }
 
 // The spawn block of sub_820366A0 for the one slot.
@@ -330,11 +332,15 @@ bool load(Game& g, const fs::path& cache, int64_t seed) {
   const FlaskValue model = g.db->decode(ref->record);
   if (const FlaskStruct* m = as_struct(&model)) g.ship = build_model_geometry(*m, *g.gm);
   try {
-    g.bullet_shape = BulletShape::from_image(read_file(cache / "xex" / "image.bin"));
+    const auto image = read_file(cache / "xex" / "image.bin");
+    g.bullet_shape = BulletShape::from_image(image);
+    g.geom_shapes = GeomShapes::from_image(image);
   } catch (const std::exception& e) {
-    SDL_Log("cannot read the bullet shape: %s", e.what());
+    SDL_Log("cannot read the shot and geom shapes: %s", e.what());
     return false;
   }
+  g.world->geom_shapes = &g.geom_shapes;
+  g.world->mode = g.rules.mode;
   return true;
 }
 
@@ -399,6 +405,8 @@ void step(Game& g, const Sticks& s) {
   // Shots against enemies (sub_820523B0).
   shot_collisions(w, g.bullets);
   std::erase_if(g.bullets, [](const Bullet& b) { return b.removed; });
+  // Geoms are pulled in and picked up (sub_8204D410).
+  collect_geoms(w);
   // A player that has just started to fade in bursts into view.
   const bool fading = g.life.alive() && g.life.fading;
   if (fading && !g.was_fading) spawn_burst(g);
@@ -565,9 +573,9 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sti
   write_png(out, w, h, {px, size_t(w) * h * 4});
   SDL_UnmapGPUTransferBuffer(dev, down);
   SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets, "
-          "%zu enemies, score %lld, %zu particles, %d deaths, %d bombs left, %d bomb kills",
+          "%zu entities, score %lld x%d, %zu particles, %d deaths, %d bombs left, %d bomb kills",
           out.string().c_str(), frames, g.player.x, g.player.y, g.player.heading, g.camera.x, g.camera.y,
-          g.camera.zoom, g.bullets.size(), g.world->entities.size(), (long long)g.world->score, g.world->particles.size(),
+          g.camera.zoom, g.bullets.size(), g.world->entities.size(), (long long)g.world->score, g.world->multiplier, g.world->particles.size(),
           g.life.deaths, g.life.bombs, g.world->bomb_kills);
   SDL_ReleaseGPUTransferBuffer(dev, down);
   SDL_ReleaseGPUTexture(dev, tex);

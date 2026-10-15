@@ -35,22 +35,24 @@ Bullet make_bullet(const PlayerMotion& p, float angle, double factor, int type, 
 
 }  // namespace
 
-BulletShape BulletShape::from_image(std::span<const uint8_t> image) {
-  constexpr uint32_t kBase = 0x82000000, kTable = 0x82181D4C;
-  BulletShape s;
-  for (int i = 0; i < 6; ++i) {
+std::vector<Vec2> read_shape(std::span<const uint8_t> image, uint32_t address, int count) {
+  constexpr uint32_t kBase = 0x82000000;
+  std::vector<Vec2> points;
+  for (int i = 0; i < count; ++i) {
     float xy[2];
     for (int k = 0; k < 2; ++k) {
-      const size_t o = kTable - kBase + size_t(i) * 8 + size_t(k) * 4;
-      if (o + 4 > image.size()) throw std::runtime_error("bullet shape outside the image");
+      const size_t o = address - kBase + size_t(i) * 8 + size_t(k) * 4;
+      if (o + 4 > image.size()) throw std::runtime_error("shape table outside the image");
       const uint32_t bits = (uint32_t(image[o]) << 24) | (uint32_t(image[o + 1]) << 16) | (uint32_t(image[o + 2]) << 8) |
                             image[o + 3];
       std::memcpy(&xy[k], &bits, 4);
     }
-    s.points.push_back({xy[0], xy[1]});
+    points.push_back({xy[0], xy[1]});
   }
-  return s;
+  return points;
 }
+
+BulletShape BulletShape::from_image(std::span<const uint8_t> image) { return {read_shape(image, 0x82181D4C, 6)}; }
 
 void player_fire_step(const PlayerMotion& p, PlayerWeapon& w, Vec2 fire, float step, const GameMath& gm,
                       std::vector<Bullet>& out) {
@@ -100,21 +102,27 @@ bool bullet_step(Bullet& b, float step, float half_x, float half_y) {
   return true;
 }
 
-std::vector<Segment> bullet_segments(const Bullet& b, const BulletShape& shape, const GameMath& gm) {
-  // sub_82061908: rotate and scale each point, translate; fused as the
-  // original (0x820619B8..0x82061A08).
+std::vector<Segment> shape_segments(std::span<const Vec2> points, float x, float y, float heading, float sx, float sy,
+                                    const GameMath& gm) {
+  // Rotate and scale each point, translate; fused as the original
+  // (0x820619B8..0x82061A08, and 0x82061AE0..0x82061B2C alike).
   std::vector<Segment> out;
-  const float s = gm.sinf(b.heading), c = gm.cosf(b.heading);
-  const float sx_sin = b.sx * s, sy_sin = b.sy * s, sx_cos = b.sx * c, sy_cos = b.sy * c;
-  for (size_t i = 0; i + 1 < shape.points.size(); i += 2) {
-    const Vec2 p0 = shape.points[i], p1 = shape.points[i + 1];
-    const float x1 = std::fmaf(-p1.y, sy_sin, std::fmaf(p1.x, sx_cos, b.x));
-    const float y1 = std::fmaf(p1.y, sy_cos, p1.x * sx_sin) + b.y;
-    const float x0 = std::fmaf(-p0.y, sy_sin, std::fmaf(p0.x, sx_cos, b.x));
-    const float y0 = std::fmaf(p0.x, sx_sin, p0.y * sy_cos) + b.y;
+  const float s = gm.sinf(heading), c = gm.cosf(heading);
+  const float sx_sin = sx * s, sy_sin = sy * s, sx_cos = sx * c, sy_cos = sy * c;
+  for (size_t i = 0; i + 1 < points.size(); i += 2) {
+    const Vec2 p0 = points[i], p1 = points[i + 1];
+    const float x1 = std::fmaf(-p1.y, sy_sin, std::fmaf(p1.x, sx_cos, x));
+    const float y1 = std::fmaf(p1.y, sy_cos, p1.x * sx_sin) + y;
+    const float x0 = std::fmaf(-p0.y, sy_sin, std::fmaf(p0.x, sx_cos, x));
+    const float y0 = std::fmaf(p0.x, sx_sin, p0.y * sy_cos) + y;
     out.push_back({{x0, y0, 0.0f, 0.0f}, {x1, y1, 0.0f, 0.0f}});
   }
   return out;
+}
+
+std::vector<Segment> bullet_segments(const Bullet& b, const BulletShape& shape, const GameMath& gm) {
+  // sub_82061908.
+  return shape_segments(shape.points, b.x, b.y, b.heading, b.sx, b.sy, gm);
 }
 
 }  // namespace geow2

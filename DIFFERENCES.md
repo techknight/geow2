@@ -59,16 +59,19 @@ Format for each entry:
 
 ### Reciprocal estimates
 
-- **What**: line widths, grid spring lengths and particle forces use an
-  exact 1/x and 1/sqrt.
+- **What**: line widths, grid spring lengths, particle forces and the
+  geoms' pull use an exact 1/x and 1/sqrt.
 - **Original**: the line quad emitter (`sub_8205EB58`), the grid
-  simulation (`sub_8205B880`), the wall quads (`sub_8205CC70`) and the
-  particle step (`sub_82063448`) use `frsqrte` and `fres`, the PowerPC
-  hardware estimates, whose exact results on the Xbox 360 CPU are not
-  documented.
+  simulation (`sub_8205B880`), the wall quads (`sub_8205CC70`), the
+  particle step (`sub_82063448`) and the geom pull (`sub_8204D410`) use
+  `frsqrte` and `fres`, the PowerPC hardware estimates, whose exact
+  results on the Xbox 360 CPU are not documented.
 - **Port**: computes the exact values. Lines, the grid and particles can
-  differ from the original by the estimates' error (small; visual only,
-  gameplay never reads these values).
+  differ from the original by the estimates' error (small; visual only).
+  The geom pull is gameplay: a geom being pulled in moves by the pull
+  direction, whose length the estimate leaves within about 1/4096 of 1,
+  so a geom can reach the player a step earlier or later than on the
+  console.
 - **Decided**: 2026-10-15.
 
 ### Render target precision

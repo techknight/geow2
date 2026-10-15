@@ -43,6 +43,19 @@ enum EntityFlag : uint32_t {
   kEntityGlow = 0x1000000,       // vtable slot 1 (light) before drawing
 };
 
+struct GeomShapes;
+
+// Unit.Mote tuning variables (registration address, default): the geoms.
+struct MoteTuning {
+  // Unit.Mote.Colour (0x8219F308; dat_82001D9C, dat_82001DB4,
+  // dat_82001DB8, dat_82001158).
+  float colour[4] = {0.204710007f, 0.383774996f, 0.0780566037f, 2.5f};
+  // Unit.Mote.GlowColour (0x8219F34C).
+  float glow[4] = {0.2f, 0.8f, 0.1f, 6.0f};
+  float glow_size = 25.0f;     // Unit.Mote.GlowSize (0x8219F390)
+  float magnet_range = 45.0f;  // Unit.Mote.MagnetRange (0x8219F3C4)
+};
+
 // sub_82061DA0: one part of a model, each line coloured by line colour
 // times `colour`, both ends through `m`, as line quads.
 void draw_model_part(LineBatch& out, const ModelGeometry& g, size_t part, const Mat4& m, const float colour[4]);
@@ -176,6 +189,10 @@ class World {
   std::vector<ParticleAttractor> attractors;
   std::vector<ParticleRepulsor> repulsors;
   bool king_mode = false;               // mode 5 doubles the score
+  int mode = 0;                         // dat_8219D254 (0 Deadline)
+  // Geoms: their shapes (from the user's image; none, no geoms) and tuning.
+  const GeomShapes* geom_shapes = nullptr;
+  MoteTuning motes;
 };
 
 // The cells overlapping (x - r .. x + r, y - r .. y + r), walked as
@@ -193,7 +210,10 @@ void World::for_each_near(float x, float y, float r, F f) {
     } else {
       cx = (cx + 1) & 0x1F;
     }
-    for (Entity* e : cells[size_t(cy << 5 | cx)]) f(*e);
+    // By index: what `f` adds to the cell is visited too, as in the
+    // original's linked lists.
+    auto& cell = cells[size_t(cy << 5 | cx)];
+    for (size_t i = 0; i < cell.size(); ++i) f(*cell[i]);
   }
 }
 
