@@ -30,8 +30,8 @@ class KillerGhost : public Entity {
 
 // sub_82044FA8: the killer gives way to its ghost and is removed. A snake
 // (head or attached segment) leaves the whole snake, a detached segment
-// nothing; a gate both ends and its beam. (Types 3 and 0x14/0x15 have
-// their own cases: they come with those enemies.)
+// nothing; a gate both ends and its beam; a gravity well a dimmed ghost.
+// (Types 0x14/0x15 have their own case: it comes with those enemies.)
 void replace_killer(World& w, Entity& killer);
 
 }  // namespace geow2

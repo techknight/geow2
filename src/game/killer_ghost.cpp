@@ -99,6 +99,14 @@ void replace_killer(World& w, Entity& killer) {
     }
     return;
   }
+  if (killer.type == 3) {
+    // A gravity well: in its colour times 0.35 (dat_82000704).
+    const float tint[4] = {killer.colour[0] * 0.35f, killer.colour[1] * 0.35f, killer.colour[2] * 0.35f,
+                           killer.colour[3] * 0.35f};
+    w.add(std::make_unique<KillerGhost>(w, killer, tint));
+    w.remove(killer);
+    return;
+  }
   if (killer.type == 0x18) {
     // Both ends, and the beam between them ((0.55875, 0.97, 2.85, 1),
     // dat_82001844 / 82001840 / 8200183C).
