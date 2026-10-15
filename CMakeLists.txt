@@ -28,8 +28,14 @@ add_library(geow2_data STATIC
 )
 target_link_libraries(geow2_data PUBLIC geow2_extract)
 
+# Game logic and content built from the original data (no rendering, no platform code).
+add_library(geow2_game STATIC
+  src/game/model_geometry.cpp
+)
+target_link_libraries(geow2_game PUBLIC geow2_data)
+
 add_executable(geow2-extract src/extract/main.cpp)
-target_link_libraries(geow2-extract PRIVATE geow2_extract geow2_data)
+target_link_libraries(geow2-extract PRIVATE geow2_extract geow2_data geow2_game)
 
 enable_testing()
 add_executable(extract_tests tests/extract_tests.cpp)
@@ -38,3 +44,6 @@ add_test(NAME extract_tests COMMAND extract_tests)
 add_executable(data_tests tests/data_tests.cpp)
 target_link_libraries(data_tests PRIVATE geow2_data)
 add_test(NAME data_tests COMMAND data_tests)
+add_executable(game_tests tests/game_tests.cpp)
+target_link_libraries(game_tests PRIVATE geow2_game)
+add_test(NAME game_tests COMMAND game_tests)

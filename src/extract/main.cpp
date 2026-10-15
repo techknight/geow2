@@ -12,6 +12,7 @@
 
 #include "data/flask.h"
 #include "data/xtlo.h"
+#include "game/model_geometry.h"
 #include "extract/known_files.h"
 #include "extract/sha1.h"
 #include "extract/stfs.h"
@@ -168,7 +169,21 @@ int check_database(const fs::path& files) {
     std::printf("Data.bin: %zu types, %zu records:", db.types().size(), db.records().size());
     for (const auto& [t, n] : by_type) std::printf(" %s %d", t.c_str(), n);
     std::printf("\n");
-    return 0;
+
+    // Build every model's line lists the way the game does at load.
+    size_t models = 0, lines = 0, empty = 0;
+    for (uint32_t r = 0; r < db.records().size(); ++r) {
+      if (db.types()[db.records()[r].type].name != "Model") continue;
+      const FlaskValue v = db.decode(r);
+      const ModelGeometry g = build_model_geometry(*std::get<std::shared_ptr<FlaskStruct>>(v.v));
+      size_t n = 0;
+      for (const auto& part : g.parts) n += part.size();
+      ++models;
+      lines += n;
+      empty += n == 0;
+    }
+    std::printf("models: %zu built, %zu lines, %zu with no lines\n", models, lines, empty);
+    return empty ? 1 : 0;
   } catch (const std::exception& e) {
     std::printf("Data.bin: %s\n", e.what());
     return 1;
