@@ -35,6 +35,7 @@
 #include "game/game_math.h"
 #include "game/gate.h"
 #include "game/geoms.h"
+#include "game/gravity_well.h"
 #include "game/grid.h"
 #include "game/killer_ghost.h"
 #include "game/light_map.h"
@@ -421,6 +422,8 @@ void step(Game& g, const Sticks& s) {
   target.y = g.player.y;
   target.vx = g.player.vx;
   target.vy = g.player.vy;
+  target.fading = g.life.fading;
+  target.push_vx = target.push_vy = 0.0f;
   // Then the other entities, bullets included (the player list is updated
   // first, so bullets fired this step already move: to verify in the oracle).
   std::erase_if(g.bullets, [&w](Bullet& b) { return !bullet_step(b, kStep, kArenaHalfX, kArenaHalfY, w.effects); });
@@ -455,6 +458,8 @@ void step(Game& g, const Sticks& s) {
   // the positions the step read. Bullets push with radius +0x8C and
   // strength 2.0 (sub_8205B578).
   GridInputs in;
+  // Active wells light the grid (sub_8205B578).
+  well_grid_lights(w, in.lights);
   // The specials: a fading-in player pulls, the first blast pushes.
   if (g.life.alive() && g.life.fading) in.fading_player = Vec2{g.player.x, g.player.y};
   for (const auto& e : w.entities)
@@ -488,6 +493,7 @@ void step(Game& g, const Sticks& s) {
   // The colour wheel turns (sub_82030A98); the particles step on the
   // render workers (sub_82063A38), after the entities' lights.
   w.effects.step(kStep);
+  well_particle_forces(w);
   g.particle_quads.clear();
   w.particles.step(w.particle_tuning, kStep, w.half_x, w.half_y, w.attractors, w.repulsors, g.particle_quads,
                    g.lights);
@@ -500,6 +506,10 @@ void step(Game& g, const Sticks& s) {
 
   // The stars' step (sub_82075548, on the render worker each frame).
   g.stars.update(*g.gm, 1.0f, g.star_vertices);
+
+  // What the wells' pulls and shoves did to the player's velocity.
+  g.player.vx = g.player.vx + target.push_vx;
+  g.player.vy = g.player.vy + target.push_vy;
 
   // Entities removed this step are deleted, the player object with them.
   w.purge();

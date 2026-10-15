@@ -24,6 +24,7 @@ constexpr float kUpgradedCooldown = 0.0666666701f;  // dat_82001E84
 Bullet make_bullet(const PlayerMotion& p, float angle, double factor, int type, const GameMath& gm) {
   Bullet b;
   b.type = type;
+  if (type == 2) b.gravity = 1.25f;
   b.x = p.x;
   b.y = p.y;
   const float speed = float(float(factor) * kBulletSpeed);

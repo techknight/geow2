@@ -4,6 +4,7 @@
 
 #include "game/enemies.h"
 #include "game/gate.h"
+#include "game/gravity_well.h"
 #include "game/snake.h"
 #include "game/wanderer.h"
 
@@ -20,6 +21,14 @@ Entity* spawn_enemy(World& w, int type, float angle, float x, float y, bool flag
       return w.add(std::make_unique<Weaver>(w, x, y));
     case 4:
       return w.add(std::make_unique<Spinner>(w, x, y));
+    case 5:
+      // (Unless Game.DontSpawnGravityWells, dat_8219DBB0.)
+      return w.add(std::make_unique<GravityWell>(w, x, y));
+    case 14: {
+      Entity* p = w.add(std::make_unique<Proton>(w, angle, 90.0f, x, y));  // dat_82001100
+      p->flags |= kEntityFadingIn;
+      return p;
+    }
     case 8: {
       auto* head = static_cast<SnakeHead*>(w.add(std::make_unique<SnakeHead>(w, x, y)));
       head->build_segments(w);

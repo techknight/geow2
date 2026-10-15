@@ -11,6 +11,7 @@
 #include "game/display_gamma.h"
 #include "game/enemies.h"
 #include "game/gate.h"
+#include "game/gravity_well.h"
 #include "game/grid.h"
 #include "game/light_map.h"
 #include "game/line_quads.h"
@@ -493,7 +494,7 @@ static void test_shot_kills() {
 static void test_enemies() {
   // Each Deadline type spawns, fades in, moves and stays in the arena
   // with a player to chase.
-  for (int type : {2, 3, 4, 8, 12, 13, 22}) {
+  for (int type : {2, 3, 4, 5, 8, 12, 13, 14, 22}) {
     GameRng rng;
     rng.seed(3);
     Units units;
@@ -601,7 +602,52 @@ static void test_gate() {
   expect(!(c->flags & kEntityRemoved) && static_cast<GateEnd&>(*c).flash == 1.0f, "shots flash gates");
 }
 
+static void test_gravity_well() {
+  GameRng rng;
+  rng.seed(13);
+  Units units;
+  World w(kMath, rng, units);
+  w.players.resize(1);
+  w.players[0].x = -250.0f;
+  auto* g = static_cast<GravityWell*>(spawn_enemy(w, 5, 0.0f, 0.0f, 0.0f));
+  expect(g && g->hits == 6 && g->radius == 11.0f && !g->active, "well starts idle with 6 hits");
+  for (int i = 0; i < 60; ++i) w.update_entities();
+  // A shot wakes it and takes a hit off.
+  Killer shot;
+  shot.kind = 1;
+  shot.object_type = 5;
+  g->hit_by_shot(w, shot);
+  expect(g->active && g->hits == 5 && !(g->flags & kEntityRemoved), "a shot wakes the well");
+  // It swallows a wanderer it touches and grows a hit.
+  Entity* e = spawn_enemy(w, 1, 0.0f, g->x + 3.0f, g->y);
+  e->flags &= ~kEntityFadingIn;
+  w.update_entities();
+  expect((e->flags & kEntityRemoved) && g->hits == 6 && g->absorbed == 1, "the well swallows");
+  w.purge();
+  // Past its maximum it bursts into 15 protons and goes.
+  g->hits = kWellMaxHits;
+  Entity* f = spawn_enemy(w, 1, 0.0f, g->x - 3.0f, g->y);
+  f->flags &= ~kEntityFadingIn;
+  w.update_entities();
+  w.update_entities();
+  int protons = 0;
+  for (auto& o : w.entities)
+    if (o->type == 4 && !(o->flags & kEntityFadingIn)) ++protons;
+  expect(protons == 15 && (g->flags & kEntityRemoved), "overloaded well releases 15 protons");
+  // Shot down to 0, a well dies in its own blast.
+  rng.seed(14);
+  World w2(kMath, rng, units);
+  auto* h = static_cast<GravityWell*>(spawn_enemy(w2, 5, 0.0f, 0.0f, 0.0f));
+  h->hits = 1;
+  h->hit_by_shot(w2, shot);
+  int blasts = 0;
+  for (auto& o : w2.entities)
+    if (o->type == 0xF) ++blasts;
+  expect((h->flags & kEntityRemoved) && blasts == 1 && w2.score == 25, "well shot to 0 bursts (100 points)");
+}
+
 int main() {
+  test_gravity_well();
   test_gate();
   test_enemies();
   test_shot_kills();

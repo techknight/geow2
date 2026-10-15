@@ -103,4 +103,23 @@ class Rocket : public Entity {
   bool variant = false;  // +0x94: spawn type 13
 };
 
+// The proton (spawn type 14, type code 4, unit "proton"; constructor
+// sub_82053470, vtable 0x82002004): launched at an angle, harmless for its
+// first 0.166 seconds, then homing with a jitter, spinning with its speed,
+// pulsing. Overloaded gravity wells release them.
+class Proton : public Entity {
+ public:
+  Proton(World& w, float angle, float speed, float px, float py);
+  void update(World& w) override;                // sub_820536C8
+  void wall(World& w, Vec2 n) override;          // sub_82053428
+  void draw(World& w, LineBatch& out) override;  // sub_82053A80
+
+  float delay = 0.166f;  // +0x80 (dat_82002000)
+  float phase = 0.0f;    // +0x84
+  float pulse = 1.0f;    // +0x88
+  float jitter_time = 0.0f;  // +0x8C
+  float jitter_x = 0.0f, jitter_y = 0.0f;  // +0x90 / +0x94
+  float spin = 1.0f;     // +0x98
+};
+
 }  // namespace geow2

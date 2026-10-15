@@ -23,6 +23,7 @@ struct Bullet {
   int type = 0;
   bool hit = false;             // +0x9C
   int bounces = 0;              // +0xA0: times it bounced off a gate's beam
+  float gravity = 1.0f;         // +0x88: how much wells bend it (1.25 for centre shots)
   bool removed = false;         // flag 1: hit something, gone
 };
 

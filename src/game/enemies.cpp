@@ -548,4 +548,87 @@ Mat4 Rocket::custom_placement(World& w) {
   return m;
 }
 
+// ---------------------------------------------------------------------------
+// Proton
+
+Proton::Proton(World& w, float angle, float speed, float px, float py) {
+  x = px;
+  y = py;
+  unit = w.units.find("proton");
+  type = 4;
+  flags |= 0x900;
+  delay = 0.166f;  // dat_82002000
+  phase = (float(w.rng.next()) * kTwoPow32) * 6.28318548f;  // dat_82181D7C
+  pulse = 1.0f;
+  jitter_time = 0.0f;
+  jitter_x = jitter_y = 0.0f;
+  flags |= 0x44;  // shootable, harmless until the delay runs out
+  heading = angle;
+  vx = (w.gm.cosf(angle) * speed) * 1.3f;  // dat_82001A00
+  vy = (w.gm.sinf(angle) * speed) * 1.3f;
+  colour[0] = 0.2f;  // dat_82000D5C
+  colour[1] = 0.6f;  // dat_82001160
+  colour[2] = 1.0f;
+  colour[3] = 1.0f;
+  radius = 4.75f;  // dat_82001FFC
+  spin = (w.rng.next() & 1u) ? -1.0f : 1.0f;
+  shape_points = 0x18;  // the ring at 0x8219FA08
+  count_enemy(w, *this);
+}
+
+void Proton::update(World& w) {
+  const PlayerTarget* t = w.target(*this);
+  if (delay > 0.0f) {
+    delay = delay - w.step;
+    if (delay <= 0.0f) flags &= ~0x40u;
+  } else if (t) {
+    const float dx = t->x - x, dy = t->y - y;
+    const float len = std::sqrt(dy * dy + dx * dx);
+    const float inv = 1.0f / len;
+    const float nx = inv * dx, ny = inv * dy;
+    if (len > 0.001f) {  // dat_82001A18
+      vx = vx + nx * 8.0f;  // dat_82000D18
+      vy = ny * 8.0f + vy;
+    }
+    jitter_time = jitter_time - w.step;
+    if (jitter_time <= 0.0f) {
+      const Vec2 j = w.random_vector(4.0f);  // dat_820006F4
+      jitter_x = j.x;
+      jitter_y = j.y;
+      jitter_time = (w.random_float(1.0f) + 1.0f) * 0.2f;  // dat_82000D5C
+    }
+    vx = jitter_x + vx;
+    vy = jitter_y + vy;
+    vx = vx * 0.97f;  // dat_820019CC
+    vy = vy * 0.97f;
+  }
+  phase = phase + 0.25f;  // dat_82000720
+  pulse = std::fmaf(w.gm.cosf(phase), 0.5f, 1.0f);
+  const float speed = std::sqrt(vy * vy + vx * vx);
+  heading = std::fmaf((speed * spin) * w.step, 0.05f, heading);  // dat_82000D60
+}
+
+void Proton::wall(World&, Vec2 n) { reflect(*this, n); }
+
+void Proton::draw(World& w, LineBatch& out) {
+  if (!unit || !unit->has_model) return;
+  const Mat4 m = placement(w);
+  if (!(flags & kEntityFadingIn)) {
+    const float c[4] = {1.0f, 1.0f, 1.0f, pulse};  // a brightness pulse
+    draw_model_part(out, unit->model, 0, m, c);
+    return;
+  }
+  for (int i = 0; i < 2; ++i) {
+    float f = float(std::fmod(double(fade * 3.0f), 1.0)) + float(i);
+    if (f >= 1.0f) f = 2.0f - f;
+    if (!(f >= 0.025f)) continue;  // dat_82000D64
+    const float q = std::fmaf(f, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
+    Mat4 scaled = m;
+    for (int r = 0; r < 3; ++r)
+      for (int c = 0; c < 4; ++c) scaled.m[r * 4 + c] = m.m[r * 4 + c] * q;
+    const float ghost[4] = {1.0f, 1.0f, 1.0f, f};
+    draw_model_part(out, unit->model, 0, scaled, ghost);
+  }
+}
+
 }  // namespace geow2
