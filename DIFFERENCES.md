@@ -41,9 +41,40 @@ Format for each entry:
 ### Resolution
 
 - **What**: output resolution and aspect handling.
-- **Original**: renders for a 1280x720 output (to be confirmed from the
-  render-target setup).
-- **Port**: renders at the window or monitor resolution, with an option
-  for an exact 720p internal render. The simulation always runs at the
-  original's tick rate and is never interpolated.
-- **Decided**: 2026-10-14.
+- **Original**: renders at 1280x720, or 1920x1080 when the console's
+  video mode is high definition (`sub_8205D538`, `XGetVideoMode`
+  fIsHiDef); the bloom chain then starts with one more halving step
+  (`sub_82064640`).
+- **Port**: renders the 16:9 picture at the window or monitor resolution
+  (letterboxed), with an option for an exact 720p internal render. The
+  bloom chain halves from that size as the original does from its own,
+  with the extra step whenever the picture is taller than 720 lines; at
+  exactly 1280x720 and 1920x1080 it matches the original's two layouts,
+  at other sizes the glow's reach in screen terms differs slightly. The
+  simulation always runs at the original's tick rate and is never
+  interpolated.
+- **Decided**: 2026-10-14; bloom sizes 2026-10-15.
+
+### Reciprocal square root estimates
+
+- **What**: line widths and grid spring lengths use an exact 1/sqrt.
+- **Original**: the line quad emitter (`sub_8205EB58`) and the grid
+  simulation (`sub_8205B880`) normalise with `frsqrte`, the PowerPC
+  hardware estimate, whose exact results on the Xbox 360 CPU are not
+  documented.
+- **Port**: computes the exact reciprocal square root in double. Lines
+  and the grid can differ from the original by the estimate's error
+  (small; visual only, gameplay never reads these values).
+- **Decided**: 2026-10-15.
+
+### Render target precision
+
+- **What**: the precision of the high-range layers and bloom textures.
+- **Original**: draws into 7e3 floating-point targets (10 bits per
+  channel, maximum 31.875) and resolves them into 10-bit or 16-bit fixed
+  point textures with an exponent bias of -5, read back with +5
+  (`sub_82065270`, `sub_820653C8`, `sub_8206A3D0`).
+- **Port**: uses 16-bit floating-point targets and textures throughout,
+  capping every read at 31.875 as the original's storage does. Rounding
+  of faint values differs slightly.
+- **Decided**: 2026-10-15.

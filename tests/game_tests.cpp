@@ -5,9 +5,11 @@
 #include <memory>
 #include <string>
 
+#include "game/bloom_weights.h"
 #include "game/bullets.h"
 #include "game/camera.h"
 #include "game/grid.h"
+#include "game/line_quads.h"
 #include "game/model_geometry.h"
 #include "game/player_motion.h"
 #include "game/rotation.h"
@@ -301,7 +303,45 @@ static void test_firing() {
   expect(!bullet_step(b, 1.0f / 60.0f, 300.0f, 200.0f), "bullet removed after contact");
 }
 
+static void test_line_quads() {
+  // A line along +x: the body is offset by the width across it, the caps
+  // reach width * cap past each end and fade to alpha 0 there.
+  LineBatch b;
+  const float colour[4] = {1.0f, 0.5f, 0.25f, 1.0f};
+  emit_line(b, 1.1f, 0.6f, {0, 0, 0, 1}, {10, 0, 0, 1}, colour);
+  expect(b.body.size() == 4 && b.caps.size() == 8, "line quad vertex counts");
+  if (b.body.size() != 4 || b.caps.size() != 8) return;
+  const LineVertex* v = b.body.data();
+  expect(near(v[0].x, 0) && near(v[0].y, 1.1f) && v[0].side == -1.0f, "body v0");
+  expect(near(v[1].x, 0) && near(v[1].y, -1.1f) && v[1].side == 1.0f, "body v1");
+  expect(near(v[2].x, 10) && near(v[2].y, -1.1f) && v[2].side == 1.0f, "body v2");
+  expect(near(v[3].x, 10) && near(v[3].y, 1.1f) && v[3].side == -1.0f, "body v3");
+  expect(v[0].r == 18.0f && v[0].g == 9.0f && v[0].b == 4.5f && v[0].a == 1.0f, "colour times alpha times 18");
+  const LineVertex* c = b.caps.data();
+  expect(near(c[2].x, -0.66f) && near(c[2].y, -1.1f) && c[2].a == 0.0f && c[2].side == 1.0f, "p0 cap tip +");
+  expect(near(c[3].x, -0.66f) && near(c[3].y, 1.1f) && c[3].a == 0.0f && c[3].side == -1.0f, "p0 cap tip -");
+  expect(near(c[6].x, 10.66f) && near(c[6].y, -1.1f) && c[6].a == 0.0f, "p1 cap tip +");
+  expect(near(c[7].x, 10.66f) && near(c[7].y, 1.1f) && c[7].a == 0.0f, "p1 cap tip -");
+  expect(c[0].a == 1.0f && c[5].a == 1.0f, "cap bases opaque");
+}
+
+static void test_bloom_weights() {
+  // Radius 1, precision 1: a normalised Gaussian with sigma 1 over 15 taps.
+  const auto w = blur_weights(1.0f, 1.0f);
+  float total = w[0];
+  for (int k = 1; k < 8; ++k) total += 2.0f * w[k];
+  expect(std::fabs(total - 1.0f) < 1e-5f, "blur weights sum to 1");
+  expect(near(w[0], 0.398942f) && near(w[1], 0.241971f) && w[7] < 1e-9f, "blur weights shape");
+  const auto k = combine_weights(1.0f, 1.25f);
+  expect(near(k[0], 0.8f) && near(k[1], 0.64f) && near(k[2], 0.512f) && near(k[3], 0.4096f) && near(k[4], 0.32768f),
+         "level weights: falloff powers");
+  const auto k2 = combine_weights(2.0f, 1.0f);
+  expect(near(k2[0], 0.25f) && near(k2[4], 1.0f / 1024.0f), "level weights: precision powers");
+}
+
 int main() {
+  test_line_quads();
+  test_bloom_weights();
   test_firing();
   test_grid();
   test_camera_follow();

@@ -18,6 +18,7 @@ struct ModelLine {
 
 struct ModelGeometry {
   std::vector<std::vector<ModelLine>> parts;  // one list per Model.parts entry
+  float cap_size = 0.0f;                      // Model.capSize: end-cap length factor (sub_82061DA0)
 };
 
 // Builds a Model's line lists the way sub_820628C0 does: the Model's

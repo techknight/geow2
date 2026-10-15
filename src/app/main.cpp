@@ -6,9 +6,8 @@
 // The second form runs n simulation steps without a window (input: a fixed
 // raw stick value, XInput convention) and saves the final frame.
 //
-// Early development build: only the player ship in the arena. Provisional
-// until its code is traced and ported: lines are drawn as plain thin lines
-// (not the original's quads, glow and bloom).
+// Early development build: the player ship and its shots in the arena,
+// drawn as the original's glowing line quads with its bloom.
 
 #include <SDL3/SDL.h>
 
@@ -22,11 +21,13 @@
 #include <vector>
 
 #include "app/png.h"
+#include "app/renderer.h"
 #include "data/flask.h"
 #include "extract/bytes.h"
 #include "game/bullets.h"
 #include "game/camera.h"
 #include "game/game_math.h"
+#include "game/line_quads.h"
 #include "game/model_geometry.h"
 #include "game/player_motion.h"
 #include "game/rotation.h"
@@ -39,12 +40,7 @@ namespace {
 constexpr float kStep = 1.0f / 60.0f;          // dat_8219D280 = 1.0 / 60.0 (sub_8205D538)
 constexpr float kArenaHalfX = 300.0f;          // dat_82000CF4 (sub_82036250)
 constexpr float kArenaHalfY = 200.0f;          // dat_82000CF0
-constexpr float kAspect = 1.77777779f;         // dat_82002DB0
-
-struct Vertex {
-  float x, y, z, w;
-  float r, g, b, a;
-};
+constexpr float kShapeCapSize = 1.0f;          // dat_820006C4 (sub_82061908)
 
 const FlaskStruct* as_struct(const FlaskValue* v) {
   auto* p = v ? std::get_if<std::shared_ptr<FlaskStruct>>(&v->v) : nullptr;
@@ -94,9 +90,14 @@ bool load(Game& g, const fs::path& cache) {
     SDL_Log("cannot load the cache at %s: %s (run geow2-extract unpack first)", cache.string().c_str(), e.what());
     return false;
   }
-  const auto unit = find_unit(*g.db, "player1");
+  // The player constructor (sub_82051448) starts from the unit "player"
+  // (dat_82000F18); a colour index above 0 (its seventh argument, +0xA0)
+  // switches the model to player1..4 by the eighth and the tint to
+  // player<index>. Single player is taken to use index 0: the original's
+  // ship is white there, as "player"'s tint is (oracle).
+  const auto unit = find_unit(*g.db, "player");
   if (!unit) {
-    SDL_Log("Data.bin has no player1 unit");
+    SDL_Log("Data.bin has no player unit");
     return false;
   }
   if (const FlaskStruct* tint = as_struct(unit->s->find("tint"))) {
@@ -114,7 +115,7 @@ bool load(Game& g, const fs::path& cache) {
   const FlaskValue* model_ref = unit->s->find("model");
   const auto* ref = model_ref ? std::get_if<FlaskRef>(&model_ref->v) : nullptr;
   if (!ref) {
-    SDL_Log("player1 has no model");
+    SDL_Log("player has no model");
     return false;
   }
   const FlaskValue model = g.db->decode(ref->record);
@@ -150,139 +151,32 @@ void step(Game& g, const Sticks& s) {
   camera_follow_single(g.camera, &g.player.x, &g.player.y, 1, kArenaHalfX, kArenaHalfY);
 }
 
-// The ship's body (part 0) in world space, coloured as the draw does
-// (line colour times the draw colour, sub_82061DA0).
-std::vector<Vertex> ship_vertices(const Game& g) {
-  std::vector<Vertex> out;
-  if (g.ship.parts.empty()) return out;
-  const Mat4 world = placement_style_none(*g.gm, g.player.x, g.player.y, g.player.heading);
-  for (const ModelLine& l : g.ship.parts[0]) {
-    const Vec4 a = mul(l.p0, world), b = mul(l.p1, world);
-    const float r = l.r * g.tint[0], gg = l.g * g.tint[1], bl = l.b * g.tint[2], al = l.a * g.tint[3];
-    out.push_back({a.x, a.y, a.z, 1.0f, r, gg, bl, al});
-    out.push_back({b.x, b.y, b.z, 1.0f, r, gg, bl, al});
-  }
-  // Bullets: their line shape in their colour (sub_82061908); the glow
-  // sprite is not drawn yet.
-  for (const Bullet& b : g.bullets) {
-    for (const Segment& s : bullet_segments(b, g.bullet_shape, *g.gm)) {
-      out.push_back({s.a.x, s.a.y, s.a.z, 1.0f, b.colour[0], b.colour[1], b.colour[2], b.colour[3]});
-      out.push_back({s.b.x, s.b.y, s.b.z, 1.0f, b.colour[0], b.colour[1], b.colour[2], b.colour[3]});
+// The foreground lines: the ship's body (part 0), each line coloured as
+// sub_82061DA0 does (line colour times the draw colour) with the model's
+// cap size, and the shots' shapes (sub_82061908) in their colour.
+void foreground(const Game& g, LineBatch& out) {
+  out.clear();
+  if (!g.ship.parts.empty()) {
+    const Mat4 world = placement_style_none(*g.gm, g.player.x, g.player.y, g.player.heading);
+    for (const ModelLine& l : g.ship.parts[0]) {
+      const float colour[4] = {l.r * g.tint[0], l.g * g.tint[1], l.b * g.tint[2], l.a * g.tint[3]};
+      emit_line(out, kLineWidthUnit, g.ship.cap_size, mul(l.p0, world), mul(l.p1, world), colour);
     }
   }
-  return out;
+  // The glow sprite of the shots is not drawn yet.
+  for (const Bullet& b : g.bullets)
+    for (const Segment& s : bullet_segments(b, g.bullet_shape, *g.gm))
+      emit_line(out, kLineWidthUnit, kShapeCapSize, s.a, s.b, b.colour);
 }
 
-struct Gpu {
-  SDL_GPUDevice* device = nullptr;
-  SDL_GPUShader* vs = nullptr;
-  SDL_GPUShader* fs = nullptr;
-  SDL_GPUBuffer* vertices = nullptr;
-  SDL_GPUTransferBuffer* upload = nullptr;
-  uint32_t capacity = 0;
-};
-
-SDL_GPUShader* load_shader(SDL_GPUDevice* dev, const fs::path& path, SDL_GPUShaderStage stage) {
-  Bytes code;
-  try {
-    code = read_file(path);
-  } catch (const std::exception&) {
-    SDL_Log("missing shader %s", path.string().c_str());
-    return nullptr;
-  }
-  SDL_GPUShaderCreateInfo info{};
-  info.code_size = code.size();
-  info.code = code.data();
-  info.entrypoint = "main";
-  info.format = SDL_GPU_SHADERFORMAT_SPIRV;
-  info.stage = stage;
-  info.num_uniform_buffers = stage == SDL_GPU_SHADERSTAGE_VERTEX ? 1 : 0;
-  return SDL_CreateGPUShader(dev, &info);
+void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format,
+            uint32_t w, uint32_t h, const Game& g) {
+  static LineBatch background, front;
+  foreground(g, front);
+  r.draw(cmd, target, format, w, h, camera_view_projection(g.camera, *g.gm), background, front);
 }
 
-SDL_GPUGraphicsPipeline* make_pipeline(const Gpu& gpu, SDL_GPUTextureFormat format) {
-  // Provisional additive blend for the premultiplied line colours.
-  SDL_GPUColorTargetDescription target{};
-  target.format = format;
-  target.blend_state.enable_blend = true;
-  target.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
-  target.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
-  target.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
-  target.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
-  target.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
-  target.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
-  SDL_GPUVertexBufferDescription vb{};
-  vb.slot = 0;
-  vb.pitch = sizeof(Vertex);
-  vb.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
-  SDL_GPUVertexAttribute attrs[2]{};
-  attrs[0] = {0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, 0};
-  attrs[1] = {1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, 16};
-  SDL_GPUGraphicsPipelineCreateInfo info{};
-  info.vertex_shader = gpu.vs;
-  info.fragment_shader = gpu.fs;
-  info.vertex_input_state.vertex_buffer_descriptions = &vb;
-  info.vertex_input_state.num_vertex_buffers = 1;
-  info.vertex_input_state.vertex_attributes = attrs;
-  info.vertex_input_state.num_vertex_attributes = 2;
-  info.primitive_type = SDL_GPU_PRIMITIVETYPE_LINELIST;
-  info.target_info.color_target_descriptions = &target;
-  info.target_info.num_color_targets = 1;
-  return SDL_CreateGPUGraphicsPipeline(gpu.device, &info);
-}
-
-void upload_vertices(Gpu& gpu, SDL_GPUCommandBuffer* cmd, const std::vector<Vertex>& v) {
-  const uint32_t size = uint32_t(v.size() * sizeof(Vertex));
-  if (size == 0) return;
-  if (size > gpu.capacity) {
-    if (gpu.vertices) SDL_ReleaseGPUBuffer(gpu.device, gpu.vertices);
-    if (gpu.upload) SDL_ReleaseGPUTransferBuffer(gpu.device, gpu.upload);
-    SDL_GPUBufferCreateInfo b{SDL_GPU_BUFFERUSAGE_VERTEX, size, 0};
-    gpu.vertices = SDL_CreateGPUBuffer(gpu.device, &b);
-    SDL_GPUTransferBufferCreateInfo t{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, size, 0};
-    gpu.upload = SDL_CreateGPUTransferBuffer(gpu.device, &t);
-    gpu.capacity = size;
-  }
-  void* p = SDL_MapGPUTransferBuffer(gpu.device, gpu.upload, true);
-  std::memcpy(p, v.data(), size);
-  SDL_UnmapGPUTransferBuffer(gpu.device, gpu.upload);
-  SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
-  SDL_GPUTransferBufferLocation src{gpu.upload, 0};
-  SDL_GPUBufferRegion dst{gpu.vertices, 0, size};
-  SDL_UploadToGPUBuffer(copy, &src, &dst, true);
-  SDL_EndGPUCopyPass(copy);
-}
-
-// Draws the frame into `target` (w x h), the 16:9 picture letterboxed.
-void draw(Gpu& gpu, SDL_GPUCommandBuffer* cmd, SDL_GPUGraphicsPipeline* pipe, SDL_GPUTexture* target, uint32_t w,
-          uint32_t h, const Game& g) {
-  const std::vector<Vertex> v = ship_vertices(g);
-  upload_vertices(gpu, cmd, v);
-  SDL_GPUColorTargetInfo ct{};
-  ct.texture = target;
-  ct.clear_color = {0, 0, 0, 1};
-  ct.load_op = SDL_GPU_LOADOP_CLEAR;
-  ct.store_op = SDL_GPU_STOREOP_STORE;
-  SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
-  float vw = float(w), vh = float(w) / kAspect;
-  if (vh > float(h)) {
-    vh = float(h);
-    vw = float(h) * kAspect;
-  }
-  const SDL_GPUViewport vp{(float(w) - vw) * 0.5f, (float(h) - vh) * 0.5f, vw, vh, 0.0f, 1.0f};
-  SDL_SetGPUViewport(pass, &vp);
-  if (!v.empty()) {
-    SDL_BindGPUGraphicsPipeline(pass, pipe);
-    const SDL_GPUBufferBinding bind{gpu.vertices, 0};
-    SDL_BindGPUVertexBuffers(pass, 0, &bind, 1);
-    const Mat4 m = camera_view_projection(g.camera, *g.gm);
-    SDL_PushGPUVertexUniformData(cmd, 0, m.m, sizeof(m.m));
-    SDL_DrawGPUPrimitives(pass, uint32_t(v.size()), 1, 0, 0);
-  }
-  SDL_EndGPURenderPass(pass);
-}
-
-int run_headless(Gpu& gpu, Game& g, int frames, const Sticks& sticks, const fs::path& out) {
+int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const Sticks& sticks, const fs::path& out) {
   for (int i = 0; i < frames; ++i) step(g, sticks);
   const uint32_t w = 1280, h = 720;
   SDL_GPUTextureCreateInfo tci{};
@@ -293,16 +187,15 @@ int run_headless(Gpu& gpu, Game& g, int frames, const Sticks& sticks, const fs::
   tci.height = h;
   tci.layer_count_or_depth = 1;
   tci.num_levels = 1;
-  SDL_GPUTexture* tex = SDL_CreateGPUTexture(gpu.device, &tci);
-  SDL_GPUGraphicsPipeline* pipe = make_pipeline(gpu, tci.format);
+  SDL_GPUTexture* tex = SDL_CreateGPUTexture(dev, &tci);
   SDL_GPUTransferBufferCreateInfo dl{SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, w * h * 4, 0};
-  SDL_GPUTransferBuffer* down = SDL_CreateGPUTransferBuffer(gpu.device, &dl);
-  if (!tex || !pipe || !down) {
+  SDL_GPUTransferBuffer* down = SDL_CreateGPUTransferBuffer(dev, &dl);
+  if (!tex || !down) {
     SDL_Log("cannot create the offscreen target: %s", SDL_GetError());
     return 1;
   }
-  SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(gpu.device);
-  draw(gpu, cmd, pipe, tex, w, h, g);
+  SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
+  render(r, cmd, tex, tci.format, w, h, g);
   SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
   SDL_GPUTextureRegion src{};
   src.texture = tex;
@@ -313,29 +206,28 @@ int run_headless(Gpu& gpu, Game& g, int frames, const Sticks& sticks, const fs::
   SDL_DownloadFromGPUTexture(copy, &src, &dst);
   SDL_EndGPUCopyPass(copy);
   SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
-  SDL_WaitForGPUFences(gpu.device, true, &fence, 1);
-  SDL_ReleaseGPUFence(gpu.device, fence);
-  const auto* px = static_cast<const uint8_t*>(SDL_MapGPUTransferBuffer(gpu.device, down, false));
+  SDL_WaitForGPUFences(dev, true, &fence, 1);
+  SDL_ReleaseGPUFence(dev, fence);
+  const auto* px = static_cast<const uint8_t*>(SDL_MapGPUTransferBuffer(dev, down, false));
   write_png(out, w, h, {px, size_t(w) * h * 4});
-  SDL_UnmapGPUTransferBuffer(gpu.device, down);
+  SDL_UnmapGPUTransferBuffer(dev, down);
   SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets",
           out.string().c_str(), frames, g.player.x, g.player.y, g.player.heading, g.camera.x, g.camera.y,
           g.camera.zoom, g.bullets.size());
-  SDL_ReleaseGPUTransferBuffer(gpu.device, down);
-  SDL_ReleaseGPUGraphicsPipeline(gpu.device, pipe);
-  SDL_ReleaseGPUTexture(gpu.device, tex);
+  SDL_ReleaseGPUTransferBuffer(dev, down);
+  SDL_ReleaseGPUTexture(dev, tex);
   return 0;
 }
 
 int16_t clamp16(int v) { return int16_t(std::clamp(v, -32768, 32767)); }
 
-int run_window(Gpu& gpu, Game& g) {
+int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g) {
   SDL_Window* window = SDL_CreateWindow("geow2", 1280, 720, SDL_WINDOW_RESIZABLE);
-  if (!window || !SDL_ClaimWindowForGPUDevice(gpu.device, window)) {
+  if (!window || !SDL_ClaimWindowForGPUDevice(dev, window)) {
     SDL_Log("cannot open the window: %s", SDL_GetError());
     return 1;
   }
-  SDL_GPUGraphicsPipeline* pipe = make_pipeline(gpu, SDL_GetGPUSwapchainTextureFormat(gpu.device, window));
+  const SDL_GPUTextureFormat format = SDL_GetGPUSwapchainTextureFormat(dev, window);
   SDL_Gamepad* pad = nullptr;
   uint64_t last = SDL_GetTicksNS();
   double pending = 0.0;
@@ -376,14 +268,13 @@ int run_window(Gpu& gpu, Game& g) {
     }
     if (pending > kStep) pending = 0.0;
 
-    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(gpu.device);
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     SDL_GPUTexture* swap = nullptr;
     uint32_t w = 0, h = 0;
-    if (SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window, &swap, &w, &h) && swap) draw(gpu, cmd, pipe, swap, w, h, g);
+    if (SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window, &swap, &w, &h) && swap) render(r, cmd, swap, format, w, h, g);
     SDL_SubmitGPUCommandBuffer(cmd);
   }
-  SDL_ReleaseGPUGraphicsPipeline(gpu.device, pipe);
-  SDL_ReleaseWindowFromGPUDevice(gpu.device, window);
+  SDL_ReleaseWindowFromGPUDevice(dev, window);
   SDL_DestroyWindow(window);
   return 0;
 }
@@ -420,22 +311,17 @@ int main(int argc, char** argv) {
   }
   Game game;
   if (!load(game, cache)) return 1;
-  Gpu gpu;
-  gpu.device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
-  if (!gpu.device) {
+  SDL_GPUDevice* dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
+  if (!dev) {
     SDL_Log("no GPU device: %s", SDL_GetError());
     return 1;
   }
-  const fs::path shaders = fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "shaders";
-  gpu.vs = load_shader(gpu.device, shaders / "line.vert.spv", SDL_GPU_SHADERSTAGE_VERTEX);
-  gpu.fs = load_shader(gpu.device, shaders / "line.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT);
-  if (!gpu.vs || !gpu.fs) return 1;
-  const int rc = headless ? run_headless(gpu, game, frames, sticks, screenshot) : run_window(gpu, game);
-  if (gpu.vertices) SDL_ReleaseGPUBuffer(gpu.device, gpu.vertices);
-  if (gpu.upload) SDL_ReleaseGPUTransferBuffer(gpu.device, gpu.upload);
-  SDL_ReleaseGPUShader(gpu.device, gpu.vs);
-  SDL_ReleaseGPUShader(gpu.device, gpu.fs);
-  SDL_DestroyGPUDevice(gpu.device);
+  Renderer renderer;
+  if (!renderer.init(dev, fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "shaders")) return 1;
+  const int rc =
+      headless ? run_headless(dev, renderer, game, frames, sticks, screenshot) : run_window(dev, renderer, game);
+  renderer.release();
+  SDL_DestroyGPUDevice(dev);
   SDL_Quit();
   return rc;
 }

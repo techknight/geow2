@@ -139,6 +139,8 @@ struct Walker {
 
 ModelGeometry build_model_geometry(const FlaskStruct& model, const GameMath& gm) {
   ModelGeometry g;
+  // The geometry header keeps the Model's first field, capSize (+0xC).
+  g.cap_size = as_float(model.find("capSize"));
   Walker w{gm, {}, nullptr};
   if (const FlaskList* verts = as_list(model.find("vertices"))) {
     for (const FlaskValue& v : *verts) {
