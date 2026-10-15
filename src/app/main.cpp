@@ -102,6 +102,11 @@ bool load(Game& g, const fs::path& cache) {
     g.tint[2] = as_float(tint->find("b")) * a;
     g.tint[3] = 1.0f;
   }
+  // Player constructor sub_82051448: radius +0x20 = 5.0 (dat_820006F0),
+  // heading +0x14 = -pi/2 (dat_820010F4). Spawn position: the arena centre
+  // for now (the spawn point argument is not traced yet).
+  g.player.radius = 5.0f;
+  g.player.heading = -1.57079637f;
   const FlaskValue* model_ref = unit->s->find("model");
   const auto* ref = model_ref ? std::get_if<FlaskRef>(&model_ref->v) : nullptr;
   if (!ref) {
