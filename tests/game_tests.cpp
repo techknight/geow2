@@ -21,6 +21,41 @@ static void expect(bool ok, const char* what) {
 
 static bool near(float a, float b) { return std::fabs(a - b) < 1e-4f; }
 
+// Textbook constants with the same roles as the original's table (reduction
+// by pi split in two parts, Taylor coefficients of sin(r)/r); the tests
+// check the algorithm's structure, not the original's exact values.
+static GameMath test_math() {
+  GameMath::Constants c{};
+  c.c00 = 1.5707963267948966;
+  c.c08 = 0.3183098861837907;
+  c.c10 = 1e9;
+  c.c28 = 3.1415926218032837;
+  c.c30 = 3.1415926535897931 - 3.1415926218032837;
+  const double taylor[8] = {-1.0 / 6, 1.0 / 120, -1.0 / 5040, 1.0 / 362880, -1.0 / 39916800, 1.0 / 6227020800.0,
+                            -1.0 / 1307674368000.0, 1.0 / 355687428096000.0};
+  for (int i = 0; i < 8; ++i) c.poly[i] = taylor[i];
+  c.one = 1.0;
+  c.past_range = 0.0;
+  c.c18 = 0.0f;
+  c.c1c = 1.0f;
+  c.c20 = -1.0f;
+  c.c24 = 0.5f;
+  return GameMath(c);
+}
+
+static const GameMath kMath = test_math();
+
+static void test_game_math() {
+  double worst = 0.0;
+  for (int i = -2000; i <= 2000; ++i) {
+    const double x = i * 0.0137;
+    worst = std::fmax(worst, std::fabs(kMath.sin(x) - std::sin(x)));
+    worst = std::fmax(worst, std::fabs(kMath.cos(x) - std::cos(x)));
+  }
+  expect(worst < 1e-12, "game sin/cos structure matches the C library");
+  expect(kMath.sin(0.0) == 0.0 && kMath.cos(0.0) == 1.0, "sin(0), cos(0)");
+}
+
 // Helpers to build decoded Flask values by hand.
 static FlaskValue num(double d) { return FlaskValue{d}; }
 static FlaskValue integer(int64_t i) { return FlaskValue{i}; }
@@ -62,7 +97,7 @@ static void test_mesh() {
                                  {"segments", list({st("MeshSegment", {{"i", integer(0)}, {"j", integer(1)}}),
                                                     st("MeshSegment", {{"i", integer(0)}, {"j", integer(5)}})})}});
   const auto m = model({mesh}, {vec(1, 2, 0), vec(3, 4, 0)});
-  const ModelGeometry g = build_model_geometry(get(m));
+  const ModelGeometry g = build_model_geometry(get(m), kMath);
   expect(g.parts.size() == 1 && g.parts[0].size() == 1, "mesh line count");
   if (!g.parts.empty() && !g.parts[0].empty()) {
     const ModelLine& l = g.parts[0][0];
@@ -79,7 +114,7 @@ static void test_circle() {
                                      {"sides", integer(4)},
                                      {"slip", num(90.0)},
                                      {"gap", integer(1)}});
-  const ModelGeometry g = build_model_geometry(get(model({circle}, {})));
+  const ModelGeometry g = build_model_geometry(get(model({circle}, {})), kMath);
   expect(g.parts[0].size() == 3, "circle gap skips the first segment");
   if (g.parts[0].size() == 3) {
     // k = 1: angle = 1/4 turn + 90 degrees = 180 degrees -> (10 - 2, 0).
@@ -95,7 +130,7 @@ static void test_scale_prepended() {
   auto xf = st("SectionTransform", {{"section", mesh},
                                     {"transforms", list({st("TransformTranslate", {{"translation", vec(5, 0, 0)}}),
                                                          st("TransformScale", {{"scale", vec(2, 2, 2)}})})}});
-  const ModelGeometry g = build_model_geometry(get(model({xf}, {vec(1, 0, 0)})));
+  const ModelGeometry g = build_model_geometry(get(model({xf}, {vec(1, 0, 0)})), kMath);
   expect(g.parts[0].size() == 1 && near(g.parts[0][0].p0.x, 7), "scale is prepended to the composition");
 }
 
@@ -151,6 +186,7 @@ static void test_arena() {
 }
 
 int main() {
+  test_game_math();
   test_stick();
   test_thrust_and_integrate();
   test_arena();

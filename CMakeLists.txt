@@ -34,6 +34,7 @@ target_link_libraries(geow2_data PUBLIC geow2_extract)
 
 # Game logic and content built from the original data (no rendering, no platform code).
 add_library(geow2_game STATIC
+  src/game/game_math.cpp
   src/game/model_geometry.cpp
   src/game/player_motion.cpp
 )

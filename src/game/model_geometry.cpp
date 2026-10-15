@@ -6,10 +6,6 @@
 namespace geow2 {
 namespace {
 
-// The game uses its own sin/cos (sub_8212E9B0 / sub_8212EA80); matching
-// them bit for bit is still open, so the C library's are used for now.
-float game_sin(float a) { return std::sin(a); }
-float game_cos(float a) { return std::cos(a); }
 
 // All of the model build is single precision; fused multiply-adds are
 // written with std::fmaf where the disassembly has fmadds/fmsubs.
@@ -50,9 +46,9 @@ Vec4 vector3(const FlaskStruct* s, float w) {
 
 // sub_820318D8 with scale 1 and no translation (TransformRotate): rotation
 // from three angles in radians, rows as the game writes them.
-Mat4 euler(float a, float b, float c) {
-  const float sa = game_sin(a), ca = game_cos(a), sb = game_sin(b), cb = game_cos(b), sc = game_sin(c),
-              cc = game_cos(c);
+Mat4 euler(const GameMath& gm, float a, float b, float c) {
+  const float sa = gm.sinf(a), ca = gm.cosf(a), sb = gm.sinf(b), cb = gm.cosf(b), sc = gm.sinf(c),
+              cc = gm.cosf(c);
   Mat4 r = Mat4::identity();
   r.m[0] = cc * cb;
   r.m[1] = sc * cb;
@@ -68,9 +64,9 @@ Mat4 euler(float a, float b, float c) {
 }
 
 // sub_82041600: rotation about a unit axis.
-Mat4 axis_angle(float angle, float x, float y, float z) {
+Mat4 axis_angle(const GameMath& gm, float angle, float x, float y, float z) {
   // All nine elements are fused (0x820416A0..0x82041768).
-  const float c = game_cos(angle), s = game_sin(angle), t = 1.0f - c;
+  const float c = gm.cosf(angle), s = gm.sinf(angle), t = 1.0f - c;
   Mat4 r = Mat4::identity();
   r.m[0] = std::fmaf(x * x, t, c);
   r.m[1] = std::fmaf(t * x, y, z * s);
@@ -87,7 +83,7 @@ Mat4 axis_angle(float angle, float x, float y, float z) {
 // sub_82061B58: compose a transform list onto `parent`. A scale is
 // prepended (it scales the rows of the running matrix, sub_82040F28); the
 // others are appended; the result is local * parent.
-Mat4 compose(const FlaskList* transforms, const Mat4& parent) {
+Mat4 compose(const GameMath& gm, const FlaskList* transforms, const Mat4& parent) {
   Mat4 local = Mat4::identity();
   if (transforms) {
     for (const FlaskValue& tv : *transforms) {
@@ -102,11 +98,11 @@ Mat4 compose(const FlaskList* transforms, const Mat4& parent) {
         }
       } else if (t->type == "TransformRotate") {
         const Vec4 r = vector3(as_struct(t->find("rotation")), 0.0f);
-        local = mul(local, euler(r.x * kDegToRad, r.y * kDegToRad, r.z * kDegToRad));
+        local = mul(local, euler(gm, r.x * kDegToRad, r.y * kDegToRad, r.z * kDegToRad));
       } else if (t->type == "TransformAxisAngle") {
         const Vec4 a = vector3(as_struct(t->find("axis")), 0.0f);
         const float inv = 1.0f / std::sqrt((a.y * a.y + a.z * a.z) + a.x * a.x);  // fsqrts, fdivs
-        local = mul(local, axis_angle(as_float(t->find("angle")) * kDegToRad, a.x * inv, a.y * inv, a.z * inv));
+        local = mul(local, axis_angle(gm, as_float(t->find("angle")) * kDegToRad, a.x * inv, a.y * inv, a.z * inv));
       } else if (t->type == "TransformTranslate") {
         const Vec4 d = vector3(as_struct(t->find("translation")), 0.0f);
         local.m[12] += d.x;
@@ -120,6 +116,7 @@ Mat4 compose(const FlaskList* transforms, const Mat4& parent) {
 }
 
 struct Walker {
+  const GameMath& gm;
   std::vector<Vec4> vertices;
   std::vector<ModelLine>* out = nullptr;
 
@@ -159,12 +156,12 @@ struct Walker {
         // points are fmadds of radius with sin/cos (0x82062730..0x8206278C).
         auto angle = [&](int i) { return std::fmaf(float(i) / float(sides), kTwoPi, slip_rad); };
         const float a0 = angle(k), a1 = angle(k + 1);
-        const Vec4 p0{std::fmaf(radius, game_cos(a0), c.x), std::fmaf(radius, game_sin(a0), c.y), c.z, 1.0f};
-        const Vec4 p1{std::fmaf(radius, game_cos(a1), c.x), std::fmaf(radius, game_sin(a1), c.y), c.z, 1.0f};
+        const Vec4 p0{std::fmaf(radius, gm.cosf(a0), c.x), std::fmaf(radius, gm.sinf(a0), c.y), c.z, 1.0f};
+        const Vec4 p1{std::fmaf(radius, gm.cosf(a1), c.x), std::fmaf(radius, gm.sinf(a1), c.y), c.z, 1.0f};
         emit(p0, p1, colour, m);
       }
     } else if (s->type == "SectionTransform") {
-      walk(as_struct(s->find("section")), compose(as_list(s->find("transforms")), m), depth + 1);
+      walk(as_struct(s->find("section")), compose(gm, as_list(s->find("transforms")), m), depth + 1);
     } else if (s->type == "SectionCombine") {
       if (const FlaskList* list = as_list(s->find("sections")))
         for (const FlaskValue& v : *list) walk(as_struct(&v), m, depth + 1);
@@ -174,16 +171,16 @@ struct Walker {
 
 }  // namespace
 
-ModelGeometry build_model_geometry(const FlaskStruct& model) {
+ModelGeometry build_model_geometry(const FlaskStruct& model, const GameMath& gm) {
   ModelGeometry g;
-  Walker w;
+  Walker w{gm, {}, nullptr};
   if (const FlaskList* verts = as_list(model.find("vertices"))) {
     for (const FlaskValue& v : *verts) {
       const FlaskStruct* vert = as_struct(&v);
       w.vertices.push_back(vector3(vert ? as_struct(vert->find("position")) : nullptr, 1.0f));
     }
   }
-  const Mat4 base = compose(as_list(model.find("transform")), Mat4::identity());
+  const Mat4 base = compose(gm, as_list(model.find("transform")), Mat4::identity());
   if (const FlaskList* parts = as_list(model.find("parts"))) {
     g.parts.resize(parts->size());
     for (size_t p = 0; p < parts->size(); ++p) {

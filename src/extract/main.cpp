@@ -5,6 +5,7 @@
 //   geow2-extract verify <cache-dir>
 //   geow2-extract dump-db <cache-dir>     (developer aid: every Data.bin value)
 
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <map>
@@ -170,12 +171,23 @@ int check_database(const fs::path& files) {
     for (const auto& [t, n] : by_type) std::printf(" %s %d", t.c_str(), n);
     std::printf("\n");
 
+    // The original's sin/cos with the constants from the user's image,
+    // checked against the C library.
+    const GameMath gm = GameMath::from_image(read_file(files.parent_path() / "xex" / "image.bin"));
+    double worst = 0.0;
+    for (int i = -20000; i <= 20000; ++i) {
+      const double x = i * 0.00137;
+      worst = std::fmax(worst, std::fabs(gm.sin(x) - std::sin(x)));
+      worst = std::fmax(worst, std::fabs(gm.cos(x) - std::cos(x)));
+    }
+    std::printf("game sin/cos: max difference from the C library %.3g\n", worst);
+
     // Build every model's line lists the way the game does at load.
     size_t models = 0, lines = 0, empty = 0;
     for (uint32_t r = 0; r < db.records().size(); ++r) {
       if (db.types()[db.records()[r].type].name != "Model") continue;
       const FlaskValue v = db.decode(r);
-      const ModelGeometry g = build_model_geometry(*std::get<std::shared_ptr<FlaskStruct>>(v.v));
+      const ModelGeometry g = build_model_geometry(*std::get<std::shared_ptr<FlaskStruct>>(v.v), gm);
       size_t n = 0;
       for (const auto& part : g.parts) n += part.size();
       ++models;
