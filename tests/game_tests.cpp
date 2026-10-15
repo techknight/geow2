@@ -436,6 +436,7 @@ static void test_world() {
   }
   // Placed groups: the wall nearest the player, in line with them.
   w.players.resize(1);
+  w.player_order = {0};
   w.players[0].x = 250.0f;
   w.players[0].y = 20.0f;
   const Placement p = placed_position(w);
@@ -502,6 +503,7 @@ static void test_enemies() {
     Units units;
     World w(kMath, rng, units);
     w.players.resize(1);
+    w.player_order = {0};
     w.players[0].radius = 5.0f;
     Entity* e = spawn_enemy(w, type, 1.5707964f, 150.0f, 100.0f);
     expect(e != nullptr && w.enemy_count == 1, "enemy spawned");
@@ -544,6 +546,7 @@ static void test_enemies() {
     r2.seed(9);
     World s(kMath, r2, units);
     s.players.resize(1);
+    s.player_order = {0};
     Entity* head = spawn_enemy(s, 8, 0.0f, 0.0f, 0.0f);
     expect(head && s.entities.size() == 24 && s.enemy_count == 1, "snake of 24 parts");
     for (int i = 0; i < 300; ++i) s.update_entities();
@@ -573,6 +576,7 @@ static void test_gate() {
   Units units;
   World w(kMath, rng, units);
   w.players.resize(1);
+  w.player_order = {0};
   w.players[0].radius = 5.0f;
   Entity* a = spawn_gate(w, 100.0f, 0.0f);
   expect(a && w.entities.size() == 2 && w.enemy_count == 2, "gate of two ends");
@@ -610,6 +614,7 @@ static void test_gravity_well() {
   Units units;
   World w(kMath, rng, units);
   w.players.resize(1);
+  w.player_order = {0};
   w.players[0].x = -250.0f;
   auto* g = static_cast<GravityWell*>(spawn_enemy(w, 5, 0.0f, 0.0f, 0.0f));
   expect(g && g->hits == 6 && g->radius == 11.0f && !g->active, "well starts idle with 6 hits");

@@ -1,5 +1,7 @@
 #include "game/spawn.h"
 
+#include <limits>
+
 #include <cmath>
 
 #include "game/amoeba.h"
@@ -174,14 +176,8 @@ void spawn_at_random(World& w, float dist, int type) {
 }
 
 Placement placed_position(World& w) {
-  // sub_8204F3F8 picks the player spawned earliest; with one player, that
-  // player.
-  const PlayerTarget* p = nullptr;
-  for (const PlayerTarget& t : w.players)
-    if (!t.removed) {
-      p = &t;
-      break;
-    }
+  // Near the player spawned earliest (sub_8204F3F8).
+  const PlayerTarget* p = first_player(w);
   if (!p) return {0.0f, 0.0f, random_right_angle(w)};
   // sub_8203D318: candidates on the four walls (x = -292 / 292, y = -192 /
   // 192), the other coordinate clamped (fsel), facing 0, -pi, pi/2, -pi/2.
@@ -207,9 +203,16 @@ Placement placed_position(World& w) {
 }
 
 const PlayerTarget* first_player(const World& w) {
-  for (const PlayerTarget& t : w.players)
-    if (!t.removed) return &t;
-  return nullptr;
+  const PlayerTarget* best = nullptr;
+  float least = std::numeric_limits<float>::infinity();  // dat_82190B18
+  for (const size_t k : w.player_order) {
+    const PlayerTarget& t = w.players[k];
+    if (!t.removed && t.spawn_time < least) {
+      least = t.spawn_time;
+      best = &t;
+    }
+  }
+  return best;
 }
 
 Vec2 corner(int k) {

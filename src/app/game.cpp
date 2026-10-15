@@ -183,7 +183,9 @@ void player_touched(Game& g, const Touch& t) {
 
 // A new player object (sub_82051448) at the slot's spawn point: radius 5
 // (dat_820006F0), heading -pi/2 (dat_820010F4), at rest, fading in; it
-// joins the end of the player list. The slot's gate chain stays.
+// joins the end of the player list. The slot's gate chain stays. Its
+// spawn time (+0xAC) is the clock plus a draw of the game's generator
+// times 2^-32 (dat_820006E4) times the step (fmuls, fmuls, fadds).
 void spawn_player(Game& g, size_t k) {
   Ship& s = g.ships[k];
   s.motion = PlayerMotion{};
@@ -206,7 +208,10 @@ void spawn_player(Game& g, size_t k) {
   t.colour = s.colour;
   t.gate_chain = chain;
   t.gate_chain_time = chain_time;
+  const float u = float(g.rng.next()) * 2.32830644e-10f;
+  t.spawn_time = g.elapsed + u * kStep;
   g.player_list.push_back(k);
+  g.world->player_order = g.player_list;
 }
 
 // sub_82036358, when no player is left after one spawned (sound event
@@ -726,6 +731,7 @@ void start_game(Game& g, int mode) {
   g.record_count = 1;
   g.ships.fill(Ship{});
   g.player_list.clear();
+  w.player_order.clear();
   // sub_82032FF8: lives and bombs into the records.
   g.recs.fill(LifeRecord{});
   for (int r = 0; r < g.record_count; ++r) {
@@ -812,6 +818,7 @@ void delete_objects(Game& g) {
     s.life.removed = true;
   }
   g.player_list.clear();
+  g.world->player_order.clear();
   g.field_live = false;
 }
 
@@ -1040,6 +1047,7 @@ void step(Game& g, std::span<const Sticks> pads) {
   for (int k = 0; k < g.ship_count; ++k)
     if (g.ships[size_t(k)].life.removed) g.ships[size_t(k)].life.present = false;
   std::erase_if(g.player_list, [&g](size_t k) { return !g.ships[k].life.present; });
+  w.player_order = g.player_list;
 
   // The achievements checked every step of a game (0x82037B0C..):
   // Treaty (King: 30 zones, no bomb, no shield hit), Surf (Waves: 8 rocket

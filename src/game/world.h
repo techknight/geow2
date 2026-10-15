@@ -142,6 +142,9 @@ struct PlayerTarget {
   float radius = 0;
   bool removed = false;    // flag 1
   float hidden = 0;        // +0xE0: targeted only while <= 0 (the freeze power-up)
+  // +0xAC: when it spawned, plus a random fraction of a step (the earliest
+  // spawned is the spawners' reference player, sub_8204F3F8).
+  float spawn_time = 0;
   int record = 0;          // +0xA4: its score record
   int colour = 0;          // +0xA0: colour id (0 single player, 1..4 the team)
   bool magnet = false;     // +0xDC > 0: pulls geoms from four times as far
@@ -231,6 +234,9 @@ class World {
   float step = 1.0f / 60.0f;            // dat_8219D280
   float half_x = 300.0f, half_y = 200.0f;  // dat_821825B4 / dat_821825B8
   std::vector<PlayerTarget> players;
+  // The player list (0x821813A8): the players' objects in creation order,
+  // as indices into `players`.
+  std::vector<size_t> player_order;
   std::vector<std::unique_ptr<Entity>> entities;
   std::array<std::vector<Entity*>, 1024> cells;
   int enemy_count = 0;                  // dat_8219E828
