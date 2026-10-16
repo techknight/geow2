@@ -401,13 +401,16 @@ void Renderer::upload(SDL_GPUCommandBuffer* cmd, Buffer& b, SDL_GPUBufferUsageFl
                       uint32_t size) {
   if (size == 0) return;
   if (size > b.capacity) {
+    // Doubling, from 64 KB, so a busy stretch reallocates only a few times.
+    uint32_t cap = b.capacity ? b.capacity : 65536;
+    while (cap < size) cap *= 2;
     if (b.buf) SDL_ReleaseGPUBuffer(device_, b.buf);
     if (b.staging) SDL_ReleaseGPUTransferBuffer(device_, b.staging);
-    SDL_GPUBufferCreateInfo bi{usage, size, 0};
+    SDL_GPUBufferCreateInfo bi{usage, cap, 0};
     b.buf = SDL_CreateGPUBuffer(device_, &bi);
-    SDL_GPUTransferBufferCreateInfo ti{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, size, 0};
+    SDL_GPUTransferBufferCreateInfo ti{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, cap, 0};
     b.staging = SDL_CreateGPUTransferBuffer(device_, &ti);
-    b.capacity = size;
+    b.capacity = cap;
   }
   void* p = SDL_MapGPUTransferBuffer(device_, b.staging, true);
   std::memcpy(p, data, size);
