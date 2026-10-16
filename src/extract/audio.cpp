@@ -30,10 +30,22 @@ Bytes riff(const Bytes& fmt, std::span<const uint8_t> data) {
   return b;
 }
 
-std::string quote(const std::filesystem::path& p) { return "\"" + p.string() + "\""; }
+// One argument for the shell std::system runs: double quotes for cmd.exe
+// (Windows paths cannot hold them); single quotes for a POSIX shell, where
+// nothing inside them is special but the quote itself.
+std::string quote(const std::string& s) {
+#ifdef _WIN32
+  return "\"" + s + "\"";
+#else
+  std::string q = "'";
+  for (char c : s) q += c == '\'' ? std::string("'\\''") : std::string(1, c);
+  return q + "'";
+#endif
+}
+std::string quote(const std::filesystem::path& p) { return quote(p.string()); }
 
 std::string ffmpeg_command() {
-  if (const char* env = std::getenv("GEOW2_FFMPEG"); env && *env) return "\"" + std::string(env) + "\"";
+  if (const char* env = std::getenv("GEOW2_FFMPEG"); env && *env) return quote(std::string(env));
   return "ffmpeg";
 }
 

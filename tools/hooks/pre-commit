@@ -1,4 +1,6 @@
 #!/bin/sh
 # Refuses commits that would add game data. Enable once per clone:
 #   git config core.hooksPath tools/hooks
+# python3 where it runs (Linux, macOS; on Windows it may be a stub), else python.
+if python3 -c "" >/dev/null 2>&1; then exec python3 tools/guard.py; fi
 exec python tools/guard.py

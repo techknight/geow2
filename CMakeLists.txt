@@ -14,6 +14,15 @@ if(MSVC)
   # explicitly with std::fma where the original uses them).
   add_compile_options(/W4 /permissive- /utf-8 /fp:precise)
   add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX)
+else()
+  # The same rules for GCC and Clang: no implicit contraction (GCC's
+  # default is -ffp-contract=fast and Apple Clang's =on, which fuse
+  # a * b + c on any FMA-capable target, arm64 included).
+  add_compile_options(-ffp-contract=off)
+  # x87 arithmetic keeps excess precision; the replays need SSE or NEON.
+  if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+    message(FATAL_ERROR "32-bit builds are not supported: their float arithmetic does not match the original's")
+  endif()
 endif()
 
 # Extractor: reads the user's XBLA package and writes the data folder the game uses.
@@ -101,7 +110,7 @@ if(GEOW2_BUILD_GAME)
   FetchContent_MakeAvailable(SDL3)
 
   file(GLOB VULKAN_SDK_BINS "C:/VulkanSDK/*/Bin")
-  find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" ${VULKAN_SDK_BINS} REQUIRED)
+  find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin" ${VULKAN_SDK_BINS} REQUIRED)
   set(SHADER_OUT ${CMAKE_CURRENT_BINARY_DIR}/shaders)
   set(SPIRV)
   foreach(shader line.vert ui_line.vert ui_fill.frag ui_sprite.vert ui_sprite_flat.vert ui_sprite.frag line_body.frag line_cap.frag fullscreen.vert downsample.frag blur.frag combine.frag
@@ -164,3 +173,13 @@ endif()
 add_executable(audio_tests tests/audio_tests.cpp)
 target_link_libraries(audio_tests PRIVATE geow2_audio)
 add_test(NAME audio_tests COMMAND audio_tests)
+
+# Warnings for our own targets (not SDL's).
+if(NOT MSVC)
+  foreach(t geow2_extract geow2_data geow2_game geow2_audio geow2-extract geow2
+            extract_tests data_tests game_tests audio_tests)
+    if(TARGET ${t})
+      target_compile_options(${t} PRIVATE -Wall -Wextra)
+    endif()
+  endforeach()
+endif()
