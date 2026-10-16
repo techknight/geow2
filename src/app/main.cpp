@@ -344,7 +344,9 @@ StepInputs load_inputs(const fs::path& path) {
     out.steps[size_t(step)] = row;
     if (cph >= 0) {
       if (size_t(step) >= out.phase.size()) out.phase.resize(size_t(step) + 1, -1);
-      out.phase[size_t(step)] = std::atoi(v[size_t(cph)].c_str());
+      // A blank phase (a row with only the pads) keeps the one before.
+      const std::string& ph = v[size_t(cph)];
+      out.phase[size_t(step)] = !ph.empty() ? std::atoi(ph.c_str()) : step > 0 ? out.phase[size_t(step) - 1] : -1;
     }
   }
   return out;
