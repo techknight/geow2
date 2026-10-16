@@ -249,7 +249,7 @@ void GravityWell::kill(World& w, const Killer& k) {
   // (125, kind 2), which sets off the wells it reaches.
   if (hits <= 0 && (k.kind == 1 || k.kind == 3)) {
     const float speed = float(125.0f / w.step) * 0.0833333358f;  // dat_82001A20, dat_82001528
-    static_cast<Shockwave*>(w.add(std::make_unique<Shockwave>(w, 125.0f, speed, x, y, 2)))->player = k.player;
+    w.add(std::make_unique<Shockwave>(w, 125.0f, speed, x, y, k.player, 2));
   }
 }
 

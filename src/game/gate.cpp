@@ -235,8 +235,8 @@ void gate_crossings(World& w) {
       // Two blasts (70, over a sixth of 70 / step a second, kind 1), the
       // chain counted, both ends destroyed (kind 5).
       const float speed = float(70.0f / w.step) * 0.166666672f;  // dat_820018EC, dat_82000700
-      static_cast<Shockwave*>(w.add(std::make_unique<Shockwave>(w, 70.0f, speed, a.x, a.y, 1)))->player = pi;
-      static_cast<Shockwave*>(w.add(std::make_unique<Shockwave>(w, 70.0f, speed, b.x, b.y, 1)))->player = pi;
+      w.add(std::make_unique<Shockwave>(w, 70.0f, speed, a.x, a.y, pi, 1));
+      w.add(std::make_unique<Shockwave>(w, 70.0f, speed, b.x, b.y, pi, 1));
       if (w.clock - p.gate_chain_time > kChainTime || p.gate_chain >= 5) p.gate_chain = 0;
       ++p.gate_chain;
       p.gate_chain_time = w.clock;

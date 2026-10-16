@@ -12,7 +12,7 @@ constexpr float kEnemyColour[4] = {3.0f, 0.5f, 0.1f, 1.0f};
 
 }  // namespace
 
-Shockwave::Shockwave(World& w, float max_r, float s, float px, float py, int k) {
+Shockwave::Shockwave(World& w, float max_r, float s, float px, float py, size_t pl, int k) {
   x = px;
   y = py;
   type = 0xF;
@@ -21,6 +21,7 @@ Shockwave::Shockwave(World& w, float max_r, float s, float px, float py, int k) 
   max_radius = max_r;
   speed = s;
   kind = k;
+  player = pl;
   // The first radius: one step's growth, or the maximum if smaller.
   const float first = w.step * speed;
   r = max_radius - first < 0.0f ? max_radius : first;

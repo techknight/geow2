@@ -10,7 +10,9 @@ namespace geow2 {
 // rings (sub_82055BA8). The bomb's is kind 0 (400, 533.2).
 class Shockwave : public Entity {
  public:
-  Shockwave(World& w, float max_radius, float speed, float px, float py, int kind);
+  // The player is credited before the first blast runs (sub_82056918
+  // stores +0x48 ahead of sub_82056850).
+  Shockwave(World& w, float max_radius, float speed, float px, float py, size_t player, int kind);
   void update(World& w) override;             // 0x82056A18
   void draw(World& w, LineBatch& out) override;  // sub_82055BA8
 

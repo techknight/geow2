@@ -413,8 +413,7 @@ void update_player(Game& g, size_t k, std::span<const Sticks> pads) {
       const int bomb = player_bomb(p, g.recs[size_t(sh.record)], lt - rt < 0.0f ? rt : lt, g.rules);
       if (bomb == 1) {
         w.play(audio::Event::kFireSmartbomb);
-        static_cast<Shockwave*>(w.add(std::make_unique<Shockwave>(w, 400.0f, 533.2f, m.x, m.y, 0)))->player =
-            k;  // dat_82000F88, dat_82001C68
+        w.add(std::make_unique<Shockwave>(w, 400.0f, 533.2f, m.x, m.y, k, 0));  // dat_82000F88, dat_82001C68
         g.spawner.bombed(w);
       } else if (bomb == 2) {
         w.play(audio::Event::kBombDryFire);
@@ -701,7 +700,7 @@ void pick_power_up(Game& g, size_t k, int flag) {
     case 5:
       // A bomb's blast from the player (no bomb used, nothing marked
       // fired), and the spawner backs off.
-      static_cast<Shockwave*>(w.add(std::make_unique<Shockwave>(w, 400.0f, 533.2f, x, y, 0)))->player = k;
+      w.add(std::make_unique<Shockwave>(w, 400.0f, 533.2f, x, y, k, 0));
       w.play(audio::Event::kFireSmartbomb);
       popup(0xAE);
       g.spawner.bombed(w);
