@@ -2,11 +2,12 @@
 //
 //   geow2 [--data <data-dir>] [--profile <dir>] [--fullscreen | --windowed] [--720p | --native]
 //         [--vsync | --no-vsync] [--language en|de|fr|es|it]
-//   geow2 --data <data-dir> --frames <n> --screenshot <out.png> [--size <w> <h>] [--mode <n>] [--level <n>]
+//   geow2 --data <data-dir> --frames <n> --screenshot <out.png> | --audio-out <out.wav> [--size <w> <h>]
+//         [--mode <n>] [--level <n>]
 //         [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--trigger <0-255>] [--spawn <type> <x> <y>]...
 //         [--player <pad> <team> <role>]... [--versus] [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>]
 //         [--inputs <csv>] [--rng-state <file> <step>] [--crt-state <hex>] [--emulator-rounding]
-//         [--trace <csv>] [--positions <file>] [--dump <step> <file>]
+//         [--trace <csv>] [--positions <file>] [--dump <step> <file>] [--perf]
 //   geow2 --data <data-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
 //
 // The first form opens the window at the front end; the profile, the
@@ -18,8 +19,10 @@
 // 1 Evolved, 2 Sequence, 3 Waves, 4 Pacifism, 5 King) without a window,
 // with a fixed raw stick value (XInput convention), --bomb pulling the
 // trigger on one step and --spawn adding enemies (type 16: a power-up
-// item) at the start, and saves the final frame. --player joins a pad to
-// a multiplayer game (team 0-3, role 0 alone, 1 pilot, 2 copilot;
+// item) at the start, and saves the final frame; --audio-out also (or
+// instead) saves its sound, 5.1 float, with the options at full.
+// --player joins a pad to a multiplayer game (team 0-3, role 0 alone,
+// 1 pilot, 2 copilot;
 // --versus for teams against each other), every pad holding the --stick
 // and --fire values unless --pad-stick / --pad-fire set its own.
 //
@@ -57,6 +60,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <optional>
 #include <sstream>
@@ -372,10 +376,89 @@ bool transition_at(const StepInputs& in, size_t step) {
   return (a == 1 && b == 2) || (a == 5 && b == 6);
 }
 
+// The sound's hooks into the game. The events behind rate gates or in
+// alternating pairs go through the glue with the millisecond clock.
+void attach_sound(Game& g, audio::GameAudio& glue, std::function<uint32_t()> clock) {
+  g.world->sound = [&glue, clock](audio::Event e) {
+    const uint32_t now = clock();
+    switch (e) {
+      case audio::Event::kPickupGeom1: glue.pickup_geom(now); break;
+      case audio::Event::kGateBounceBullet1: glue.gate_bounce_bullet(now); break;
+      case audio::Event::kPinRicochet1: glue.pin_ricochet(now); break;
+      case audio::Event::kPowerUpEndSpeed:
+      case audio::Event::kPowerUpEndSlow:
+      case audio::Event::kPowerUpEndMagnet:
+      case audio::Event::kPowerUpEndWeapon:
+      case audio::Event::kPowerUpEndFreeze: glue.power_up_end(e, now); break;
+      default: glue.fire(e); break;
+    }
+  };
+  g.world->repulsar_hit = [&glue, clock]() { glue.repulsar_hit_wall(clock()); };
+  g.world->well_hum = [&glue](const Entity* w, int hits) { glue.gravity_well_hits(reinterpret_cast<uintptr_t>(w), hits); };
+  g.music = [&g, &glue](bool in_game) { glue.select_music(in_game, g.rules.mode, frozen(g)); };
+}
+
+// The sound after a step: sub_82078970 after the wells, then sub_82079BC0.
+void sound_step(Game& g, audio::GameAudio& glue, const audio::AudioEngine& sound, float sfx_option,
+                float music_option) {
+  if (!frozen(g)) glue.gravity_wells_update(kWellMaxHits);
+  const GameAudioState a = audio_state(g);
+  audio::AudioFrame f;
+  f.paused = a.paused;
+  f.sfx_option = sfx_option;
+  f.music_option = music_option;
+  f.distance_from_hill = a.distance_from_hill;
+  f.thrust = a.thrust;
+  f.magnet_active = a.magnet_active;
+  f.player_x = a.player_x;
+  f.player_y = a.player_y;
+  f.progression_level = a.progression_level;
+  f.multiplier = a.multiplier;
+  f.score = a.score;
+  f.no_enemies = a.no_enemies;
+  f.time_left = a.time_left;
+  f.level_time_left = a.level_time_left;
+  f.bomb_kill_count = a.bomb_kills;
+  glue.frame(f);
+  g.transition_switch = sound.transition_switch();
+}
+
+// --audio-out: interleaved 5.1 float samples as a WAVE_FORMAT_EXTENSIBLE file.
+void write_wav(const fs::path& path, const std::vector<float>& samples) {
+  std::ofstream f(path, std::ios::binary | std::ios::trunc);
+  auto u16 = [&](uint32_t v) { f.put(char(v & 0xFF)).put(char(v >> 8 & 0xFF)); };
+  auto u32 = [&](uint32_t v) {
+    u16(v & 0xFFFF);
+    u16(v >> 16);
+  };
+  const uint32_t data = uint32_t(samples.size() * sizeof(float));
+  f.write("RIFF", 4);
+  u32(4 + 8 + 40 + 8 + data);
+  f.write("WAVEfmt ", 8);
+  u32(40);
+  u16(0xFFFE);  // WAVE_FORMAT_EXTENSIBLE
+  u16(6);
+  u32(uint32_t(audio::kSampleRate));
+  u32(uint32_t(audio::kSampleRate) * 6 * 4);
+  u16(6 * 4);
+  u16(32);
+  u16(22);
+  u16(32);
+  u32(0x3F);  // FL FR FC LFE BL BR
+  // KSDATAFORMAT_SUBTYPE_IEEE_FLOAT
+  const uint8_t guid[16] = {0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00,
+                            0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71};
+  f.write(reinterpret_cast<const char*>(guid), 16);
+  f.write("data", 4);
+  u32(data);
+  f.write(reinterpret_cast<const char*>(samples.data()), std::streamsize(data));
+}
+
 int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std::array<Sticks, 4>& sticks,
                  const StepInputs& inputs, int bomb_step, const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h,
                  bool exact_720p, const fs::path& trace_path, const fs::path& rng_path, int rng_step,
-                 const fs::path& dump_path, int dump_step, const fs::path& positions_path) {
+                 const fs::path& dump_path, int dump_step, const fs::path& positions_path, const fs::path& data_dir,
+                 const fs::path& audio_path) {
   // --trace: after each step, the clock and slot 0's object (x, y, vx,
   // vy) at full precision, as the oracle's memory reads give them.
   std::ofstream trace;
@@ -393,6 +476,22 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
   // "step type:x:y ...".
   std::ofstream positions;
   if (!positions_path.empty()) positions.open(positions_path, std::ios::trunc);
+  // --audio-out: the sound of each step (800 samples at 48 kHz), with the
+  // options' volumes at full and a clock of whole steps.
+  audio::AudioEngine sound;
+  audio::GameAudio glue(sound);
+  std::vector<float> samples;
+  int step_now = 0;
+  if (!audio_path.empty()) {
+    std::string error;
+    if (sound.init(data_dir, &error)) {
+      glue.start();
+      attach_sound(g, glue, [&step_now]() { return uint32_t(uint64_t(step_now) * 50 / 3); });
+      glue.select_music(true, g.rules.mode, frozen(g));  // the game's start, before the hooks existed
+    } else {
+      SDL_Log("no sound: %s", error.c_str());
+    }
+  }
   // --perf: every step is also drawn (offscreen, at --size) and waited
   // for, and the phase times are reported every 600 steps.
   SDL_GPUTexture* prof_target = nullptr;
@@ -442,6 +541,13 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
     } else {
       tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
       SDL_SubmitGPUCommandBuffer(cmd);
+    }
+    if (sound.loaded()) {
+      step_now = i + 1;
+      sound_step(g, glue, sound, 1.0f, 1.0f);
+      const size_t at = samples.size();
+      samples.resize(at + 800 * 6);
+      sound.render(samples.data() + at, 800);
     }
     // --rng-state: the generator's state read from the oracle (the index,
     // then 624 words, in hex), loaded after that step.
@@ -551,7 +657,7 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
   fe.watch_game();
   UiCanvas ui;
   fe.draw(ui);
-  if (capture(dev, r, g, ui, out, w, h, exact_720p)) return 1;
+  if (!out.empty() && capture(dev, r, g, ui, out, w, h, exact_720p)) return 1;
   SDL_Log("wrote %s after %d steps: player at (%.3f, %.3f), heading %.4f, camera (%.3f, %.3f) zoom %.3f, %zu bullets, "
           "%zu entities, score %lld x%d, %zu particles, %zu debris, %zu linger quads, %d deaths, %d bombs left, "
           "%d bomb kills, %d lives%s; sequence phase %d level %d",
@@ -560,6 +666,20 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
           (long long)g.world->records[0].score, g.world->records[0].multiplier, g.world->particles.size(),
           g.world->debris.size(), g.linger_lines.body.size() / 4, g.recs[0].deaths, g.recs[0].bombs,
           g.world->bomb_kills, g.recs[0].lives, g.over ? ", game over" : "", g.sequence.phase, g.sequence.level);
+  if (sound.loaded()) {
+    write_wav(audio_path, samples);
+    double sum[6] = {};
+    float peak[6] = {};
+    for (size_t k = 0; k < samples.size(); ++k) {
+      sum[k % 6] += double(samples[k]) * samples[k];
+      peak[k % 6] = std::max(peak[k % 6], std::fabs(samples[k]));
+    }
+    const double n = double(samples.size() / 6);
+    SDL_Log("audio: %s, RMS / peak FL %.4f/%.3f FR %.4f/%.3f C %.4f/%.3f LFE %.4f/%.3f BL %.4f/%.3f BR %.4f/%.3f",
+            audio_path.string().c_str(), std::sqrt(sum[0] / n), peak[0], std::sqrt(sum[1] / n), peak[1],
+            std::sqrt(sum[2] / n), peak[2], std::sqrt(sum[3] / n), peak[3], std::sqrt(sum[4] / n), peak[4],
+            std::sqrt(sum[5] / n), peak[5]);
+  }
   if (g.multiplayer) {
     for (int k = 0; k < g.ship_count; ++k) {
       const Ship& s = g.ships[size_t(k)];
@@ -675,25 +795,7 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
   audio::GameAudio glue(sound);
   if (has_sound) {
     glue.start();
-    // The events behind rate gates or in alternating pairs go through the
-    // glue with the millisecond clock.
-    g.world->sound = [&](audio::Event e) {
-      const uint32_t now = uint32_t(SDL_GetTicks());
-      switch (e) {
-        case audio::Event::kPickupGeom1: glue.pickup_geom(now); break;
-        case audio::Event::kGateBounceBullet1: glue.gate_bounce_bullet(now); break;
-        case audio::Event::kPinRicochet1: glue.pin_ricochet(now); break;
-        case audio::Event::kPowerUpEndSpeed:
-        case audio::Event::kPowerUpEndSlow:
-        case audio::Event::kPowerUpEndMagnet:
-        case audio::Event::kPowerUpEndWeapon:
-        case audio::Event::kPowerUpEndFreeze: glue.power_up_end(e, now); break;
-        default: glue.fire(e); break;
-      }
-    };
-    g.world->repulsar_hit = [&]() { glue.repulsar_hit_wall(uint32_t(SDL_GetTicks())); };
-    g.world->well_hum = [&](const Entity* w, int hits) { glue.gravity_well_hits(reinterpret_cast<uintptr_t>(w), hits); };
-    g.music = [&](bool in_game) { glue.select_music(in_game, g.rules.mode, frozen(g)); };
+    attach_sound(g, glue, []() { return uint32_t(SDL_GetTicks()); });
   }
   Frontend fe(g, g.text, profile, boards, hooks);
   // The unlocked achievements, kept beside the profile.
@@ -803,29 +905,7 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
         for (int j = 0; j < g.joined_count && j < 4; ++j)
           s[size_t(j)] = sticks_from(state[size_t(g.joined_pad[size_t(j)] & 3)], profile);
       tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
-      if (has_sound) {
-        // sub_82078970 after the wells, then sub_82079BC0.
-        if (!frozen(g)) glue.gravity_wells_update(kWellMaxHits);
-        const GameAudioState a = audio_state(g);
-        audio::AudioFrame f;
-        f.paused = a.paused;
-        f.sfx_option = profile.sound_volume;
-        f.music_option = profile.music_volume;
-        f.distance_from_hill = a.distance_from_hill;
-        f.thrust = a.thrust;
-        f.magnet_active = a.magnet_active;
-        f.player_x = a.player_x;
-        f.player_y = a.player_y;
-        f.progression_level = a.progression_level;
-        f.multiplier = a.multiplier;
-        f.score = a.score;
-        f.no_enemies = a.no_enemies;
-        f.time_left = a.time_left;
-        f.level_time_left = a.level_time_left;
-        f.bomb_kill_count = a.bomb_kills;
-        glue.frame(f);
-        g.transition_switch = sound.transition_switch();
-      }
+      if (has_sound) sound_step(g, glue, sound, profile.sound_volume, profile.music_volume);
     }
     PROFILE("ui+draw+present");
     ui.clear();
@@ -894,7 +974,7 @@ int main(int argc, char** argv) {
   std::array<LobbyPad, 4> lobby{};
   bool versus = false, multiplayer = false;
   fs::path screenshot;
-  fs::path trace_path, rng_path, dump_path, inputs_path, positions_path;
+  fs::path trace_path, rng_path, dump_path, inputs_path, positions_path, audio_path;
   int rng_step = -1, dump_step = -1;
   uint32_t shot_w = 1280, shot_h = 720;
   int64_t seed = -1;
@@ -923,6 +1003,7 @@ int main(int argc, char** argv) {
     else if (a == "--perf") g_profile.on = true;
     else if (a == "--crt-state" && i + 1 < argc) crt_state = int64_t(std::strtoul(argv[++i], nullptr, 16));
     else if (a == "--positions" && i + 1 < argc) positions_path = argv[++i];
+    else if (a == "--audio-out" && i + 1 < argc) audio_path = argv[++i];
     else if (a == "--rng-state" && i + 2 < argc) {
       rng_path = argv[++i];
       rng_step = std::atoi(argv[++i]);
@@ -985,12 +1066,13 @@ int main(int argc, char** argv) {
                    " [--vsync|--no-vsync] [--language <en|de|fr|es|it>] [--seed <n>] [--frames <n> --screenshot <png>"
                    " [--size <w> <h>] [--mode <0-5>] [--level <0-19>] [--stick <x> <y>] [--fire <x> <y>]"
                    " [--bomb <step>] [--spawn <type> <x> <y>]... [--player <pad> <team> <role>]... [--versus]"
-                   " [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] [--inputs <csv>] [--emulator-rounding] [--crt-state <hex>] [--perf]"
+                   " [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] [--inputs <csv>] [--emulator-rounding] [--crt-state <hex>] [--perf] [--audio-out <wav>]"
                    " | --frontend [--press <frame> <button>]...]\n");
       return 2;
     }
   }
-  const bool headless = frames >= 0 && !screenshot.empty();
+  // --frames with --screenshot or --audio-out runs without a window.
+  const bool headless = frames >= 0 && (!screenshot.empty() || !audio_path.empty());
   // The GPU device needs the video subsystem even when no window is opened.
   if (!SDL_Init(headless ? SDL_INIT_VIDEO : (SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))) {
     SDL_Log("SDL_Init: %s", SDL_GetError());
@@ -1056,7 +1138,8 @@ int main(int argc, char** argv) {
     const StepInputs inputs = inputs_path.empty() ? StepInputs{} : load_inputs(inputs_path);
     if (crt_state >= 0) game.world->crt.set_state(uint32_t(crt_state));
     rc = run_headless(dev, renderer, game, frames, per_pad, inputs, bomb_step, spawns, screenshot, shot_w, shot_h,
-                      exact_720p == 1, trace_path, rng_path, rng_step, dump_path, dump_step, positions_path);
+                      exact_720p == 1, trace_path, rng_path, rng_step, dump_path, dump_step, positions_path, data_dir,
+                      audio_path);
     SDL_Log("crt state %08x", game.world->crt.state());
   } else {
     Display d = load_display(profile_dir);
