@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "game/rotation.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -38,9 +39,9 @@ void camera_follow_single(CameraState& c, const float* xs, const float* ys, int 
   // 0x82036CE0..0x82036D38.
   const float tx = (max_x + min_x) * kQuarter;
   const float ty = (max_y + min_y) * kQuarter;
-  c.zoom = std::fmaf(1.0f - c.zoom, kZoomRate, c.zoom);
-  c.x = std::fmaf(tx - c.x, kCentreRate, c.x);
-  c.y = std::fmaf(ty - c.y, kCentreRate, c.y);
+  c.zoom = fmadds(1.0f - c.zoom, kZoomRate, c.zoom);
+  c.x = fmadds(tx - c.x, kCentreRate, c.x);
+  c.y = fmadds(ty - c.y, kCentreRate, c.y);
 }
 
 void camera_follow_multi(CameraState& c, CameraTrack* tracks, const float* xs, const float* ys, int slots,
@@ -78,20 +79,20 @@ void camera_follow_multi(CameraState& c, CameraTrack* tracks, const float* xs, c
   const float ry = fsel(ry0 - 1.0f, 1.0f, fsel(-ry0, 0.0f, ry0));
   const float tx = ((max_x + min_x) * 0.5f) * 0.5f;
   const float ty = ((max_y + min_y) * 0.5f) * 0.5f;
-  c.x = std::fmaf(tx - c.x, 0.0649999976f, c.x);  // dat_82000D48
-  c.y = std::fmaf(ty - c.y, 0.0649999976f, c.y);
+  c.x = fmadds(tx - c.x, 0.0649999976f, c.x);  // dat_82000D48
+  c.y = fmadds(ty - c.y, 0.0649999976f, c.y);
   const float fill = fsel(rx - ry, rx, ry);
-  const float target = std::fmaf(zmax - 1.0f, fill, 1.0f);
-  c.zoom = std::fmaf(target - c.zoom, kZoomRate, c.zoom);
+  const float target = fmadds(zmax - 1.0f, fill, 1.0f);
+  c.zoom = fmadds(target - c.zoom, kZoomRate, c.zoom);
 }
 
 void camera_front_end(CameraState& c, float& idle, float step) {
   idle = idle + step;
-  c.zoom = std::fmaf(1.0f - c.zoom, kZoomRate, c.zoom);
+  c.zoom = fmadds(1.0f - c.zoom, kZoomRate, c.zoom);
   const float t = idle;
   const float k = fsel(t - 1.0f, 1.0f, fsel(-t, 0.0f, t));
-  c.x = std::fmaf(-(k * c.x), kCentreRate, c.x);
-  c.y = std::fmaf(-(k * c.y), kCentreRate, c.y);
+  c.x = fmadds(-(k * c.x), kCentreRate, c.x);
+  c.y = fmadds(-(k * c.y), kCentreRate, c.y);
 }
 
 Mat4 camera_view_projection(const CameraState& c, const GameMath& gm) {

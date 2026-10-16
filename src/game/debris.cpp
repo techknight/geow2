@@ -1,4 +1,5 @@
 #include "game/debris.h"
+#include "game/fused.h"
 
 #include <cmath>
 
@@ -51,7 +52,7 @@ void Debris::add(const Vec4& p0, const Vec4& v0, const Vec4& p1, const Vec4& v1,
   const float dx = p1.x - p0.x, dw = p1.w - p0.w, dz = p1.z - p0.z, dy = p1.y - p0.y;
   d.length = std::sqrt(((dx * dx + dw * dw) + dz * dz) + dy * dy);
   // Life: 0.75 to 1.25 seconds (dat_82000724, dat_82000718).
-  d.life = std::fmaf(float(rng.next()) * kTwoPow32, 0.5f, 0.75f);
+  d.life = fmadds(float(rng.next()) * kTwoPow32, 0.5f, 0.75f);
   d.life_total = d.life;
   for (int i = 0; i < 4; ++i) d.colour[i] = colour[i];
   pieces_.push_back(d);

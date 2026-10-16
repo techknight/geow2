@@ -4,6 +4,7 @@
 
 #include "game/geoms.h"
 #include "game/rotation.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -90,11 +91,11 @@ void SnakeHead::update(World& w) {
   vx = vx * 0.8f;  // dat_82000754
   vy = vy * 0.8f;
   // Steering toward the target, off by a wiggle cos(p) + 1.75 cos(4p).
-  const float wiggle = std::fmaf(w.gm.cosf(phase * 4.0f), 1.75f, w.gm.cosf(phase));  // dat_820006F4, dat_82002458
+  const float wiggle = fmadds(w.gm.cosf(phase * 4.0f), 1.75f, w.gm.cosf(phase));  // dat_820006F4, dat_82002458
   if (const PlayerTarget* t = w.target(*this)) {
     const float a = float(w.gm.atan2(t->y - y, t->x - x));
     const float d = a - (heading + wiggle);
-    heading = std::fmaf(wrap_angle(d), 0.1f, heading);  // dat_82000714
+    heading = fmadds(wrap_angle(d), 0.1f, heading);  // dat_82000714
   }
 }
 
@@ -178,8 +179,9 @@ void SnakeSegment::update(World& w) {
     const Entity& lead = ahead ? static_cast<const Entity&>(*ahead) : static_cast<const Entity&>(*head);
     const float dx = lead.x - x, dy = lead.y - y;
     const float q = (dy * dy + dx * dx) + 9.99999975e-06f;  // dat_82002378
-    const float inv = float(1.0 / std::sqrt(double(q)));
-    const float dist = float(std::sqrt(double(q)));
+    // frsp(frsqrte(q)) and fres of the estimate (0x82056DF8); exact here.
+    const float inv = emulator_rounding ? float(emulator_frsqrte(q)) : float(1.0 / std::sqrt(double(q)));
+    const float dist = emulator_rounding ? 1.0f / inv : float(std::sqrt(double(q)));
     const float nx = inv * dx, ny = dy * inv;
     if (dist > 1.0f) {
       double k = double(dist * 0.125f);  // dat_82001204

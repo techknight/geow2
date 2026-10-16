@@ -1,4 +1,5 @@
 #include "app/game.h"
+#include "game/fused.h"
 
 namespace fs = std::filesystem;
 
@@ -335,7 +336,7 @@ void update_player(Game& g, size_t k, std::span<const Sticks> pads) {
     w.players[k].prev_y = m.y;
   }
   if (p.fading) {
-    p.fade = std::fmaf(kStep, 1.5f, p.fade);  // dat_82000C90
+    p.fade = fmadds(kStep, 1.5f, p.fade);  // dat_82000C90
     if (p.fade >= 1.0f) {
       p.fade = 1.0f;
       p.fading = false;
@@ -430,7 +431,7 @@ void update_player(Game& g, size_t k, std::span<const Sticks> pads) {
       v = -(kStep * 2.0f - sh.label);
     } else {
       sh.label_time = sh.label_time - kStep;
-      v = std::fmaf(kStep, 2.0f, sh.label);
+      v = fmadds(kStep, 2.0f, sh.label);
     }
     sh.label = std::clamp(v, 0.0f, 1.0f);
     integrate(m, kStep);
@@ -466,7 +467,7 @@ void draw_player(const Game& g, const Ship& sh, LineBatch& out) {
     float f = t;
     if (f >= 1.0f) f = float(2.0 - double(f));
     if (f < 0.025f) continue;  // dat_82000D64
-    const float s = std::fmaf(t, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
+    const float s = fmadds(t, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
     Mat4 scaled = m;
     for (int r = 0; r < 3; ++r)
       for (int c = 0; c < 4; ++c) scaled.m[r * 4 + c] = m.m[r * 4 + c] * s;
@@ -542,18 +543,18 @@ void draw_edges(const Game& g, LineBatch& out) {
   const Rgba c = g.edge_count >= 100 ? scaled(p[kUiSelection], 2.0f) : p[kUiNormal];
   const float hx = g.world->half_x, hy = g.world->half_y;
   {
-    const float half = std::fmaf(hx, 0.0333333351f, -2.0f);  // dat_82001E90
+    const float half = fmadds(hx, 0.0333333351f, -2.0f);  // dat_82001E90
     for (int i = 0; i < 30; ++i) {
-      const float m = std::fmaf((hx - -hx) * (float(i) + 0.5f), 0.0333333351f, -hx);
+      const float m = fmadds((hx - -hx) * (float(i) + 0.5f), 0.0333333351f, -hx);
       const float x0 = m - half, x1 = half + m;
       if (g.edge_top[size_t(i)]) emit_line(out, kLineWidthUnit, 0.3f, {x0, -hy, 0, 1}, {x1, -hy, 0, 1}, c.data());
       if (g.edge_bottom[size_t(i)]) emit_line(out, kLineWidthUnit, 0.3f, {x0, hy, 0, 1}, {x1, hy, 0, 1}, c.data());
     }
   }
   {
-    const float half = std::fmaf(hy, 0.05f, -2.0f);  // dat_82000D60
+    const float half = fmadds(hy, 0.05f, -2.0f);  // dat_82000D60
     for (int i = 0; i < 20; ++i) {
-      const float m = std::fmaf((hy - -hy) * (float(i) + 0.5f), 0.05f, -hy);
+      const float m = fmadds((hy - -hy) * (float(i) + 0.5f), 0.05f, -hy);
       const float y0 = m - half, y1 = half + m;
       if (g.edge_left[size_t(i)]) emit_line(out, kLineWidthUnit, 0.3f, {-hx, y0, 0, 1}, {-hx, y1, 0, 1}, c.data());
       if (g.edge_right[size_t(i)]) emit_line(out, kLineWidthUnit, 0.3f, {hx, y0, 0, 1}, {hx, y1, 0, 1}, c.data());
@@ -740,7 +741,7 @@ void spawn_power_up(Game& g) {
           const Ship& sh = g.ships[slots[r % uint32_t(slots.size())]];
           if (!sh.life.present) continue;
           for (int t = 0; t < 10; ++t) {
-            const float a = std::fmaf(float(w.rng.next()), 4.65661287e-10f, -1.0f) * 3.14159274f;  // dat_820006C8, dat_820010DC
+            const float a = fmadds(float(w.rng.next()), 4.65661287e-10f, -1.0f) * 3.14159274f;  // dat_820006C8, dat_820010DC
             const float sn = float(g.gm->sin(double(a))), cs = float(g.gm->cos(double(a)));
             const float ny = sh.motion.y + sn * 75.0f;  // dat_82000F74
             const float nx = sh.motion.x + cs * 75.0f;

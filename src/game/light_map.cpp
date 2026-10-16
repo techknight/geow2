@@ -1,4 +1,5 @@
 #include "game/light_map.h"
+#include "game/fused.h"
 
 #include <cmath>
 
@@ -152,7 +153,7 @@ void wall_quads(float half_x, float half_y, float depth, float outer_scale, std:
   const float sides[4][4] = {{-hx, -hy, -hx, hy}, {-hx, hy, hx, hy}, {hx, hy, hx, -hy}, {hx, -hy, -hx, -hy}};
   // The outer copy: x times the scale, y times 1 + (300 / 200) * (scale - 1)
   // (fdivs, fsubs, fmadds), so both offsets come out the same.
-  const float ys = std::fmaf(300.0f / 200.0f, outer_scale - 1.0f, 1.0f);
+  const float ys = fmadds(300.0f / 200.0f, outer_scale - 1.0f, 1.0f);
   for (const auto& s : sides) {
     wall_quad(out, s[0], s[1], s[2], s[3], depth);
     wall_quad(out, outer_scale * s[0], ys * s[1], s[2] * outer_scale, ys * s[3], depth);
@@ -162,7 +163,7 @@ void wall_quads(float half_x, float half_y, float depth, float outer_scale, std:
 float grid_fade_step(float fade, bool in_game) {
   // fmadds(target - fade, 0.05 (dat_82000D60), fade).
   const float delta = in_game ? 1.0f - fade : -fade;
-  return std::fmaf(delta, 0.05f, fade);
+  return fmadds(delta, 0.05f, fade);
 }
 
 void emit_light(std::vector<LightVertex>& out, float size, float x, float y, const float colour[3]) {
@@ -180,7 +181,7 @@ std::vector<uint8_t> light_sprite_texture() {
   // dat_820006C4, dat_82002918); sigma 1.0 (dat_82000C78, f64); value
   // fctiwz(float(density) * 255) clamped (dat_8200291C).
   constexpr float kStep = 0.0666666701f, kSpan = 3.14100003f;
-  auto coord = [](int k) { return std::fmaf(float(k), kStep, -1.0f) * kSpan; };
+  auto coord = [](int k) { return fmadds(float(k), kStep, -1.0f) * kSpan; };
   std::vector<uint8_t> tex(size_t(kLightSpriteSize) * kLightSpriteSize);
   for (int i = 0; i < kLightSpriteSize; ++i)
     for (int j = 0; j < kLightSpriteSize; ++j) {

@@ -6,6 +6,7 @@
 #include "game/geoms.h"
 #include "game/rotation.h"
 #include "game/shockwave.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -32,7 +33,7 @@ GravityWell::GravityWell(World& w, float px, float py) {
   active = false;
   ui = false;
   hits = kWellStartHits;
-  heading = std::fmaf(float(w.rng.next()), kTwoPow31, -1.0f) * kPi;
+  heading = fmadds(float(w.rng.next()), kTwoPow31, -1.0f) * kPi;
   const float p[4] = {x, y, 0.0f, 1.0f};
   w.effects.wheel(heading + kPi, p, colour);
   phase = kTwoPi * (float(w.rng.next()) * kTwoPow32);
@@ -54,9 +55,9 @@ void GravityWell::update(World& w) {
   }
   if (active) {
     pull(w);
-    heading = std::fmaf(float(hits), 0.01f, heading) + 0.02f;  // dat_820011B0, dat_82001194
+    heading = fmadds(float(hits), 0.01f, heading) + 0.02f;  // dat_820011B0, dat_82001194
   }
-  phase = std::fmaf(float(hits), 0.075f, phase) + 0.05f;  // dat_82000D54, dat_82000D60
+  phase = fmadds(float(hits), 0.075f, phase) + 0.05f;  // dat_82000D54, dat_82000D60
   const float c = w.gm.cosf(phase) * 0.1f;
   pulse = w.gm.cosf(phase * 0.1f) * 0.3f;  // dat_82000708
   if (hits == kWellMaxHits) {
@@ -101,7 +102,7 @@ void GravityWell::update(World& w) {
   vx = vx * 0.95f;  // dat_82001174
   vy = vy * 0.95f;
   // Its size: hits + 5, pulsing by 2 when active (dat_82000CE8).
-  const float size = (active ? std::fmaf(c, 20.0f, float(hits)) : float(hits)) + 5.0f;
+  const float size = (active ? fmadds(c, 20.0f, float(hits)) : float(hits)) + 5.0f;
   radius = sx = sy = size;
   w.separate(*this, radius, 1.0f);
 }
@@ -289,7 +290,7 @@ void GravityWell::draw(World& w, LineBatch& out) {
     if (f >= 1.0f) f = float(2.0 - double(f));
     if (f < 0.025f) continue;
     // The size from the unfolded value (sub_820490A0).
-    const float q = std::fmaf(g, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
+    const float q = fmadds(g, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
     Mat4 scaled = m;
     for (int r = 0; r < 3; ++r)
       for (int col = 0; col < 4; ++col) scaled.m[r * 4 + col] = m.m[r * 4 + col] * q;

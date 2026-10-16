@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "game/world.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -139,15 +140,15 @@ void player_exhaust(World& w, const PlayerMotion& p, int colour) {
     // Boosted: from (8, 8, 8, 1) toward the brighter colour, faster.
     const float lo[4] = {8.0f, 8.0f, 8.0f, 1.0f};  // dat_82000D18
     const float d[4] = {a[0] - 8.0f, a[1] - 8.0f, a[2] - 8.0f, a[3] - 1.0f};
-    for (int i = 0; i < 4; ++i) emit(i, std::fmaf(float(i), 0.1f, 1.0f) * 2.0f, lo, d);
+    for (int i = 0; i < 4; ++i) emit(i, fmadds(float(i), 0.1f, 1.0f) * 2.0f, lo, d);
   }
   if (p.slow_time > 0.0f) {
     // Slowed: from the wheel colour toward white, at three quarters.
     const float d[4] = {1.0f - b[0], 1.0f - b[1], 1.0f - b[2], 1.0f - b[3]};
-    for (int i = 0; i < 4; ++i) emit(i, std::fmaf(float(i), 0.1f, 1.0f) * 0.75f, b, d);  // dat_82000718
+    for (int i = 0; i < 4; ++i) emit(i, fmadds(float(i), 0.1f, 1.0f) * 0.75f, b, d);  // dat_82000718
   } else {
     const float d[4] = {a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3]};
-    for (int i = 0; i < 4; ++i) emit(i, std::fmaf(float(i), 0.1f, 1.0f), b, d);
+    for (int i = 0; i < 4; ++i) emit(i, fmadds(float(i), 0.1f, 1.0f), b, d);
   }
 }
 

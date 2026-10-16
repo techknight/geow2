@@ -4,6 +4,7 @@
 
 #include "game/bullets.h"
 #include "game/hill.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -77,8 +78,8 @@ Geom::Geom(World& w, const Entity& victim, int v) {
     base_colour[i] = w.motes.colour[i];
     colour[i] = base_colour[i];
   }
-  sx = std::fmaf(float(w.rng.next()) * kTwoPow32, 0.1f, 0.8f);  // dat_82000714, dat_82000754
-  sy = std::fmaf(float(w.rng.next()) * kTwoPow32, 0.1f, 0.8f);
+  sx = fmadds(float(w.rng.next()) * kTwoPow32, 0.1f, 0.8f);  // dat_82000714, dat_82000754
+  sy = fmadds(float(w.rng.next()) * kTwoPow32, 0.1f, 0.8f);
   radius = 3.0f;  // dat_820006F8
   age = (float(w.rng.next()) * kTwoPow32) * 0.5f;  // dat_82000724
   const GeomShapes* s = w.geom_shapes;
@@ -152,7 +153,7 @@ void Geom::update(World& w) {
     vx = vx * 0.985f;
     vy = vy * 0.985f;
   }
-  heading = std::fmaf(w.step, 5.0f, heading);  // dat_820006F0
+  heading = fmadds(w.step, 5.0f, heading);  // dat_820006F0
   // Out of King's zones (sub_8204D2E8 with 1.0).
   hill_push_geom(w, *this);
 }
@@ -270,7 +271,7 @@ void collect_geoms(World& w) {
     if (r * r <= d2) {
       // Pulled in: v * 0.825 + direction * 66 (dat_82001D78, dat_82001D74);
       // the direction's length from frsqrte in the original.
-      const float inv = 1.0f / std::sqrt(d2);
+      const float inv = emulator_rounding ? float(emulator_frsqrte(d2)) : 1.0f / std::sqrt(d2);  // 0x8204D7CC
       g.vx = g.vx * 0.825f + (dx * inv) * 66.0f;
       g.vy = g.vy * 0.825f + (dy * inv) * 66.0f;
     } else {

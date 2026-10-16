@@ -1,4 +1,5 @@
 #include "game/effects.h"
+#include "game/fused.h"
 
 #include <cmath>
 
@@ -36,7 +37,7 @@ void Effects::wheel(float t, const float c[4], float out[4]) const {
     const float base = k == 1 ? step : step * kK[k];
     const float angle = float(double(k == 1 ? wheel_phase_ + base : base + wheel_phase_) + t);
     const float s = float(gm_.sin(angle)), co = float(gm_.cos(angle));
-    wy[k] = std::fmaf(s, R, O);
+    wy[k] = fmadds(s, R, O);
     wx[k] = co * R;
   }
   // Inverse squared distances from (x, y, z, w - 1) to each point.
@@ -56,9 +57,9 @@ void Effects::wheel(float t, const float c[4], float out[4]) const {
 }
 
 void Effects::random_cube(float s, float out[4]) {
-  out[2] = std::fmaf(float(rng_.next()), kTwoPow31, -1.0f) * s;
-  out[1] = std::fmaf(float(rng_.next()), kTwoPow31, -1.0f) * s;
-  out[0] = std::fmaf(float(rng_.next()), kTwoPow31, -1.0f) * s;
+  out[2] = fmadds(float(rng_.next()), kTwoPow31, -1.0f) * s;
+  out[1] = fmadds(float(rng_.next()), kTwoPow31, -1.0f) * s;
+  out[0] = fmadds(float(rng_.next()), kTwoPow31, -1.0f) * s;
   out[3] = 0.0f;
 }
 
@@ -80,7 +81,7 @@ void Effects::random_in_ball(float r, float out[4]) {
 void Effects::explosion(float radius, float x, float y, int count) {
   if (particles_.full()) return;
   // Two neighbouring wheel colours at the position, around a random turn.
-  const float t = std::fmaf(float(rng_.next()), kTwoPow31, -1.0f) * 0.75f;  // dat_82000718
+  const float t = fmadds(float(rng_.next()), kTwoPow31, -1.0f) * 0.75f;  // dat_82000718
   const float pos[4] = {x, y, 0.0f, 0.0f};
   float a[4], b[4];
   wheel(float(double(t) - double(0.1f)), pos, a);  // dat_82000714

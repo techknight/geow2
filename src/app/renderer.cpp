@@ -6,6 +6,7 @@
 #include "data/tga.h"
 #include "extract/bytes.h"
 #include "game/bloom_weights.h"
+#include "game/fused.h"
 
 namespace fs = std::filesystem;
 
@@ -632,10 +633,10 @@ void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* out, SDL_GPUTextu
         const int cols = 1 - int(s.w * -0.05f), rows = 1 - int(s.h * -0.05f);  // dat_820028F0
         for (int j = 0; j < rows; ++j) {
           const float v0 = float(j) / float(rows), v1 = float(j + 1) / float(rows);
-          const float y0 = std::fmaf(s.h, v0, s.y), y1 = std::fmaf(s.h, v1, s.y);
+          const float y0 = fmadds(s.h, v0, s.y), y1 = fmadds(s.h, v1, s.y);
           for (int i = 0; i < cols; ++i) {
             const float u0 = float(i) / float(cols), u1 = float(i + 1) / float(cols);
-            const float x0 = std::fmaf(s.w, u0, s.x), x1 = std::fmaf(s.w, u1, s.x);
+            const float x0 = fmadds(s.w, u0, s.x), x1 = fmadds(s.w, u1, s.x);
             sv.push_back({x0, y0, u0, v0, c[0], c[1], c[2], c[3]});
             sv.push_back({x1, y0, u1, v0, c[0], c[1], c[2], c[3]});
             sv.push_back({x1, y1, u1, v1, c[0], c[1], c[2], c[3]});

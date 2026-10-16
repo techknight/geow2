@@ -1,4 +1,5 @@
 #include "game/ui.h"
+#include "game/fused.h"
 
 #include <cmath>
 #include <cstdio>
@@ -72,13 +73,13 @@ void ui_panel(UiCanvas& cv, float x0, float y0, float x1, float y1, const Rgba& 
   // Brightest at the screen's centre: 5 - |x - 320| * 0.01484375
   // (dat_820006F0, dat_82006264).
   auto at = [&](float x) {
-    const float k = std::fmaf(-std::fabs(x - 320.0f), 0.01484375f, 5.0f);
+    const float k = fmadds(-std::fabs(x - 320.0f), 0.01484375f, 5.0f);
     return Rgba{C[0] * k, C[1] * k, C[2] * k, C[3] * k};
   };
   const float black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
   for (int i = 0; i < nx; ++i) {
-    const float xa = std::fmaf(float(i) / float(nx), wd, x0);
-    const float xb = std::fmaf(float(i + 1) / float(nx), wd, x0);
+    const float xa = fmadds(float(i) / float(nx), wd, x0);
+    const float xb = fmadds(float(i + 1) / float(nx), wd, x0);
     const Rgba ca = at(xa), cb = at(xb);
     if (!(flags & 8)) emit_ui_body(cv.lines, xa, y0, xb, y0, ca.data(), cb.data());
     if (!(flags & 0x10)) emit_ui_body(cv.lines, xa, y1, xb, y1, ca.data(), cb.data());
@@ -91,7 +92,7 @@ void ui_panel(UiCanvas& cv, float x0, float y0, float x1, float y1, const Rgba& 
     if (flags & 0x20) continue;
     emit_ui_line(cv.lines, xa, y0, xa, y1, grid);
     for (int j = 1; j < ny; ++j) {
-      const float yj = std::fmaf(float(j) / float(ny), ht, y0);
+      const float yj = fmadds(float(j) / float(ny), ht, y0);
       emit_ui_line(cv.lines, xa, yj, xb, yj, grid);
     }
   }
@@ -152,8 +153,8 @@ void ui_scroll_bar(UiCanvas& c, float x, float top, float bottom, float first, f
     end = unit(1.0f - gap);
   }
   const float length = h - (gap_bottom + gap_top);
-  const float y0 = std::fmaf(length, start, gap_top) + top;
-  const float y1 = (std::fmaf(length, end, gap_bottom) + gap_top) + top;
+  const float y0 = fmadds(length, start, gap_top) + top;
+  const float y1 = (fmadds(length, end, gap_bottom) + gap_top) + top;
   emit_ui_line(c.lines, x, top, x, y0 - gap_top, track.data());
   emit_ui_line(c.lines, x, y0, x, y1 - gap_bottom, thumb.data());
   emit_ui_line(c.lines, x, y1, x, bottom, track.data());
@@ -264,7 +265,7 @@ std::vector<std::string> wrap_text(const Font& font, const std::string& text, fl
     while (q < n && sum < max_w) {
       const int c = int(int8_t(text[q]));
       const int next = q + 1 < n ? int(int8_t(text[q + 1])) : 0;
-      sum = std::fmaf(font.advance(c, next, state), w, sum);
+      sum = fmadds(font.advance(c, next, state), w, sum);
       ++q;
     }
     size_t stop = q;
@@ -285,22 +286,22 @@ std::vector<std::string> wrap_text(const Font& font, const std::string& text, fl
 
 float text_box_height(const Font& font, const std::string& text, float w, float h, float gap, float max_w) {
   const int n = int(wrap_text(font, text, w, max_w).size());
-  return std::fmaf(float(n - 1 > 0 ? n - 1 : 0), gap, float(n) * h);
+  return fmadds(float(n - 1 > 0 ? n - 1 : 0), gap, float(n) * h);
 }
 
 float text_box(const Font& font, LineBatch& out, const UiPalette& p, float x, float y, float w, float h, float gap,
                float max_w, int h_align, int v_align, const Rgba& colour, const std::string& text) {
   const std::vector<std::string> lines = wrap_text(font, text, w, max_w);
   const int n = int(lines.size());
-  const float height = std::fmaf(float(n - 1 > 0 ? n - 1 : 0), gap, float(n) * h);
-  if (v_align == 1) y = std::fmaf(-height, 0.5f, y);
+  const float height = fmadds(float(n - 1 > 0 ? n - 1 : 0), gap, float(n) * h);
+  if (v_align == 1) y = fmadds(-height, 0.5f, y);
   if (v_align == 2) y = y - height;
   for (int i = 0; i < n; ++i) {
     const std::string& line = lines[size_t(i)];
     const float lw = run_advance(font, line) * w;
     float x0 = x;
     if (h_align == 1) x0 = x - lw;
-    if (h_align == 2) x0 = std::fmaf(-lw, 0.5f, x);
+    if (h_align == 2) x0 = fmadds(-lw, 0.5f, x);
     float extra = 0.0f;
     if (h_align == 4 && i + 1 < n) {
       int spaces = 0;

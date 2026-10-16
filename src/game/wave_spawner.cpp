@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "game/spawn.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -15,7 +16,7 @@ constexpr float kFar = 165.0f;
 // The timers' clamp (two fsel): x below `lo` gives lo, then x at or above
 // `hi` gives hi. x is c - t * k with one rounding (fnmsubs).
 float clamp_timer(float c, float t, float k, float lo, float hi) {
-  const float x = std::fmaf(-t, k, c);
+  const float x = fmadds(-t, k, c);
   const float a = lo - x < 0.0f ? x : lo;
   return x - hi < 0.0f ? a : hi;
 }

@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "game/rotation.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -77,7 +78,7 @@ Grunt::Grunt(World& w, float px, float py) {
 }
 
 void Grunt::update(World& w) {
-  phase = std::fmaf(w.step, 5.0f, phase);  // dat_820006F0
+  phase = fmadds(w.step, 5.0f, phase);  // dat_820006F0
   pulse = w.gm.cosf(phase);
   if (home(w, *this, pull)) {
     vx = vx * 0.9f;  // dat_82000D70
@@ -177,13 +178,13 @@ void Duck::update(World& w) {
         forbidden = 1;
         dir_x = -1.0f;
         dir_y = 0.0f;
-        roll_y_target = std::fmaf(s, kPi, roll_y_target);
+        roll_y_target = fmadds(s, kPi, roll_y_target);
         break;
       case 1:
         forbidden = 0;
         dir_x = 1.0f;
         dir_y = 0.0f;
-        roll_y_target = -std::fmaf(s, kPi, -roll_y_target);  // fnmsubs
+        roll_y_target = -fmadds(s, kPi, -roll_y_target);  // fnmsubs
         break;
       case 2:
         flip = !flip;
@@ -202,7 +203,7 @@ void Duck::update(World& w) {
     }
     w.play(audio::Event::kDuckMove);
   }
-  heading_speed = std::fmaf(heading_target - heading, 0.2f, heading_speed * 0.8f);  // dat_82000D5C, dat_82000754
+  heading_speed = fmadds(heading_target - heading, 0.2f, heading_speed * 0.8f);  // dat_82000D5C, dat_82000754
   heading = heading_speed + heading;
   ease(roll_y, roll_y_target, roll_y_step, w.step);
   ease(roll_x, roll_x_target, roll_x_step, w.step);
@@ -215,7 +216,7 @@ void Duck::update(World& w) {
   vx = vx * 0.9f;  // dat_82000D70
   vy = vy * 0.9f;
   const float lift = std::fabs(w.gm.sinf(roll_x) + w.gm.sinf(roll_y));
-  radius = std::fmaf(-lift, 2.0f, 7.0f);
+  radius = fmadds(-lift, 2.0f, 7.0f);
   w.separate(*this, radius, 1.0f);
   const float s1 = std::fabs(w.gm.sinf(timer * kPi));
   vx = (dir_x * s1) * kHop + vx;
@@ -286,9 +287,9 @@ void Spinner::kill(World& w, const Killer& k) {
   // the shot's velocity; sound event 0x4D.
   if (k.object_type == 5) {
     w.play(audio::Event::kSpinnerSplit);
-    const float base = std::fmaf(float(w.rng.next()), kTwoPow31, -1.0f) * kPi;
+    const float base = fmadds(float(w.rng.next()), kTwoPow31, -1.0f) * kPi;
     for (int i = 0; i < 3; ++i) {
-      const float a = std::fmaf(float(i) * 6.28318548f, 0.333333343f, base);  // dat_82182318, dat_820010F0
+      const float a = fmadds(float(i) * 6.28318548f, 0.333333343f, base);  // dat_82182318, dat_820010F0
       const float angle = wrap_angle(a);
       auto* c = static_cast<TinySpinner*>(
           w.add(std::make_unique<TinySpinner>(w, angle, 300.0f, x, y, k.vx, k.vy)));  // dat_82000CF4
@@ -318,14 +319,14 @@ TinySpinner::TinySpinner(World& w, float angle, float speed, float px, float py,
   shape_points = 12;  // 0x82182408
   radius = 4.0f;      // dat_820006F4
   count_enemy(w, *this);
-  spin = std::fmaf(float(w.rng.next()) * kTwoPow32, 0.01f, 0.09f);  // dat_820011B0, dat_82001150
+  spin = fmadds(float(w.rng.next()) * kTwoPow32, 0.01f, 0.09f);  // dat_820011B0, dat_82001150
   if ((w.rng.next() & 1u) == 0) spin = spin * -1.0f;
 }
 
 void TinySpinner::update(World& w) {
   for (int i = 0; i < 4; ++i) colour[i] = kTinyColour[i];
-  vx = std::fmaf(w.gm.sinf(heading), 24.0f, vx);  // dat_82000F9C
-  vy = std::fmaf(w.gm.cosf(heading), 24.0f, vy);
+  vx = fmadds(w.gm.sinf(heading), 24.0f, vx);  // dat_82000F9C
+  vy = fmadds(w.gm.cosf(heading), 24.0f, vy);
   vx = vx * 0.9f;
   vy = vy * 0.9f;
   heading = spin + heading;
@@ -390,7 +391,7 @@ const Bullet* threat(const World& w, float r, float px, float py) {
       if (!(d2 <= r * r)) continue;
       float dxn, dyn;
       const float a = aim(b, px, py, dxn, dyn);
-      const float score = std::fmaf(-a, 0.5f, 1.0f) * d2;
+      const float score = fmadds(-a, 0.5f, 1.0f) * d2;
       if (!best || score < best_score) {
         best = &b;
         best_score = score;
@@ -427,7 +428,7 @@ void Weaver::update(World& w) {
       const float a = aim(*b, x, y, dxn, dyn);
       float g = 0.0f;
       if (a > 0.95f)  // dat_82001174
-        g = std::fmaf(-(a - 0.95f), 20.0f, 1.0f);  // dat_82000CE8
+        g = fmadds(-(a - 0.95f), 20.0f, 1.0f);  // dat_82000CE8
       else if (a > 0.375f)  // dat_820022FC
         g = std::sqrt(a);
       g = g * 90.0f;  // dat_82001100
@@ -437,8 +438,8 @@ void Weaver::update(World& w) {
     timer = timer - w.step;
     const float tx = t->x - x, ty = t->y - y;
     if (timer <= 0.0f) {
-      side = std::fmaf(float(w.rng.next()), kTwoPow31, -1.0f) * 9.0f;  // sub_82030220(dat_82001B14)
-      timer = std::fmaf(float(w.rng.next()), kTwoPow32, 1.0f) * 0.2f;  // dat_82000D5C
+      side = fmadds(float(w.rng.next()), kTwoPow31, -1.0f) * 9.0f;  // sub_82030220(dat_82001B14)
+      timer = fmadds(float(w.rng.next()), kTwoPow32, 1.0f) * 0.2f;  // dat_82000D5C
     }
     const float len = std::sqrt(ty * ty + tx * tx);
     const float inv = 1.0f / len;
@@ -454,7 +455,7 @@ void Weaver::update(World& w) {
   }
   // It turns with the square of its speed.
   const float m = std::sqrt(vy * vy + vx * vx) * w.step;
-  heading = std::fmaf(m * m, 0.01f, heading);  // dat_820011B0
+  heading = fmadds(m * m, 0.01f, heading);  // dat_820011B0
   w.separate(*this, radius, 1.0f);
 }
 
@@ -492,7 +493,7 @@ Rocket::Rocket(World& w, float angle, float px, float py, bool v) {
   axis = angle;
   turn_left = 0.0f;
   sign = 1.0f;
-  roll = std::fmaf(float(w.rng.next()), kTwoPow31, -1.0f) * kPi;  // dat_82002128
+  roll = fmadds(float(w.rng.next()), kTwoPow31, -1.0f) * kPi;  // dat_82002128
   for (int i = 0; i < 4; ++i) colour[i] = kRocketColour[i];
   shape_points = 8;  // 0x82181E90
   count_enemy(w, *this);
@@ -604,9 +605,9 @@ void Proton::update(World& w) {
     vy = vy * 0.97f;
   }
   phase = phase + 0.25f;  // dat_82000720
-  pulse = std::fmaf(w.gm.cosf(phase), 0.5f, 1.0f);
+  pulse = fmadds(w.gm.cosf(phase), 0.5f, 1.0f);
   const float speed = std::sqrt(vy * vy + vx * vx);
-  heading = std::fmaf((speed * spin) * w.step, 0.05f, heading);  // dat_82000D60
+  heading = fmadds((speed * spin) * w.step, 0.05f, heading);  // dat_82000D60
 }
 
 void Proton::wall(World&, Vec2 n) { reflect(*this, n); }
@@ -625,7 +626,7 @@ void Proton::draw(World& w, LineBatch& out) {
     float f = g;
     if (f >= 1.0f) f = 2.0f - f;
     if (!(f >= 0.025f)) continue;  // dat_82000D64
-    const float q = std::fmaf(g, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
+    const float q = fmadds(g, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
     Mat4 scaled = m;
     for (int r = 0; r < 3; ++r)
       for (int c = 0; c < 4; ++c) scaled.m[r * 4 + c] = m.m[r * 4 + c] * q;

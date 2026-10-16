@@ -1,6 +1,7 @@
 #include "game/model_geometry.h"
 
 #include "game/rotation.h"
+#include "game/fused.h"
 
 #include <cmath>
 #include <string>
@@ -10,7 +11,7 @@ namespace {
 
 
 // All of the model build is single precision; fused multiply-adds are
-// written with std::fmaf where the disassembly has fmadds/fmsubs.
+// written with fmadds (game/fused.h) where the disassembly has fmadds/fmsubs.
 constexpr float kTwoPi = 6.28318548f;     // dat_821825F8
 constexpr float kDegToRad = 0.0174532924f;  // dat_82000F7C
 constexpr int kMaxDepth = 9;                // sub_82062460 stops at depth 9
@@ -120,10 +121,10 @@ struct Walker {
       for (int k = as_int(s->find("gap")); k < sides; ++k) {
         // fdivs of the converted ints, then fmadds (0x820626EC..0x820626F8);
         // points are fmadds of radius with sin/cos (0x82062730..0x8206278C).
-        auto angle = [&](int i) { return std::fmaf(float(i) / float(sides), kTwoPi, slip_rad); };
+        auto angle = [&](int i) { return fmadds(float(i) / float(sides), kTwoPi, slip_rad); };
         const float a0 = angle(k), a1 = angle(k + 1);
-        const Vec4 p0{std::fmaf(radius, gm.cosf(a0), c.x), std::fmaf(radius, gm.sinf(a0), c.y), c.z, 1.0f};
-        const Vec4 p1{std::fmaf(radius, gm.cosf(a1), c.x), std::fmaf(radius, gm.sinf(a1), c.y), c.z, 1.0f};
+        const Vec4 p0{fmadds(radius, gm.cosf(a0), c.x), fmadds(radius, gm.sinf(a0), c.y), c.z, 1.0f};
+        const Vec4 p1{fmadds(radius, gm.cosf(a1), c.x), fmadds(radius, gm.sinf(a1), c.y), c.z, 1.0f};
         emit(p0, p1, colour, m);
       }
     } else if (s->type == "SectionTransform") {

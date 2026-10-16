@@ -1,4 +1,5 @@
 #include "game/stars.h"
+#include "game/fused.h"
 
 #include <cmath>
 
@@ -14,8 +15,8 @@ void StarField::init(GameRng& rng) {
   // sub_82075318: four draws per star, in this order.
   stars.resize(kCount);
   for (Star& s : stars) {
-    const float x = std::fmaf(float(rng.next()), kTwoPow31, -1.0f);            // fmsubs
-    const float y = std::fmaf(float(rng.next()), kTwoPow31, -1.0f) * 0.5625f;  // dat_82002FF4
+    const float x = fmadds(float(rng.next()), kTwoPow31, -1.0f);            // fmsubs
+    const float y = fmadds(float(rng.next()), kTwoPow31, -1.0f) * 0.5625f;  // dat_82002FF4
     const float r = float(rng.next()) * kTwoPow32;
     const float r2 = r * r;
     s.near = r2 * r;
@@ -38,13 +39,13 @@ void StarField::update(const GameMath& gm, float zoom, std::vector<StarVertex>& 
   out.reserve(stars.size());
   for (Star& s : stars) {
     // Phase steps down by near * 0.02 + 0.01 and restarts at 1.0.
-    const float step = std::fmaf(s.near, 0.02f, 0.01f);   // dat_82001194, dat_820011B0
-    const float base = std::fmaf(s.near, 0.8f, 0.01f);    // dat_82000754
+    const float step = fmadds(s.near, 0.02f, 0.01f);   // dat_82001194, dat_820011B0
+    const float base = fmadds(s.near, 0.8f, 0.01f);    // dat_82000754
     const float p = s.phase - step;
     s.phase = p >= 0.0f ? p : 1.0f;
     const float tw = float(gm.sin(double(s.phase * kTwoPi)));
     const float lift = ((s.near + 1.0f) * tw) * tw;
-    const float b = (std::fmaf(lift, 0.065f, base) * zoom_factor) * fade;  // dat_82000D48
+    const float b = (fmadds(lift, 0.065f, base) * zoom_factor) * fade;  // dat_82000D48
     // Colour (4.2, 5.1, 6.0) (dat_82003000, dat_82003004, dat_82001414).
     out.push_back({s.x, s.y, s.depth, b * 4.2f, b * 5.1f, b * 6.0f});
   }

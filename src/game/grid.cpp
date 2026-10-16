@@ -1,4 +1,5 @@
 #include "game/grid.h"
+#include "game/fused.h"
 
 #include <algorithm>
 #include <cmath>
@@ -41,8 +42,8 @@ struct Layout {
 Layout layout(float half_x, float half_y) {
   // Uses the arena the static initialisers saw: the shipped arena is fixed.
   const float w = (half_x + kMargin) * 2.0f, h = (half_y + kMargin) * 2.0f;
-  return {half_x + kMargin, half_y + kMargin, int(std::fmaf(w, 0.0666666701f, 0.5f)),
-          int(std::fmaf(h, 0.0666666701f, 0.5f))};
+  return {half_x + kMargin, half_y + kMargin, int(fmadds(w, 0.0666666701f, 0.5f)),
+          int(fmadds(h, 0.0666666701f, 0.5f))};
 }
 
 }  // namespace
@@ -55,11 +56,11 @@ void Grid::reset(float half_x, float half_y) {
   vel_.assign(n, {});
   for (int i = 0; i < kRows; ++i) {
     const float fi = float(i);
-    const float y = std::fmaf(fi * 2.0f, kRowStep, -1.0f) * half_y;
-    const float v = std::fmaf(-fi, kRowStep, 1.0f);
+    const float y = fmadds(fi * 2.0f, kRowStep, -1.0f) * half_y;
+    const float v = fmadds(-fi, kRowStep, 1.0f);
     for (int j = 0; j < kCols; ++j) {
       const float fj = float(j);
-      rest_[index(i, j)] = {std::fmaf(fj * 2.0f, kColStep, -1.0f) * half_x, y};
+      rest_[index(i, j)] = {fmadds(fj * 2.0f, kColStep, -1.0f) * half_x, y};
       uv_[index(i, j)] = {fj * kColStep, v};
     }
   }
@@ -168,8 +169,8 @@ void Grid::step(const GridInputs& in, float half_x, float half_y) {
       const float sx = ((up.x + down.x) + left.x) + right.x;
       const float sy = ((up.y + down.y) + left.y) + right.y;
       const Vec2 rest = rest_[size_t(k)];
-      float vx = std::fmaf((rest.x + sx * kNeighbour) - px, kSpring, vel_[size_t(k)].x);
-      float vy = std::fmaf((rest.y + sy * kNeighbour) - py, kSpring, vel_[size_t(k)].y);
+      float vx = fmadds((rest.x + sx * kNeighbour) - px, kSpring, vel_[size_t(k)].x);
+      float vy = fmadds((rest.y + sy * kNeighbour) - py, kSpring, vel_[size_t(k)].y);
       vx = (vx + ax) * kDamping;
       vy = (vy + ay) * kDamping;
       vx = float(fsel(std::fabs(double(vx)) - kStill, vx, 0.0));

@@ -1,4 +1,5 @@
 #include "game/particles.h"
+#include "game/fused.h"
 
 #include <cmath>
 
@@ -13,7 +14,7 @@ double fsel(double a, double c, double b) { return a >= 0.0 ? c : b; }
 void Particles::add(float x, float y, float z, float vx, float vy, float vz, const float colour[3]) {
   if (full()) return;
   Particle p{x, y, z, vx, vy, vz, colour[0], colour[1], colour[2], 4.0f, 0.0f};
-  p.speed = std::sqrt(std::fmaf(vy, vy, std::fmaf(vx, vx, vz * vz)));
+  p.speed = std::sqrt(fmadds(vy, vy, fmadds(vx, vx, vz * vz)));
   live_.push_back(p);
 }
 
@@ -46,12 +47,13 @@ void Particles::step(const ParticleTuning& t, float dt, float half_x, float half
     // Swirl around each attractor nearer than the edge of its unit sphere.
     for (const ParticleAttractor& a : attractors) {
       const float dz = a.z - nz, dx = a.x - px, dy = a.y - py;
-      const float d2 = std::fmaf(dy, dy, std::fmaf(dx, dx, dz * dz));
+      const float d2 = fmadds(dy, dy, fmadds(dx, dx, dz * dz));
       // fres in the original: an exact reciprocal here (DIFFERENCES.md).
       float k = (1.0f / d2) * 256.0f;  // dat_82001A04
       k = 0.5f - k >= 0.0f ? k : 0.5f;
       const float X = (dy - dx) * k + dx, Y = (-dx - dy) * k + dy, Z = 0.0f * k + dz;
-      const double rs = 1.0 / std::sqrt(double(((Z * Z + Y * Y) + X * X) + 1e-5f));  // frsqrte, exact here
+      const double s2 = double(((Z * Z + Y * Y) + X * X) + 1e-5f);
+      const double rs = emulator_rounding ? emulator_frsqrte(s2) : 1.0 / std::sqrt(s2);  // frsqrte, exact here
       const float nvx = float(X * rs) * k + vx, nvy = float(Y * rs) * k + vy, nvz = float(Z * rs) * k + vz;
       if (d2 - 1.0f >= 0.0f) {
         vx = nvx;
@@ -62,12 +64,12 @@ void Particles::step(const ParticleTuning& t, float dt, float half_x, float half
     // Pushed from each repulsor.
     for (const ParticleRepulsor& r : repulsors) {
       const float dy = r.y - py, dz = r.z - nz, dx = r.x - px;
-      const float d = std::sqrt(std::fmaf(dx, dx, std::fmaf(dz, dz, dy * dy)));
+      const float d = std::sqrt(fmadds(dx, dx, fmadds(dz, dz, dy * dy)));
       const float inv = 1.0f / d;
       float k = (1.0f / d) * 16.0f;  // fres, dat_82001104
       k = 0.5f - k >= 0.0f ? k : 0.5f;
       const float ax = (inv * dx) * k, ay = (dy * inv) * k;
-      const float nvz = std::fmaf(-(inv * dz), k, vz);
+      const float nvz = fmadds(-(inv * dz), k, vz);
       if (d - 1.0f >= 0.0f) {
         vz = nvz;
         vx = vx - ax * r.strength;
@@ -77,18 +79,18 @@ void Particles::step(const ParticleTuning& t, float dt, float half_x, float half
 
     // Speed smoothed toward |v|; brightness from the intensity, the speed
     // and how far it went.
-    const float vmag = std::sqrt(std::fmaf(vx, vx, std::fmaf(vz, vz, vy * vy)));
-    const float speed = std::fmaf(vmag - p.speed, 0.75f, p.speed);
+    const float vmag = std::sqrt(fmadds(vx, vx, fmadds(vz, vz, vy * vy)));
+    const float speed = fmadds(vmag - p.speed, 0.75f, p.speed);
     float a = p.intensity * 2.25f;  // dat_82002A64
     a = 1.5f - a >= 0.0f ? a : 1.5f;
     const float dmx = px - p.x, dmy = py - p.y;
     const float sp = speed * 0.75f;
     const float b = 1.0f - sp >= 0.0f ? sp : 1.0f;
-    const double rs = 1.0 / std::sqrt(double(std::fmaf(dmy, dmy, dmx * dmx)));  // frsqrte, exact here
+    const double rs = 1.0 / std::sqrt(double(fmadds(dmy, dmy, dmx * dmx)));  // frsqrte, exact here
     const float cc = (sp - 2.0f) * 0.5f;
     const float cl = float(fsel(double(cc) - 1.0, 1.0, fsel(-double(cc), 0.0, cc)));
     const float ux = float(dmx * rs), uy = float(dmy * rs);
-    const float bright = (a * std::fmaf((cl * cl) * cl, 0.25f, 1.0f)) * (b * b);
+    const float bright = (a * fmadds((cl * cl) * cl, 0.25f, 1.0f)) * (b * b);
     const double fade = bright - 0.001f >= 0.0f ? 1.0 : 0.75;  // dat_82001A18
     const float intensity = float(std::fma(fade, double(p.intensity), -double(dt)));
 

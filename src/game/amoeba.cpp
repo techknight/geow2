@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "game/rotation.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -28,7 +29,7 @@ void reflect(Entity& e, Vec2 n) {
 // age times the rate.
 float cell_radius(const World& w, float age) {
   const float c = w.gm.cosf(age * kCytoplasmPulsateRate);
-  return std::fmaf((kCytoplasmRadiusHigh - kCytoplasmRadiusLow) * (c + 1.0f), 0.5f, kCytoplasmRadiusLow);
+  return fmadds((kCytoplasmRadiusHigh - kCytoplasmRadiusLow) * (c + 1.0f), 0.5f, kCytoplasmRadiusLow);
 }
 
 }  // namespace
@@ -84,7 +85,7 @@ void Nucleus::update(World& w) {
   vx = vx + r.x;
   vy = r.y + vy;
   const float s = std::sqrt(vx * vx + vy * vy);
-  const float m = std::fmaf(30.0f - s, 0.05f, s) / s;
+  const float m = fmadds(30.0f - s, 0.05f, s) / s;
   vx = vx * m;
   vy = vy * m;
 }

@@ -1,4 +1,5 @@
 #include "game/font.h"
+#include "game/fused.h"
 
 #include <cmath>
 #include <cstring>
@@ -195,7 +196,7 @@ float Font::advance(int c, int next, int& state) const {
       break;
     }
   if (!paired && next == 0) gap = 0.0f;
-  return std::fmaf(glyphs_[map_[size_t(c & 0xFF)]].width, s, gap);
+  return fmadds(glyphs_[map_[size_t(c & 0xFF)]].width, s, gap);
 }
 
 float Font::measure(const std::string& s) const {
@@ -231,13 +232,13 @@ float Font::glyph_at(LineBatch& out, float x, float y, float w, float h, int c, 
   const float adv = advance(c, next, state) * w;
   if (c == 4 || c == 7) return adv;
   float H = h, Y = y;
-  if (state & 1) Y = std::fmaf(-h, 0.25f, Y);  // dat_82000720
+  if (state & 1) Y = fmadds(-h, 0.25f, Y);  // dat_82000720
   if (state & 2) {
     H = h * 0.5f;  // dat_82000724
     Y = H + Y;
   }
   if (lower(c) || !full_size_[size_t(c & 0xFF)]) {
-    Y = std::fmaf(H, 0.25f, Y);
+    Y = fmadds(H, 0.25f, Y);
     H = H * 0.75f;
     W = W * 0.75f;
   }
@@ -245,8 +246,8 @@ float Font::glyph_at(LineBatch& out, float x, float y, float w, float h, int c, 
   const size_t capped = c == 3 ? 4 : c == 5 ? 5 : g.segments.size();
   for (size_t k = 0; k < g.segments.size(); ++k) {
     const auto& s = g.segments[k];
-    const float x0 = std::fmaf(s[0], W, x), y0 = std::fmaf(s[1], H, Y);
-    const float x1 = std::fmaf(s[2], W, x), y1 = std::fmaf(s[3], H, Y);
+    const float x0 = fmadds(s[0], W, x), y0 = fmadds(s[1], H, Y);
+    const float x1 = fmadds(s[2], W, x), y1 = fmadds(s[3], H, Y);
     if (world)
       emit_line(out, kLineWidthUnit, 0.3f, {x0, y0, 0.0f, 1.0f}, {x1, y1, 0.0f, 1.0f}, colour);  // dat_82000708
     else if (k < capped)
@@ -271,26 +272,26 @@ void Font::left(LineBatch& out, float x, float y, float w, float h, const float 
 }
 
 void Font::right(LineBatch& out, float x, float y, float w, float h, const float colour[4], const std::string& s) const {
-  run(out, std::fmaf(-measure(s), w, x), y, w, h, colour, s);
+  run(out, fmadds(-measure(s), w, x), y, w, h, colour, s);
 }
 
 void Font::centre(LineBatch& out, float x, float y, float w, float h, const float colour[4],
                   const std::string& s) const {
-  run(out, std::fmaf(-(measure(s) * w), 0.5f, x), y, w, h, colour, s);
+  run(out, fmadds(-(measure(s) * w), 0.5f, x), y, w, h, colour, s);
 }
 
 void Font::right_fit(LineBatch& out, float x, float y, float w, float h, float max_w, const float colour[4],
                      const std::string& s) const {
   const float m = measure(s);
   if (m * w > max_w) w = (w / (m * w)) * max_w;
-  run(out, std::fmaf(-m, w, x), y, w, h, colour, s);
+  run(out, fmadds(-m, w, x), y, w, h, colour, s);
 }
 
 void Font::centre_fit(LineBatch& out, float x, float y, float w, float h, float max_w, const float colour[4],
                       const std::string& s) const {
   const float m = measure(s);
   if (m * w > max_w) w = (w / (m * w)) * max_w;
-  run(out, std::fmaf(-(m * w), 0.5f, x), y, w, h, colour, s);
+  run(out, fmadds(-(m * w), 0.5f, x), y, w, h, colour, s);
 }
 
 void Font::left_fit(LineBatch& out, float x, float y, float w, float h, float max_w, const float colour[4],

@@ -5,6 +5,7 @@
 
 #include "audio/events.h"
 #include "game/rotation.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -36,7 +37,7 @@ int text_of_mode(int mode) {
 // The selection pulse: fma(fma(cos(phase), 3, 1), 0.5, 1.5), 0.5 .. 3.5.
 float pulse_factor(const Game& g, float phase) {
   const float c = float(g.gm->cos(phase));
-  return std::fmaf(std::fmaf(c, 3.0f, 1.0f), 0.5f, 1.5f);
+  return fmadds(fmadds(c, 3.0f, 1.0f), 0.5f, 1.5f);
 }
 
 // The heading-style wrap to [-pi, pi]: frac(x / 2pi) (fctid: nearest) times
@@ -194,7 +195,7 @@ void Frontend::step_menu(const MenuInput& in) {
   // The UI fades in by 0.03 a frame (dat_82001168), not per second.
   const float f = fade_ + 0.03f;
   fade_ = 1.0f - f >= 0.0f ? f : 1.0f;
-  pulse_ = wrap_phase(std::fmaf(kStep, 8.0f, pulse_));  // dat_82000D18
+  pulse_ = wrap_phase(fmadds(kStep, 8.0f, pulse_));  // dat_82000D18
 }
 
 // ---------------------------------------------------------------------------
@@ -275,8 +276,8 @@ void Frontend::frame(const std::array<PadState, 4>& pads) {
   if (lock_lr_ > 0) --lock_lr_;
   if (title_drawn_) {
     // fma(frequency * step, 2pi, phase) (dat_8218E7DC).
-    logo_phase_ = std::fmaf(0.1f * kStep, 6.28318548f, logo_phase_);
-    star_phase_ = std::fmaf(0.2f * kStep, 6.28318548f, star_phase_);
+    logo_phase_ = fmadds(0.1f * kStep, 6.28318548f, logo_phase_);
+    star_phase_ = fmadds(0.2f * kStep, 6.28318548f, star_phase_);
     title_drawn_ = false;
   }
 }
@@ -443,10 +444,10 @@ void Frontend::draw_title_block(UiCanvas& c) const {
   // fma(StarPulseStrength 0.2, cos(phase), StarAlpha 1.75). Both bent
   // (RemoveBend off).
   title_drawn_ = true;
-  const float a = std::fmaf(0.0f, float(g_.gm->cos(logo_phase_)), 1.0f);
+  const float a = fmadds(0.0f, float(g_.gm->cos(logo_phase_)), 1.0f);
   c.sprite(0.0f, 6.0f, 640.0f, 100.0f, {a, a, a, a}, kTexLogo, false);
   const float s = 1.0f * 100.0f;  // dat_82001020
-  const float sa = std::fmaf(0.2f, float(g_.gm->cos(star_phase_)), 1.75f);
+  const float sa = fmadds(0.2f, float(g_.gm->cos(star_phase_)), 1.75f);
   c.sprite(153.0f - s * 0.5f, (50.0f + 6.0f) - s * 0.5f, s, s, {sa, sa, sa, sa}, kTexStar, false);
   // Ui.Title.ShowLine: the panel's bottom edge at the menu's top.
   ui_panel(c, 0.0f, 18.0f, 640.0f, cursor_, palette_[kUiBackground], 0xF);
@@ -457,8 +458,8 @@ void Frontend::flat_icon(UiCanvas& c, float x, float y, float sx, float sy, cons
   if (m.parts.empty()) return;
   for (const ModelLine& l : m.parts[0]) {
     const float lc[4] = {l.r * colour[0], l.g * colour[1], l.b * colour[2], l.a * colour[3]};
-    const Vec4 p0{std::fmaf(l.p0.x, sx, 0.0f) + x, std::fmaf(-l.p0.y, sy, y) + 0.0f, 0.0f, 0.0f};
-    const Vec4 p1{std::fmaf(l.p1.x, sx, 0.0f) + x, std::fmaf(-l.p1.y, sy, y) + 0.0f, 0.0f, 0.0f};
+    const Vec4 p0{fmadds(l.p0.x, sx, 0.0f) + x, fmadds(-l.p0.y, sy, y) + 0.0f, 0.0f, 0.0f};
+    const Vec4 p1{fmadds(l.p1.x, sx, 0.0f) + x, fmadds(-l.p1.y, sy, y) + 0.0f, 0.0f, 0.0f};
     emit_line(c.lines, kLineWidthUnit, m.cap_size, p0, p1, lc, 8.0f);  // dat_82000D18
   }
 }
@@ -480,7 +481,7 @@ void Frontend::controller_diagram(UiCanvas& c, float x, float y, float size, boo
   const Font& font = g_.font;
   const float hw = size * 0.5f, hh = (size * 0.64f) * 0.5f;
   c.sprite(x - hw, y - hh, size, size * 0.64f, palette_[kUiHighlight], kTexController, false);
-  auto at = [&](float ax, float ay) { return Vec2{std::fmaf(ax, hw, x), std::fmaf(ay, hh, y)}; };
+  auto at = [&](float ax, float ay) { return Vec2{fmadds(ax, hw, x), fmadds(ay, hh, y)}; };
   // Ui.Pad.* anchors (defaults).
   const Vec2 L = at(-0.508f, 0.23f), R = at(0.247f, 0.6f);
   const bool bumpers = (profile_.controls & 4) != 0;
@@ -544,7 +545,7 @@ void Frontend::draw(UiCanvas& c) const {
   if (n > 0 && !screen_.item_draw) {
     // The standard list (Ui.Menu.FontSize 12).
     const float fs = 12.0f;
-    const float y0 = cur - std::fmaf(fs + 20.0f, float(n), screen_.descriptions ? 10.0f : 0.0f);
+    const float y0 = cur - fmadds(fs + 20.0f, float(n), screen_.descriptions ? 10.0f : 0.0f);
     cur = y0;
     std::vector<TextLayout> labels(static_cast<size_t>(n));
     float W = screen_.width;
@@ -558,7 +559,7 @@ void Frontend::draw(UiCanvas& c) const {
       W = lw - W >= 0.0f ? lw : W;
     }
     W = W - 536.0f >= 0.0f ? 536.0f : W;  // dat_8200627C
-    const float xl = std::fmaf(-(W + 48.0f), 0.5f, 320.0f), xr = std::fmaf(W + 48.0f, 0.5f, 320.0f);
+    const float xl = fmadds(-(W + 48.0f), 0.5f, 320.0f), xr = fmadds(W + 48.0f, 0.5f, 320.0f);
     float y = y0, y_end = y0;
     for (int i = 0; i < n; ++i) {
       TextLayout& l = labels[size_t(i)];
@@ -612,7 +613,7 @@ void Frontend::draw(UiCanvas& c) const {
     const Rgba nc{F[0] * white[0], F[1] * white[1], F[2] * white[2], F[3] * white[3]};
     font.centre(c.lines, 320.0f, 346.0f, 6.0f, 6.0f, nc.data(), name);
     const float m = font.measure(name);
-    const float x = (320.0f - std::fmaf(m, 6.0f, 2.0f) * 0.5f) - 2.0f;
+    const float x = (320.0f - fmadds(m, 6.0f, 2.0f) * 0.5f) - 2.0f;
     for (int k = 0; k < 4; ++k) {
       const Rgba col = k == menu_pad_ ? Rgba{0.15f, 1.5f, 0.15f, 1.0f} : Rgba{0.15f, 0.15f, 0.15f, 1.0f};
       const Rgba fc{col[0] * F[0], col[1] * F[1], col[2] * F[2], col[3] * F[3]};
@@ -637,8 +638,8 @@ void Frontend::draw_intermission(UiCanvas& c) const {
   float z = 1.0f / std::sqrt(1.0f - s2);
   z = -z >= 0.0f ? 0.0f : z;
   z = z - 10.0f >= 0.0f ? 10.0f : z;  // dat_8200070C
-  auto X = [&](float a) { return std::fmaf(a, z, 320.0f); };
-  auto Y = [&](float a) { return std::fmaf(a, z, 180.0f); };
+  auto X = [&](float a) { return fmadds(a, z, 320.0f); };
+  auto Y = [&](float a) { return fmadds(a, z, 180.0f); };
   static const char* kIcon[5] = {"intermissionUnplayed", "intermissionSuccess", "intermissionDied",
                                  "intermissionOutOfTime", "intermissionSelection"};
   for (int r = 0; r < 4; ++r) {
@@ -647,7 +648,7 @@ void Frontend::draw_intermission(UiCanvas& c) const {
       const int i = r * 5 + col;
       const bool selected = i == q.level && sel;
       const float u = std::clamp(q.panel[size_t(i)].pos, -1.0f, 1.0f);
-      const float px = std::fmaf(u, 400.0f, float(col - 2) * 75.0f);  // dat_82000F88
+      const float px = fmadds(u, 400.0f, float(col - 2) * 75.0f);  // dat_82000F88
       const float py = row_y;  // (the vertical springs never move)
       const int outcome = q.outcome[i];
       const int slot = selected ? kUiIntermissionSelection
@@ -661,7 +662,7 @@ void Frontend::draw_intermission(UiCanvas& c) const {
       if (q.geom_target[size_t(i)] > 0) {
         // The level's geoms collected against its weight, up to 34 high.
         const float frac = std::clamp(float(q.geom_got[size_t(i)]) / float(q.geom_target[size_t(i)]), 0.0f, 1.0f);
-        ui_panel(c, X((zx + px) + 24.0f), Y(std::fmaf(-frac, 34.0f, py + 17.0f) + zy), X((zx + px) + 27.0f),
+        ui_panel(c, X((zx + px) + 24.0f), Y(fmadds(-frac, 34.0f, py + 17.0f) + zy), X((zx + px) + 27.0f),
                  Y((zy + py) + 17.0f), P, 0x21);
       }
       if (selected)
@@ -690,14 +691,14 @@ void Frontend::boot() {
 void Frontend::intro(const MenuInput& in) {
   // sub_8207E9F0 (Ui.Intro.Pause off; SpringFactor 0.8, SpringDamp 0.6).
   intro_time_ = kStep + intro_time_;
-  const float a = std::fmaf(kStep, 4.0f, intro_fade_);  // dat_820006F4
+  const float a = fmadds(kStep, 4.0f, intro_fade_);  // dat_820006F4
   intro_fade_ = std::clamp(a, 0.0f, 1.0f);
   if (intro_phase_ == 0) {
     intro_scale_ = 1.0f;
     intro_speed_ = 0.0f;
   } else {
     intro_scale_ = intro_speed_ + intro_scale_;
-    intro_speed_ = std::fmaf(1.0f - intro_scale_, 0.8f, intro_speed_) * 0.6f;
+    intro_speed_ = fmadds(1.0f - intro_scale_, 0.8f, intro_speed_) * 0.6f;
   }
   // A or START skips to the fade-out.
   if ((in.pressed & (kStart | kA)) && intro_time_ < 4.25f) intro_time_ = 4.25f;  // dat_820011F0
@@ -731,7 +732,7 @@ void Frontend::draw_intro(UiCanvas& c) const {
     const float size = 260.0f, S = size * intro_scale_;
     const Rgba& n = palette_[kUiNormal];
     const Rgba col{n[0] * f * 0.55f, n[1] * f * 0.55f, n[2] * f * 0.55f, n[3] * f * 0.55f};
-    c.sprite(std::fmaf(-S, 0.5f, 320.0f), 160.0f - size * 0.5f, S, size, col, kTexRetroBizarre, false);
+    c.sprite(fmadds(-S, 0.5f, 320.0f), 160.0f - size * 0.5f, S, size, col, kTexRetroBizarre, false);
     const Rgba nf{n[0] * f, n[1] * f, n[2] * f, n[3] * f};
     const float y = ((size * 0.5f) + -38.0f) + 160.0f;
     g_.font.set_kerning(false);
@@ -841,7 +842,7 @@ void Frontend::mode_select(bool reset) {
 }
 
 void Frontend::mode_select_update(const MenuInput& in) {
-  tile_phase_ = wrap_phase(std::fmaf(kStep, 5.0f, tile_phase_));  // dat_820006F0
+  tile_phase_ = wrap_phase(fmadds(kStep, 5.0f, tile_phase_));  // dat_820006F0
   auto navigate = [&](uint32_t bits) {
     int& s = selection();
     int to = s;
@@ -881,7 +882,7 @@ void Frontend::mode_tile(UiCanvas& c, int index, int text, bool selected) const 
   const float H = ((cursor_ - 46.0f) + 6.0f) * 0.333333343f;
   const float h = H - 6.0f;
   const float x0 = index / 3 == 0 ? 28.0f : 323.0f;
-  const float y0 = std::fmaf(float(index % 3), H, 46.0f);
+  const float y0 = fmadds(float(index % 3), H, 46.0f);
   const float p = selected ? pulse_factor(g_, pulse_) : 1.0f;
   const int mode = mode_of_text(text);
   const int x = profile_index(mode);
@@ -899,14 +900,14 @@ void Frontend::mode_tile(UiCanvas& c, int index, int text, bool selected) const 
                                 : palette_[kUiLockedBackground];
   ui_panel(c, x0, y0, x0 + 289.0f, y0 + h, tile, 0);
   // The icon: the item's CharMap model, then the name under it.
-  const float yi = std::fmaf(h - 20.0f, 0.5f, y0) + 10.0f;
+  const float yi = fmadds(h - 20.0f, 0.5f, y0) + 10.0f;
   static const char* kIcon[6] = {"deadline", "king", "evolved", "pacifism", "waves", "progression"};
   const auto icon = g_.charmap.find(kIcon[index]);
   if (icon != g_.charmap.end()) flat_icon(c, x0 + 44.0f, yi - 2.0f, 1.1f, 1.1f, icon->second, col);
   font.centre_fit(c.lines, x0 + 44.0f, yi + 10.0f, 6.0f, 6.0f, 75.0f, col.data(), text_(text));
   const float L = x0 + 88.0f, R = x0 + 280.0f, C = (R + L) * 0.5f;
   if (fresh) {
-    text_box(font, c.lines, palette_, C, std::fmaf(h - 7.0f, 0.5f, y0), 7.0f, 7.0f, 3.0f, (R - L) - 18.0f, 2, 1, col,
+    text_box(font, c.lines, palette_, C, fmadds(h - 7.0f, 0.5f, y0), 7.0f, 7.0f, 3.0f, (R - L) - 18.0f, 2, 1, col,
              text_(0x88));
   } else if (unlocked) {
     // The local case: the session's best, and in place of the Live mini
@@ -919,7 +920,7 @@ void Frontend::mode_tile(UiCanvas& c, int index, int text, bool selected) const 
     font.right(c.lines, R - 15.0f, y0 + h * 0.25f, 7.0f, 7.0f, palette_[kUiNormal].data(), format_number(best));
   } else if (pre) {
     text_box(font, c.lines, palette_, C, y0 + 27.0f, 7.0f, 7.0f, 3.0f, (R - L) - 6.0f, 2, 2, col, text_(0x87));
-    const float q = std::fmaf(float(g_.gm->cos(tile_phase_)) + 1.0f, 1.5f, 1.0f);
+    const float q = fmadds(float(g_.gm->cos(tile_phase_)) + 1.0f, 1.5f, 1.0f);
     const Rgba cq = scaled(col, q);
     int pct = int((float(profile_.progress[size_t(pre_x)]) * 100.0f) / float(kKillsToUnlock));
     pct = std::clamp(pct, 0, 100);
@@ -928,7 +929,7 @@ void Frontend::mode_tile(UiCanvas& c, int index, int text, bool selected) const 
     static const int kHint[6] = {0x90, 0x8E, 0x91, 0x92, 0x8F, 0x93};
     text_box(font, c.lines, palette_, C, y0 + 52.0f, 7.0f, 7.0f, 3.0f, 192.0f, 2, 0, col, text_(kHint[x]));
   } else {
-    text_box(font, c.lines, palette_, C, std::fmaf(h, 0.5f, y0), 7.0f, 7.0f, 3.0f, (R - L) - 18.0f, 2, 1, col,
+    text_box(font, c.lines, palette_, C, fmadds(h, 0.5f, y0), 7.0f, 7.0f, 3.0f, (R - L) - 18.0f, 2, 1, col,
              text_(0x87));
   }
 }
@@ -1141,7 +1142,7 @@ void Frontend::controls() {
          for (int i = 0; i < 40; ++i)
            emit_ui_body(c.lines, float(i) * 0.025f * 640.0f, cursor_, float(i + 1) * 0.025f * 640.0f, cursor_, q.data(),
                         q.data());
-         controller_diagram(c, 320.0f, std::fmaf(y1 + 46.0f, 0.5f, -5.0f), 200.0f, true, true, true);
+         controller_diagram(c, 320.0f, fmadds(y1 + 46.0f, 0.5f, -5.0f), 200.0f, true, true, true);
        },
        false, {}, 0);
   screen_.width = 300.0f;
@@ -1210,7 +1211,7 @@ void Frontend::settings() {
           }
         },
         [this, text, v](TextLayout& l) {
-          const int n = int(std::fmaf(profile_.*v, 100.0f, 0.005f));
+          const int n = int(fmadds(profile_.*v, 100.0f, 0.005f));
           adjust_label(l, text, format("%i%%", n), n > 0, n < 100);
         },
         {}, true);
@@ -1280,7 +1281,7 @@ void Frontend::credits() {
          v = v - sq(in.analog[2]);
          v = v + sq(in.analog[3]);
          v = std::clamp(v, -1.0f, 1.0f);
-         credits_scroll_ = std::fmaf(std::fmaf(v, 400.0f, 40.0f), kStep, credits_scroll_);
+         credits_scroll_ = fmadds(fmadds(v, 400.0f, 40.0f), kStep, credits_scroll_);
          if (credits_length_ > 0.0f) {
            credits_scroll_ = float(std::fmod(double(credits_length_ + credits_scroll_), double(credits_length_)));
            credits_scroll_ = float(std::fmod(double(credits_length_ + credits_scroll_), double(credits_length_)));
@@ -1323,7 +1324,7 @@ void Frontend::results() {
            ui_panel(c, 0.0f, y, 22.0f, y + h, P[kUiBackground], 0);
            ui_panel(c, 28.0f, y, 612.0f, y + h, P[kUiBackground], 0);
            ui_panel(c, 618.0f, y, 640.0f, y + h, P[kUiBackground], 0);
-           font.centre(c.lines, 320.0f, std::fmaf(h, 0.5f, y) - drop, size, size, P[kUiNormal].data(), format_number(v));
+           font.centre(c.lines, 320.0f, fmadds(h, 0.5f, y) - drop, size, size, P[kUiNormal].data(), format_number(v));
            return h + 6.0f;
          };
          if (g_.multiplayer) {
@@ -1346,7 +1347,7 @@ void Frontend::results() {
          emit_ui_line(c.lines, 320.0f, 142.0f, 320.0f, 142.0f + list_h, P[10].data());
          const float L = B - 68.0f;
          for (int k = 0; k < 8; ++k) {
-           const float ry = std::fmaf(float(k), 14.0f, 148.0f);
+           const float ry = fmadds(float(k), 14.0f, 148.0f);
            const ScoreEntry& e = T.entry[size_t(2 + k)];
            const bool last = k == 0 && T.entry[0].score > 0 && e.score == T.entry[0].score &&
                              e.multiplier == T.entry[0].multiplier && e.name == T.entry[0].name;
@@ -1356,7 +1357,7 @@ void Frontend::results() {
              font.right(c.lines, 308.0f, ry, 8.0f, 8.0f, P[kUiDisabled].data(), "-");
            } else {
              const std::string num = format_number(e.score);
-             font.left_fit(c.lines, 34.0f, ry, 8.0f, 8.0f, std::fmaf(-font.measure(num), 8.0f, 258.0f), col.data(), e.name);
+             font.left_fit(c.lines, 34.0f, ry, 8.0f, 8.0f, fmadds(-font.measure(num), 8.0f, 258.0f), col.data(), e.name);
              font.right(c.lines, 308.0f, ry, 8.0f, 8.0f, col.data(), num);
            }
          }
@@ -1374,7 +1375,7 @@ void Frontend::results() {
            if (r >= count) continue;
            const Rgba& col = r == last_row_ ? P[kUiHighlight] : P[kUiNormal];
            const std::string num = format_number(b.rows[size_t(r)].score);
-           font.left_fit(c.lines, 332.0f, yy, 8.0f, 8.0f, std::fmaf(-font.measure(num), 8.0f, 252.0f), col.data(),
+           font.left_fit(c.lines, 332.0f, yy, 8.0f, 8.0f, fmadds(-font.measure(num), 8.0f, 252.0f), col.data(),
                          format("%i. %s", r + 1, b.rows[size_t(r)].name.c_str()));
            font.right(c.lines, 600.0f, yy, 8.0f, 8.0f, col.data(), num);
          }
@@ -1595,7 +1596,7 @@ void Frontend::lobby_roles() {
 void Frontend::lobby_update(const MenuInput& in) {
   // sub_820846E0: the join prompt's pulse turns at pi a second.
   {
-    const double d = double(std::fmaf(kStep, 3.14159274f, lobby_phase_)) * 0.15915494309189535;
+    const double d = double(fmadds(kStep, 3.14159274f, lobby_phase_)) * 0.15915494309189535;
     lobby_phase_ = float((d - std::nearbyint(d)) * 6.2831853072);
   }
   // Each pad's bits (above 0.75): START, A, B or BACK, X, Y, not
@@ -1836,18 +1837,18 @@ void Frontend::lobby_tile(UiCanvas& c, int index, int text, bool selected, bool 
   // sub_82085C28.
   const Font& font = g_.font;
   const int row = index / 6, col = index % 6;
-  float x = std::fmaf(float(col), 97.3333359f, col < 3 ? 0.0f : 6.0f) + 28.0f;
-  float y = std::fmaf(float(row), 61.0f, 150.0f);
+  float x = fmadds(float(col), 97.3333359f, col < 3 ? 0.0f : 6.0f) + 28.0f;
+  float y = fmadds(float(row), 61.0f, 150.0f);
   float w = 91.3333359f, h = 55.0f;
   bool current = false;
   if (index >= 16) {
-    x = std::fmaf(float(col - 4), 146.0f, 326.0f);
+    x = fmadds(float(col - 4), 146.0f, 326.0f);
     y = 292.0f;
     w = 140.0f;
     h = 30.0f;
     current = index == (copilots_ ? 17 : 16);
   } else if (index >= 12) {
-    x = std::fmaf(float(col), 73.0f, 28.0f);
+    x = fmadds(float(col), 73.0f, 28.0f);
     y = 292.0f;
     w = 67.0f;
     h = 30.0f;
@@ -1864,7 +1865,7 @@ void Frontend::lobby_tile(UiCanvas& c, int index, int text, bool selected, bool 
   } else {
     ui_panel(c, x, y, x + w, y + h, palette_[kUiLockedBackground], 0);
   }
-  const float cx = std::fmaf(w, 0.5f, x), cy = std::fmaf(h, 0.5f, y);
+  const float cx = fmadds(w, 0.5f, x), cy = fmadds(h, 0.5f, y);
   if (index < 12) {
     static const std::map<int, const char*> kIcon = {{0x1E, "deadline"}, {0x21, "king"},     {0x1C, "evolved"},
                                                      {0x20, "pacifism"}, {0x1F, "waves"},    {0x1D, "progression"}};
@@ -1915,14 +1916,14 @@ void Frontend::results_coop(UiCanvas& c) const {
     ui_panel(c, 28.0f, y, 612.0f, y + h, P[kUiBackground], 0);
     ui_panel(c, 618.0f, y, 640.0f, y + h, P[kUiBackground], 0);
     if (size > 0.0f)
-      font.centre(c.lines, 320.0f, std::fmaf(h, 0.5f, y) - drop, size, size, P[kUiNormal].data(), format_number(v));
+      font.centre(c.lines, 320.0f, fmadds(h, 0.5f, y) - drop, size, size, P[kUiNormal].data(), format_number(v));
   };
   heading(46.0f, text_(0x65));
   box(66.0f, 50.0f, T.entry[0].score, 20.0f, 10.0f);
   heading(122.0f, text_(0x66));
   box(142.0f, B - 204.0f, 0, 0.0f, 0.0f);
   for (int k = 0; k < 8; ++k) {
-    const float ry = std::fmaf(float(k), 14.0f, 148.0f);
+    const float ry = fmadds(float(k), 14.0f, 148.0f);
     const ScoreEntry& e = T.entry[size_t(2 + k)];
     const bool last = k == 0 && T.entry[0].score > 0 && e.score == T.entry[0].score &&
                       e.multiplier == T.entry[0].multiplier && e.name == T.entry[0].name;
@@ -1932,7 +1933,7 @@ void Frontend::results_coop(UiCanvas& c) const {
       font.right(c.lines, 606.0f, ry, 8.0f, 8.0f, P[kUiDisabled].data(), "-");
     } else {
       const std::string num = format_number(e.score);
-      const float max_w = std::max(572.0f - std::fmaf(font.measure(num), 8.0f, 20.0f), 1.0f);
+      const float max_w = std::max(572.0f - fmadds(font.measure(num), 8.0f, 20.0f), 1.0f);
       font.left_fit(c.lines, 34.0f, ry, 8.0f, 8.0f, max_w, col.data(), e.name);
       font.right(c.lines, 606.0f, ry, 8.0f, 8.0f, col.data(), num);
     }
@@ -2101,7 +2102,7 @@ void Frontend::board_view(int mode, std::function<void(const MenuInput&)> back) 
          const LocalBoard& b = boards_[size_t(board_mode_)];
          const float rh = ((cursor_ - 46.0f) + 6.0f) * 0.1f;
          for (int i = 0; i < 10; ++i) {
-           const float y = std::fmaf(float(i), rh, 46.0f);
+           const float y = fmadds(float(i), rh, 46.0f);
            ui_panel(c, 28.0f, y, 606.0f, (y + rh) - 6.0f, P[kUiBackground], 0);
            const int r = board_first_ + i;
            if (r >= int(b.rows.size())) continue;
@@ -2171,7 +2172,7 @@ void Frontend::achievements_screen() {
            if (k >= int(g_.achievements.size())) break;
            const auto& a = g_.achievements[size_t(k)];
            const bool got = (g_.achieved & a.bit) != 0;
-           const float y = std::fmaf(float(i), rh, 46.0f), y1 = (y + rh) - 6.0f;
+           const float y = fmadds(float(i), rh, 46.0f), y1 = (y + rh) - 6.0f;
            ui_panel(c, 28.0f, y, 612.0f, y1, got ? P[kUiBackground] : P[kUiLockedBackground], 0);
            const float icon = (y1 - y) - 8.0f;
            const float b = got ? 0.125f : 0.03125f;

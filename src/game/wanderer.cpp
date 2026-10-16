@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "game/rotation.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -27,7 +28,7 @@ Wanderer::Wanderer(World& w, float px, float py) {
   for (int i = 0; i < 4; ++i) colour[i] = kColour[i];
   // Spin: fmadds(r * 2^-32, 0.05, 0.1), reversed (and mirrored) on a
   // second draw above 0.5.
-  spin = std::fmaf(float(w.rng.next()) * kTwoPow32, 0.05f, 0.1f);
+  spin = fmadds(float(w.rng.next()) * kTwoPow32, 0.05f, 0.1f);
   if (0.5f < float(w.rng.next()) * kTwoPow32) {
     spin = -spin;
     sx = -sx;
@@ -64,7 +65,7 @@ void Wanderer::update(World& w) {
   vy = r.y + vy;
   // Speed eased 5% of the way to 50 (dat_82001040, dat_82000D60).
   const float s = std::sqrt(vy * vy + vx * vx);
-  const float k = std::fmaf(50.0f - s, 0.05f, s) / s;
+  const float k = fmadds(50.0f - s, 0.05f, s) / s;
   vx = vx * k;
   vy = vy * k;
   w.separate(*this, radius, 1.0f);

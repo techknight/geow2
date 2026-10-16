@@ -1,4 +1,5 @@
 #include "game/shockwave.h"
+#include "game/fused.h"
 
 #include <cmath>
 
@@ -31,7 +32,7 @@ void Shockwave::update(World& w) {
     w.remove(*this);
     return;
   }
-  const float grown = std::fmaf(speed, w.step, r);
+  const float grown = fmadds(speed, w.step, r);
   r = max_radius - grown >= 0.0f ? grown : max_radius;
   blast(w);
 }
@@ -83,10 +84,10 @@ void Shockwave::draw(World& w, LineBatch& out) {
     const float c0 = float(w.gm.cos(a0)), s0 = float(w.gm.sin(a0));
     const float c1 = float(w.gm.cos(a1)), s1 = float(w.gm.sin(a1));
     for (int j = 0; j < 4; ++j) {
-      float rr = std::fmaf(float(j), 0.05f, 1.0f) * r;  // dat_82000D60
+      float rr = fmadds(float(j), 0.05f, 1.0f) * r;  // dat_82000D60
       rr = max_radius - rr >= 0.0f ? rr : max_radius;
-      const Vec4 p0{std::fmaf(c0, rr, x), std::fmaf(s0, rr, y), 0, 0};
-      const Vec4 p1{std::fmaf(c1, rr, x), std::fmaf(s1, rr, y), 0, 0};
+      const Vec4 p0{fmadds(c0, rr, x), fmadds(s0, rr, y), 0, 0};
+      const Vec4 p1{fmadds(c1, rr, x), fmadds(s1, rr, y), 0, 0};
       emit_line(out, kLineWidthUnit, 0.5f, p0, p1, ring);
     }
   }

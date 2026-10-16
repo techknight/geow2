@@ -1,4 +1,5 @@
 #include "game/repulsar.h"
+#include "game/fused.h"
 
 #include <cmath>
 
@@ -35,8 +36,8 @@ Vec2 lead_point(float speed, float k, Vec2 a, Vec2 av, Vec2 b, Vec2 bv) {
   const float r2 = ry * ry + rx * rx;
   const float d2 = dy * dy + dx * dx;
   const float bb = dy * ry + dx * rx;
-  const float q = std::fmaf(-speed, speed, r2);
-  const float disc = std::fmaf(bb, bb, -(d2 * q));
+  const float q = fmadds(-speed, speed, r2);
+  const float disc = fmadds(bb, bb, -(d2 * q));
   if (!(disc >= 0.0f)) return b;
   const float r = std::sqrt(disc);
   const float inv = 1.0f / q;
@@ -63,10 +64,10 @@ Repulsar::Repulsar(World& w, float px, float py) {
   colour[2] = 0.0f;
   colour[3] = 1.0f;
   radius = 7.0f;  // dat_820017B0
-  heading = std::fmaf(float(w.rng.next()), kTwoPow31, -1.0f) * kPi;
+  heading = fmadds(float(w.rng.next()), kTwoPow31, -1.0f) * kPi;
   timer = 0.0f;
   state = 0;
-  aim_time = std::fmaf(float(w.rng.next()), kTwoPow32, 1.0f) * 0.4f;  // dat_82001164
+  aim_time = fmadds(float(w.rng.next()), kTwoPow32, 1.0f) * 0.4f;  // dat_82001164
   flash = 0.0f;
   dizzy = 0.0f;
   // (Its 40-point shape table is only drawn without models.) sub_82045A88:
@@ -183,7 +184,7 @@ void Repulsar::hit_by_shot(World& w, const Killer& k) {
     const Vec2 p = lead_point(kLeadSpeed, 1.0f, {x, y}, {vx, vy}, {t->x, t->y}, {t->vx, t->vy});
     const float dl = wrap(angle_to(w, x, y, p.x, p.y) - heading);
     const float f = dl >= 0.0f ? -kRepulsarDizzyFactor : kRepulsarDizzyFactor;
-    heading = f / std::fmaf(std::fabs(dl), kRepulsarDizzyScale, 1.0f) + heading;
+    heading = f / fmadds(std::fabs(dl), kRepulsarDizzyScale, 1.0f) + heading;
   }
   flash = 1.0f;
   // Sound event 7, at most once per 35 ms.
@@ -202,7 +203,7 @@ void Repulsar::draw(World& w, LineBatch& out) {
   const Mat4 m = placement(w);
   if (!(flags & kEntityFadingIn)) {
     // The body flashes four times as bright, the core twice.
-    const float c0 = std::fmaf(flash, 3.0f, 1.0f), c1 = flash + 1.0f;
+    const float c0 = fmadds(flash, 3.0f, 1.0f), c1 = flash + 1.0f;
     const float body[4] = {c0, c0, c0, 1.0f}, core[4] = {c1, c1, c1, 1.0f};
     draw_model_part(out, unit->model, 0, m, body);
     if (unit->model.parts.size() > 1) draw_model_part(out, unit->model, 1, m, core);
@@ -213,7 +214,7 @@ void Repulsar::draw(World& w, LineBatch& out) {
     float a = g;
     if (a >= 1.0f) a = 2.0f - a;
     if (!(a >= 0.025f)) continue;  // dat_82000D64
-    const float q = std::fmaf(g, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
+    const float q = fmadds(g, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
     Mat4 scaled = m;
     for (int r = 0; r < 3; ++r)
       for (int c = 0; c < 4; ++c) scaled.m[r * 4 + c] = m.m[r * 4 + c] * q;

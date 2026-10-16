@@ -1,4 +1,5 @@
 #include "game/rotation.h"
+#include "game/fused.h"
 
 #include <cmath>
 
@@ -11,11 +12,11 @@ Mat4 rotation_euler(const GameMath& gm, float a, float b, float c) {
   r.m[1] = sc * cb;
   r.m[2] = -sb;
   // fmsubs/fmadds at 0x820319D4..0x820319FC.
-  r.m[4] = std::fmaf(sb * sa, cc, -(sc * ca));
-  r.m[5] = std::fmaf(sb * sa, sc, cc * ca);
+  r.m[4] = fmadds(sb * sa, cc, -(sc * ca));
+  r.m[5] = fmadds(sb * sa, sc, cc * ca);
   r.m[6] = cb * sa;
-  r.m[8] = std::fmaf(sb * ca, cc, sc * sa);
-  r.m[9] = std::fmaf(sb * ca, sc, -(cc * sa));
+  r.m[8] = fmadds(sb * ca, cc, sc * sa);
+  r.m[9] = fmadds(sb * ca, sc, -(cc * sa));
   r.m[10] = cb * ca;
   return r;
 }
@@ -24,15 +25,15 @@ Mat4 rotation_axis(const GameMath& gm, float angle, float x, float y, float z) {
   // All nine elements are fused (0x820416A0..0x82041768).
   const float c = gm.cosf(angle), s = gm.sinf(angle), t = 1.0f - c;
   Mat4 r = Mat4::identity();
-  r.m[0] = std::fmaf(x * x, t, c);
-  r.m[1] = std::fmaf(t * x, y, z * s);
-  r.m[2] = std::fmaf(z * t, x, -(s * y));
-  r.m[4] = std::fmaf(t * x, y, -(z * s));
-  r.m[5] = std::fmaf(y * y, t, c);
-  r.m[6] = std::fmaf(z * t, y, x * s);
-  r.m[8] = std::fmaf(z * t, x, s * y);
-  r.m[9] = std::fmaf(z * t, y, -(x * s));
-  r.m[10] = std::fmaf(z * z, t, c);
+  r.m[0] = fmadds(x * x, t, c);
+  r.m[1] = fmadds(t * x, y, z * s);
+  r.m[2] = fmadds(z * t, x, -(s * y));
+  r.m[4] = fmadds(t * x, y, -(z * s));
+  r.m[5] = fmadds(y * y, t, c);
+  r.m[6] = fmadds(z * t, y, x * s);
+  r.m[8] = fmadds(z * t, x, s * y);
+  r.m[9] = fmadds(z * t, y, -(x * s));
+  r.m[10] = fmadds(z * z, t, c);
   return r;
 }
 
@@ -54,9 +55,9 @@ Mat4 look_at_basis(Vec4 p, Vec4 f, Vec4 u) {
   yy *= inv_y;
   yz *= inv_y;
   yw *= inv_y;
-  const float xz = std::fmaf(zy, yx, -(yy * zx));
-  const float xy = std::fmaf(yz, zx, -(zz * yx));
-  const float xx = std::fmaf(yy, zz, -(yz * zy));
+  const float xz = fmadds(zy, yx, -(yy * zx));
+  const float xy = fmadds(yz, zx, -(zz * yx));
+  const float xx = fmadds(yy, zz, -(yz * zy));
   const float inv_x = 1.0f / std::sqrt((xz * xz + xy * xy) + xx * xx);
   Mat4 m;
   m.m[0] = inv_x * xx;

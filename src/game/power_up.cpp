@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "game/rotation.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -60,7 +61,7 @@ void PowerUp::update(World& w) {
   }
   // Turn 5 a second (dat_820006F0), wrapped to [-pi, pi] (fctid rounds
   // to nearest).
-  const double d = double(std::fmaf(w.step, 5.0f, heading)) * 0.15915494309189535;  // dat_82000D00
+  const double d = double(fmadds(w.step, 5.0f, heading)) * 0.15915494309189535;  // dat_82000D00
   heading = float((d - std::nearbyint(d)) * 6.2831853072);  // dat_82000CF8
 }
 
@@ -88,7 +89,7 @@ void PowerUp::draw(World& w, LineBatch& out) {
     float f = g;
     if (f >= 1.0f) f = float(2.0 - double(f));
     if (f < 0.025f) continue;  // dat_82000D64
-    const float s = std::fmaf(g, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
+    const float s = fmadds(g, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
     Mat4 scaled = m;
     for (int r = 0; r < 3; ++r)
       for (int c = 0; c < 4; ++c) scaled.m[r * 4 + c] = m.m[r * 4 + c] * s;

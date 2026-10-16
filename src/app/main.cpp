@@ -23,7 +23,11 @@
 // step by step from a CSV with a step column and raw lx, ly, rx, ry, lt,
 // rt columns for pad 0 and p1_lx .. p3_rt for the others (a step without
 // a row keeps the previous one; a pad without columns keeps its
-// --stick / --fire; a <rng-state>-spawner.txt next to the --rng-state
+// --stick / --fire; --crt-state <hex> sets the C runtime rand()'s state,
+// which the original keeps for the whole session, and the run prints its
+// final value; --emulator-rounding rounds the fused multiply-adds as
+// Xenia does (game/fused.h), for comparing with games recorded there; a
+// <rng-state>-spawner.txt next to the --rng-state
 // file loads the spawner state with it); --positions writes every unit after each step. With
 // a seq_phase column (Sequence's phase in the
 // recorded game) the music's TransitionSwitch, which the original reads
@@ -48,6 +52,7 @@
 #include <vector>
 
 #include "app/frontend.h"
+#include "game/fused.h"
 #include "audio/device.h"
 #include "audio/engine.h"
 #include "audio/game_audio.h"
@@ -777,6 +782,7 @@ int main(int argc, char** argv) {
   int rng_step = -1, dump_step = -1;
   uint32_t shot_w = 1280, shot_h = 720;
   int64_t seed = -1;
+  int64_t crt_state = -1;  // --crt-state: the C runtime rand()'s state at the start, in hex
   int bomb_step = -1;
   int mode = 0;
   int start_level = -1;
@@ -797,6 +803,8 @@ int main(int argc, char** argv) {
     else if (a == "--frontend") frontend = true;
     else if (a == "--trace" && i + 1 < argc) trace_path = argv[++i];
     else if (a == "--inputs" && i + 1 < argc) inputs_path = argv[++i];
+    else if (a == "--emulator-rounding") emulator_rounding = true;
+    else if (a == "--crt-state" && i + 1 < argc) crt_state = int64_t(std::strtoul(argv[++i], nullptr, 16));
     else if (a == "--positions" && i + 1 < argc) positions_path = argv[++i];
     else if (a == "--rng-state" && i + 2 < argc) {
       rng_path = argv[++i];
@@ -860,7 +868,7 @@ int main(int argc, char** argv) {
                    " [--vsync|--no-vsync] [--language <en|de|fr|es|it>] [--seed <n>] [--frames <n> --screenshot <png>"
                    " [--size <w> <h>] [--mode <0-5>] [--level <0-19>] [--stick <x> <y>] [--fire <x> <y>]"
                    " [--bomb <step>] [--spawn <type> <x> <y>]... [--player <pad> <team> <role>]... [--versus]"
-                   " [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] [--inputs <csv>]"
+                   " [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] [--inputs <csv>] [--emulator-rounding] [--crt-state <hex>]"
                    " | --frontend [--press <frame> <button>]...]\n");
       return 2;
     }
@@ -912,8 +920,10 @@ int main(int argc, char** argv) {
     std::array<Sticks, 4> per_pad{};
     for (size_t p = 0; p < 4; ++p) per_pad[p] = pad_sticks[p] ? *pad_sticks[p] : sticks;
     const StepInputs inputs = inputs_path.empty() ? StepInputs{} : load_inputs(inputs_path);
+    if (crt_state >= 0) game.world->crt.set_state(uint32_t(crt_state));
     rc = run_headless(dev, renderer, game, frames, per_pad, inputs, bomb_step, spawns, screenshot, shot_w, shot_h,
                       exact_720p == 1, trace_path, rng_path, rng_step, dump_path, dump_step, positions_path);
+    SDL_Log("crt state %08x", game.world->crt.state());
   } else {
     Display d = load_display(profile_dir);
     if (fullscreen >= 0) d.fullscreen = fullscreen != 0;

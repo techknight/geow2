@@ -6,6 +6,7 @@
 #include "game/gate.h"
 #include "game/geoms.h"
 #include "game/rotation.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -39,7 +40,7 @@ void Entity::light(World& w, std::vector<LightVertex>& out) {
     c[2] = g[2] * a;
   } else {
     // Pulsing while fading in: times fmod(fade * 3, 1) * 0.5 + 1.
-    const float k = std::fmaf(frac_of(fade * 3.0f), 0.5f, 1.0f);
+    const float k = fmadds(frac_of(fade * 3.0f), 0.5f, 1.0f);
     const float a = g[3];
     c[0] = (a * g[0]) * k;
     c[1] = (g[1] * a) * k;
@@ -67,7 +68,7 @@ void Entity::draw_unit(World& w, LineBatch& out, const float tint[4]) {
     float f = g;
     if (f >= 1.0f) f = float(2.0 - double(f));
     if (f < 0.025f) continue;  // dat_82000D64
-    const float s = std::fmaf(g, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
+    const float s = fmadds(g, 1.4f, 0.1f);  // dat_82000FF8, dat_82000714
     Mat4 scaled = m;
     for (int r = 0; r < 3; ++r)
       for (int c = 0; c < 4; ++c) scaled.m[r * 4 + c] = m.m[r * 4 + c] * s;  // sub_82040F28 then A * B
@@ -276,7 +277,7 @@ void World::update_entities() {
     // sub_820453E0.
     const uint32_t entry = e.flags;
     if (entry & kEntityFadingIn) {
-      e.fade = std::fmaf(step, 1.5f, e.fade);  // dat_82000C90
+      e.fade = fmadds(step, 1.5f, e.fade);  // dat_82000C90
       if (e.fade >= 1.0f) {
         e.fade = 1.0f;
         e.flags = entry & ~kEntityFadingIn;
@@ -344,16 +345,16 @@ const PlayerTarget* World::target(const Entity& e) const {
 }
 
 Vec2 World::random_vector(float scale) {
-  const float y = float(double(std::fmaf(float(rng.next()), kTwoPow31, -1.0f)) * scale);
-  const float x = float(double(std::fmaf(float(rng.next()), kTwoPow31, -1.0f)) * scale);
+  const float y = float(double(fmadds(float(rng.next()), kTwoPow31, -1.0f)) * scale);
+  const float x = float(double(fmadds(float(rng.next()), kTwoPow31, -1.0f)) * scale);
   return {x, y};
 }
 
 float World::random_float(float scale) { return (float(rng.next()) * kTwoPow32) * scale; }
 
 Vec2 World::random_position() {
-  const float y = std::fmaf(float(rng.next()), kTwoPow31, -1.0f) * half_y;
-  const float x = std::fmaf(float(rng.next()), kTwoPow31, -1.0f) * half_x;
+  const float y = fmadds(float(rng.next()), kTwoPow31, -1.0f) * half_y;
+  const float x = fmadds(float(rng.next()), kTwoPow31, -1.0f) * half_x;
   return {x, y};
 }
 

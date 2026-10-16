@@ -6,6 +6,7 @@
 #include <cstdio>
 
 #include "game/ui.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -30,9 +31,9 @@ std::string printf_string(const char* fmt, ...) {
 // brighter and bigger with t; above 3, the icon and a count.
 void icon_row(const Font& font, LineBatch& out, float x, float y, float t, float s, int align, int n, char ch,
               bool force) {
-  const float k = std::fmaf(t, 5.0f, 1.0f);
+  const float k = fmadds(t, 5.0f, 1.0f);
   const float c[4] = {kNormal[0] * k, kNormal[1] * k, kNormal[2] * k, kNormal[3]};
-  const float size = std::fmaf(t, 4.0f, 12.0f) * s;
+  const float size = fmadds(t, 4.0f, 12.0f) * s;
   const float yy = y - (t * s) * 2.0f;
   std::string text;
   if (n > 3 || force)

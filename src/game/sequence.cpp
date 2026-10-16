@@ -5,6 +5,7 @@
 #include <cstdlib>
 
 #include "game/spawn.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -222,11 +223,11 @@ void Sequence::reset_screen(World& w) {
   }
   constexpr float k = 2.32830644e-10f;  // dat_820006E4
   for (int row = 0; row < 4; ++row) {
-    const float a = std::fmaf(float(w.rng.next()) * k, 0.05f, 0.075f);  // dat_82000D60, dat_82000D54
-    const float b = std::fmaf(float(w.rng.next()) * k, 0.1f, 0.05f);    // dat_82000714
+    const float a = fmadds(float(w.rng.next()) * k, 0.05f, 0.075f);  // dat_82000D60, dat_82000D54
+    const float b = fmadds(float(w.rng.next()) * k, 0.1f, 0.05f);    // dat_82000714
     const float c = float(w.rng.next()) * k * 0.2f;                      // dat_82000D5C
-    const float d = std::fmaf(float(w.rng.next()) * k, 0.1f, 0.05f);
-    const float e = std::fmaf(float(w.rng.next()) * k, 0.05f, 0.075f);
+    const float d = fmadds(float(w.rng.next()) * k, 0.1f, 0.05f);
+    const float e = fmadds(float(w.rng.next()) * k, 0.05f, 0.075f);
     Spring* p = &panel[size_t(row * 5)];
     if (row % 2 == 0) {
       p[0].delay = (c + b) + a;
@@ -427,7 +428,7 @@ void Sequence::step(World& w, const Inputs& in) {
       }
       break;
     case 2:
-      intro = std::fmaf(dt, 0.6666667f, intro);  // dat_82000FF4
+      intro = fmadds(dt, 0.6666667f, intro);  // dat_82000FF4
       if (1.0f < intro) {
         level_timer = 0.0f;
         start_level(w);
@@ -506,9 +507,9 @@ void Sequence::step(World& w, const Inputs& in) {
           w.play(audio::Event::kIntermissionEnter);
         }
         const float h = dt * 0.5f;
-        const float v1 = std::fmaf(std::fmaf(sp.target - sp.pos, 100.0f, -(sp.vel * 15.5f)), h, sp.vel);
-        sp.pos = std::fmaf(v1, dt, sp.pos);
-        sp.vel = std::fmaf(std::fmaf(sp.target - sp.pos, 100.0f, -(v1 * 15.5f)), h, v1);
+        const float v1 = fmadds(fmadds(sp.target - sp.pos, 100.0f, -(sp.vel * 15.5f)), h, sp.vel);
+        sp.pos = fmadds(v1, dt, sp.pos);
+        sp.vel = fmadds(fmadds(sp.target - sp.pos, 100.0f, -(v1 * 15.5f)), h, v1);
       }
       break;
     }

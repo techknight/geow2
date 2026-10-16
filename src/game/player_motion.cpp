@@ -1,4 +1,5 @@
 #include "game/player_motion.h"
+#include "game/fused.h"
 
 #include <cmath>
 
@@ -63,7 +64,7 @@ bool player_thrust(PlayerMotion& p, Vec2 move, const GameMath& gm) {
     // 0x82050454).
     const double d = double(float(gm.atan2(move.y, move.x)) - p.heading) * kInvTwoPi;  // frsp, fsubs
     const double wrapped = d - std::nearbyint(d);
-    p.heading = std::fmaf(float(wrapped * kTwoPi), kTurnRate, p.heading);
+    p.heading = fmadds(float(wrapped * kTwoPi), kTurnRate, p.heading);
     return true;
   }
   return false;

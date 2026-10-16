@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "game/spawn.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -40,7 +41,7 @@ void DeadlineSpawner::step(World& w, float elapsed) {
   // Budget: between the last one and 1.5 times it plus 5.
   // Raised by kills (DB50, sub_8203BAC8) and geoms (DB54, sub_8203BBB8).
   int n = (w.spawn_kills - int(float(w.spawn_geoms) * -0.5f)) + 2;
-  const int hi = int(std::fmaf(float(budget), 1.5f, 5.0f));
+  const int hi = int(fmadds(float(budget), 1.5f, 5.0f));
   if (n < budget)
     n = budget;
   else if (hi < n)

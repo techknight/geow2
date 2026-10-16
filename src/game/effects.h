@@ -5,6 +5,7 @@
 #include "game/game_math.h"
 #include "game/particles.h"
 #include "game/rng.h"
+#include "game/fused.h"
 
 namespace geow2 {
 
@@ -37,7 +38,7 @@ class Effects {
   Effects(const GameMath& gm, GameRng& rng, Particles& particles) : gm_(gm), rng_(rng), particles_(particles) {}
 
   // sub_82030A98: the wheel turns by Effect.ColourWheelRate a second.
-  void step(float dt) { wheel_phase_ = std::fmaf(tuning.wheel_rate, dt, wheel_phase_); }
+  void step(float dt) { wheel_phase_ = fmadds(tuning.wheel_rate, dt, wheel_phase_); }
   // sub_82030678: the colour at point `p` (x, y, z, w) among the wheel's
   // six colours (inverse-square weights), turned by `t` and the wheel's
   // phase. Explosions pass their position: their colours depend on where

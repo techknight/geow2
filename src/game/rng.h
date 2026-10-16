@@ -61,6 +61,9 @@ class CrtRand {
     hold_ = hold_ * 214013u + 2531011u;
     return int((hold_ >> 16) & 0x7FFF);
   }
+  // The state; it runs on across games for the whole session.
+  uint32_t state() const { return hold_; }
+  void set_state(uint32_t h) { hold_ = h; }
 
  private:
   uint32_t hold_ = 1;

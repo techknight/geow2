@@ -1,4 +1,5 @@
 #include "game/bullets.h"
+#include "game/fused.h"
 
 #include <cmath>
 #include <cstring>
@@ -28,8 +29,8 @@ Bullet make_bullet(const PlayerMotion& p, float angle, double factor, int type, 
   b.x = p.x;
   b.y = p.y;
   const float speed = float(float(factor) * kBulletSpeed);
-  b.vx = std::fmaf(speed, gm.cosf(angle), p.vx);
-  b.vy = std::fmaf(speed, gm.sinf(angle), p.vy);
+  b.vx = fmadds(speed, gm.cosf(angle), p.vx);
+  b.vy = fmadds(speed, gm.sinf(angle), p.vy);
   b.heading = float(gm.atan2(b.vy, b.vx));
   // The constructor (sub_82052DB8, all but type 4) starts the shot 5
   // ahead along the firing angle (dat_820006F0); that is also where the
@@ -134,10 +135,10 @@ std::vector<Segment> shape_segments(std::span<const Vec2> points, float x, float
   const float sx_sin = sx * s, sy_sin = sy * s, sx_cos = sx * c, sy_cos = sy * c;
   for (size_t i = 0; i + 1 < points.size(); i += 2) {
     const Vec2 p0 = points[i], p1 = points[i + 1];
-    const float x1 = std::fmaf(-p1.y, sy_sin, std::fmaf(p1.x, sx_cos, x));
-    const float y1 = std::fmaf(p1.y, sy_cos, p1.x * sx_sin) + y;
-    const float x0 = std::fmaf(-p0.y, sy_sin, std::fmaf(p0.x, sx_cos, x));
-    const float y0 = std::fmaf(p0.x, sx_sin, p0.y * sy_cos) + y;
+    const float x1 = fmadds(-p1.y, sy_sin, fmadds(p1.x, sx_cos, x));
+    const float y1 = fmadds(p1.y, sy_cos, p1.x * sx_sin) + y;
+    const float x0 = fmadds(-p0.y, sy_sin, fmadds(p0.x, sx_cos, x));
+    const float y0 = fmadds(p0.x, sx_sin, p0.y * sy_cos) + y;
     out.push_back({{x0, y0, 0.0f, 0.0f}, {x1, y1, 0.0f, 0.0f}});
   }
   return out;

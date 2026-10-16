@@ -5,6 +5,7 @@
 
 #include "game/rotation.h"
 #include "game/shockwave.h"
+#include "game/fused.h"
 
 namespace geow2 {
 namespace {
@@ -155,7 +156,7 @@ Mat4 GateEnd::custom_placement(World& w) {
 
 void GateEnd::draw(World& w, LineBatch& out) {
   // The end: white, flashing (1 + 2 flash).
-  const float b = std::fmaf(flash, 2.0f, 1.0f);
+  const float b = fmadds(flash, 2.0f, 1.0f);
   const float tint[4] = {b, b, b, 1.0f};
   draw_unit(w, out, tint);
   // The beam (sub_82047AA8, the leader's): Unit.Gate.BarColour toward
@@ -269,10 +270,12 @@ void bounce_off_beams(World& w, Bullet& s) {
     const float s0 = (s.prev_y - a.prev_y) * -epx + epy * (s.prev_x - a.prev_x);
     const float s1 = (s.y - a.y) * -ex + ey * (s.x - a.x);
     if (!((s0 < 0.0f && s1 >= 0.0f) || (s0 >= 0.0f && s1 < 0.0f))) continue;
-    const float t = std::fmaf(s.prev_x - a.x, my, (a.y - s.prev_y) * mx) / std::fmaf(my, ex, -(ey * mx));
+    const float t = fmadds(s.prev_x - a.x, my, (a.y - s.prev_y) * mx) / fmadds(my, ex, -(ey * mx));
     if (!(t >= 0.0f && t <= 1.0f)) continue;
     // Off the beam's normal (on the side it came from), 2 clear of it.
-    const float g = 1.0f / std::sqrt(ey * ey + ex * ex);  // frsqrte in the original
+    // frsp(frsqrte) in the original (0x82051CB0); exact here.
+    const float len2 = ey * ey + ex * ex;
+    const float g = emulator_rounding ? float(emulator_frsqrte(len2)) : 1.0f / std::sqrt(len2);
     float nx = ey * g, ny = (-ex) * g;
     if (s0 < 0.0f) {
       nx = nx * -1.0f;

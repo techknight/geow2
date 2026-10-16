@@ -1,4 +1,5 @@
 #include "game/hill.h"
+#include "game/fused.h"
 
 #include <cmath>
 
@@ -66,9 +67,9 @@ void Hill::update(World& w) {
     if (radius <= 1.0f)
       radius = 1.0f;
     else
-      radius = std::fmaf(-(dt * 0.6666667f), kHillRadius, radius);  // dat_82000FF4
+      radius = fmadds(-(dt * 0.6666667f), kHillRadius, radius);  // dat_82000FF4
   } else if (radius < kHillRadius) {
-    radius = std::fmaf(kHillRadius * dt, 2.0f, radius);  // dat_820006FC
+    radius = fmadds(kHillRadius * dt, 2.0f, radius);  // dat_820006FC
   } else {
     radius = kHillRadius;
   }
@@ -163,8 +164,8 @@ Vec2 hill_position(World& w) {
   for (int tries = 0;; ++tries) {
     // Single precision, fused (0x8204AB7C..0x8204ABE8): y first.
     const float ry = w.half_y - kHillRadius, rx = w.half_x - kHillRadius;
-    const float y = std::fmaf(float(w.rng.next()), kTwoPow31, -1.0f) * ry;
-    const float x = std::fmaf(float(w.rng.next()), kTwoPow31, -1.0f) * rx;
+    const float y = fmadds(float(w.rng.next()), kTwoPow31, -1.0f) * ry;
+    const float x = fmadds(float(w.rng.next()), kTwoPow31, -1.0f) * rx;
     out = {x, y};
     bool clear = true;
     for (int i = 0; i < n; ++i) {

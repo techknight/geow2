@@ -11,6 +11,7 @@
 #include "game/repulsar.h"
 #include "game/snake.h"
 #include "game/wanderer.h"
+#include "game/fused.h"
 
 namespace geow2 {
 
@@ -152,7 +153,7 @@ void spawn_circle(World& w, float radius, float slip, int type, int n, Vec2 cent
   constexpr float kTwoPi = 6.28318548f;  // dat_82181578
   constexpr float kPi = 3.14159274f;     // dat_820010DC
   for (int i = 0; i < n; ++i) {
-    const float a = std::fmaf(float(i) / float(n), kTwoPi, slip);
+    const float a = fmadds(float(i) / float(n), kTwoPi, slip);
     const float s = float(w.gm.sin(a)), c = float(w.gm.cos(a));
     spawn_enemy(w, type, a + kPi, centre.x + c * radius, centre.y + s * radius);
   }
@@ -260,8 +261,8 @@ void spawn_ring(World& w, float radius, int type, int n) {
   constexpr float kPi = 3.14159274f;     // dat_820010DC
   for (int i = 0; i < n; ++i) {
     const float a = (float(i) / float(n)) * kTwoPi;
-    const float x = std::fmaf(float(w.gm.cos(a)), radius, p->x);
-    const float y = std::fmaf(float(w.gm.sin(a)), radius, p->y);
+    const float x = fmadds(float(w.gm.cos(a)), radius, p->x);
+    const float y = fmadds(float(w.gm.sin(a)), radius, p->y);
     spawn_enemy(w, type, a + kPi, x, y);
   }
 }

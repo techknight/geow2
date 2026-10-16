@@ -1,4 +1,5 @@
 #include "game/display_gamma.h"
+#include "game/fused.h"
 
 #include <cmath>
 
@@ -15,14 +16,14 @@ float srgb_decode(float x) {
 // sub_820AACC0(x, 0): linear to sRGB.
 float srgb_encode(float x) {
   if (double(x) > 0.0031308)  // dat_82007870 (f64)
-    return std::fmaf(float(std::pow(double(x), 0.4166666567325592)), 1.05499995f, -0.055f);  // dat_82007860, 5C, 88
+    return fmadds(float(std::pow(double(x), 0.4166666567325592)), 1.05499995f, -0.055f);  // dat_82007860, 5C, 88
   return x * 12.9200001f;  // dat_82007868
 }
 
 // sub_820AAD70(x, 0): linear to BT.709.
 float bt709_encode(float x) {
   if (double(x) >= 0.018)  // dat_820078A8 (f64)
-    return std::fmaf(float(std::pow(double(x), double(0.45f))), 1.09899998f, -0.0989999995f);  // A0, 98, C0
+    return fmadds(float(std::pow(double(x), double(0.45f))), 1.09899998f, -0.0989999995f);  // A0, 98, C0
   return x * 4.5f;  // dat_820018F0
 }
 
