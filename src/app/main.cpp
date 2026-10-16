@@ -217,6 +217,20 @@ void keyboard_pad(PadState& p, bool playing) {
   p.connected = true;
 }
 
+// A headless step's commands. Nothing paces a run without a window, so
+// every 30 steps it waits for the GPU: a slow or software one (lavapipe)
+// would otherwise queue work, and memory, without bound.
+void submit_headless(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, int step) {
+  if (step % 30 != 29) {
+    SDL_SubmitGPUCommandBuffer(cmd);
+    return;
+  }
+  if (SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd)) {
+    SDL_WaitForGPUFences(dev, true, &fence, 1);
+    SDL_ReleaseGPUFence(dev, fence);
+  }
+}
+
 // The frame into `target` (w x h): rendered at that size, or with
 // `exact_720p` at 1280 x 720 into `frame720` (made on first use) and scaled
 // (bilinear) into the 16:9 area of the target.
@@ -549,7 +563,7 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
       }
     } else {
       tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
-      SDL_SubmitGPUCommandBuffer(cmd);
+      submit_headless(dev, cmd, i);
     }
     if (sound.loaded()) {
       step_now = i + 1;
@@ -733,7 +747,7 @@ int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, 
     fe.frame(pads);
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     tick(g, {}, r, cmd);
-    SDL_SubmitGPUCommandBuffer(cmd);
+    submit_headless(dev, cmd, i);
   }
   UiCanvas ui;
   fe.draw(ui);
