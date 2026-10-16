@@ -33,21 +33,21 @@ From a "x64 Native Tools Command Prompt for VS 2022":
     cmake --build build
     ctest --test-dir build
 
-Then turn your package into the cache the port reads (the sound needs
+Then turn your package into the `data` folder the port reads (the sound needs
 `ffmpeg` on PATH, or its path in the environment variable `GEOW2_FFMPEG`,
 to decode the game's XMA audio; without it the game is partly silent):
 
-    build\geow2-extract unpack <path to the LIVE package or extracted folder> cache
-    build\geow2-extract verify cache
+    build\geow2-extract unpack <path to the LIVE package or extracted folder> data
+    build\geow2-extract verify data
 
 The extractor accepts only the release the port was traced against
 (title 584108FF, version 0x102); it checks every file's SHA-1 and every
 hash inside `default.xex`.
 
-Run the game (it looks for `cache` next to the executable, or pass
+Run the game (it looks for `data` next to the executable, or pass
 `--data`):
 
-    build\geow2 --data cache
+    build\geow2 --data data
 
 Controls: a gamepad (left stick moves, right stick fires, either trigger
 sets off a bomb, START pauses; the sticks and bomb buttons can be
@@ -76,7 +76,7 @@ shaders and these documents; the C runtime and SDL are linked in):
 
     cmake --install build --prefix dist
 
-then run `dist\geow2-extract unpack <package> dist\cache` once and start
+then run `dist\geow2-extract unpack <package> dist\data` once and start
 `dist\geow2`.
 
 The build needs network access the first time (CMake fetches SDL3) and

@@ -1014,14 +1014,14 @@ void setup_multiplayer(Game& g, bool versus) {
 
 }  // namespace
 
-bool load(Game& g, const fs::path& cache, int64_t seed, int mode, int language) {
+bool load(Game& g, const fs::path& data_dir, int64_t seed, int mode, int language) {
   if (language < 3 || language > 6) language = 1;
   g.rules = mode_rules(mode);
   try {
-    g.db = std::make_unique<Flask>(read_file(cache / "files" / "Data.bin"));
-    g.gm = std::make_unique<GameMath>(GameMath::from_image(read_file(cache / "xex" / "image.bin")));
+    g.db = std::make_unique<Flask>(read_file(data_dir / "files" / "Data.bin"));
+    g.gm = std::make_unique<GameMath>(GameMath::from_image(read_file(data_dir / "xex" / "image.bin")));
   } catch (const std::exception& e) {
-    SDL_Log("cannot load the cache at %s: %s (run geow2-extract unpack first)", cache.string().c_str(), e.what());
+    SDL_Log("cannot load the game data at %s: %s (run geow2-extract unpack first)", data_dir.string().c_str(), e.what());
     return false;
   }
   // The player constructor (sub_82051448) starts from the unit "player"
@@ -1103,7 +1103,7 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode, int language) 
     if (const FlaskStruct* m = as_struct(&model)) look.model = build_model_geometry(*m, *g.gm);
   }
   try {
-    const auto image = read_file(cache / "xex" / "image.bin");
+    const auto image = read_file(data_dir / "xex" / "image.bin");
     g.bullet_shape = BulletShape::from_image(image);
     g.font = Font::from_image(image);
     g.geom_shapes = GeomShapes::from_image(image);
@@ -1124,7 +1124,7 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode, int language) 
   }
   // The achievements from the SPA resource (XDBF at 0x821FB480).
   try {
-    const auto image = read_file(cache / "xex" / "image.bin");
+    const auto image = read_file(data_dir / "xex" / "image.bin");
     const size_t at = 0x821FB480 - 0x82000000;
     if (at < image.size()) {
       const Xdbf x = Xdbf::parse(std::span<const uint8_t>(image).subspan(at));
@@ -1173,7 +1173,7 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode, int language) 
   }
   // The credits: 12-byte entries (type, text pointer, y) up to type 5.
   try {
-    const auto image = read_file(cache / "xex" / "image.bin");
+    const auto image = read_file(data_dir / "xex" / "image.bin");
     auto be32 = [&](size_t o) {
       return uint32_t(image[o]) << 24 | uint32_t(image[o + 1]) << 16 | uint32_t(image[o + 2]) << 8 | uint32_t(image[o + 3]);
     };
@@ -1196,7 +1196,7 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode, int language) 
   static const char* const kName[7] = {"english", "english", "english", "german", "french", "spanish", "italian"};
   set_language(language);
   try {
-    const TextTable text(read_file(cache / "files" / (std::string("Text-") + kCode[language] + ".loc")),
+    const TextTable text(read_file(data_dir / "files" / (std::string("Text-") + kCode[language] + ".loc")),
                          kName[language]);
     auto narrow = [](const std::u16string& w) {
       std::string out;
@@ -1208,7 +1208,7 @@ bool load(Game& g, const fs::path& cache, int64_t seed, int mode, int language) 
     if (auto t = text.find("ID_X_BONUS_MULTIPLIER")) g.world->bonus_multiplier_text = narrow(*t);
     if (auto t = text.find("ID_X_PLUS_ONE_LIFE")) g.plus_life_text = narrow(*t);
     if (auto t = text.find("ID_X_PLUS_ONE_BOMB")) g.plus_bomb_text = narrow(*t);
-    g.text = UiText::load(read_file(cache / "xex" / "image.bin"), text);
+    g.text = UiText::load(read_file(data_dir / "xex" / "image.bin"), text);
   } catch (const std::exception& e) {
     SDL_Log("cannot read the text (%s): the HUD uses its built-in labels", e.what());
   }

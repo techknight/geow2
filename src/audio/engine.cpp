@@ -99,13 +99,13 @@ AudioNames AudioNames::from_image(std::span<const uint8_t> img) {
 AudioEngine::AudioEngine() = default;
 AudioEngine::~AudioEngine() = default;
 
-bool AudioEngine::init(const std::filesystem::path& cache, std::string* error) {
+bool AudioEngine::init(const std::filesystem::path& data_dir, std::string* error) {
   try {
-    const Bytes image = read_file(cache / "xex" / "image.bin");
+    const Bytes image = read_file(data_dir / "xex" / "image.bin");
     const AudioNames names = AudioNames::from_image(image);
     WaveStore waves;
-    waves.load(cache / "audio");
-    const std::filesystem::path dir = cache / "files" / "audio";
+    waves.load(data_dir / "audio");
+    const std::filesystem::path dir = data_dir / "files" / "audio";
     auto load_def = [&](const std::string& file, bool required) -> std::unique_ptr<Aobj> {
       const std::filesystem::path p = find_file(dir, file);
       if (p.empty()) {

@@ -1,10 +1,10 @@
 // geow2-extract: turns the user's Geometry Wars 2 XBLA package into the
-// cache the port reads.
+// data folder the port reads.
 //
-//   geow2-extract unpack <package-file | extracted-folder> <cache-dir>
-//   geow2-extract verify <cache-dir>
-//   geow2-extract audio <cache-dir>       (redo the sound only: needs ffmpeg)
-//   geow2-extract dump-db <cache-dir>     (developer aid: every Data.bin value)
+//   geow2-extract unpack <package-file | extracted-folder> <data-dir>
+//   geow2-extract verify <data-dir>
+//   geow2-extract audio <data-dir>       (redo the sound only: needs ffmpeg)
+//   geow2-extract dump-db <data-dir>     (developer aid: every Data.bin value)
 
 #include <cmath>
 #include <cstdio>
@@ -93,16 +93,16 @@ void write_xex(const Bytes& xex, const fs::path& dir) {
               img.image.size(), img.load_address, img.entry_point, img.imports.size());
 }
 
-int unpack(const std::string& source, const std::string& cache) {
+int unpack(const std::string& source, const std::string& data_dir) {
   auto files = collect(source);
   if (int bad = check(files)) {
     std::printf("%d file(s) missing or different: this is not the supported release (584108FF v0x102)\n", bad);
     return 1;
   }
-  const fs::path root = cache;
+  const fs::path root = data_dir;
   for (const auto& [path, data] : files) write_file(root / "files" / path, data);
   write_xex(files.at("default.xex"), root / "xex");
-  std::printf("unpacked %zu files to %s\n", files.size(), cache.c_str());
+  std::printf("unpacked %zu files to %s\n", files.size(), data_dir.c_str());
   // The sound banks as PCM (XMA through ffmpeg).
   extract_audio(root / "files" / "audio", root / "audio");
   return 0;
@@ -156,8 +156,8 @@ void print_value(const std::string& path, const FlaskValue& v) {
   std::visit(Visitor{path}, v.v);
 }
 
-int dump_db(const std::string& cache) {
-  Flask db(read_file(fs::path(cache) / "files" / "Data.bin"));
+int dump_db(const std::string& data_dir) {
+  Flask db(read_file(fs::path(data_dir) / "files" / "Data.bin"));
   for (uint32_t r = 0; r < db.records().size(); ++r) print_value(std::to_string(r), db.decode(r));
   return 0;
 }
@@ -220,8 +220,8 @@ int check_database(const fs::path& files) {
   }
 }
 
-int verify(const std::string& cache) {
-  const fs::path files = fs::path(cache) / "files";
+int verify(const std::string& data_dir) {
+  const fs::path files = fs::path(data_dir) / "files";
   int bad = check(collect(files));
   if (!bad) bad += check_text(files);
   if (!bad) bad += check_database(files);
@@ -242,8 +242,8 @@ int main(int argc, char** argv) {
     }
     if (cmd == "dump-db" && argc == 3) return dump_db(argv[2]);
     std::fprintf(stderr,
-                 "usage:\n  geow2-extract unpack <package-file | extracted-folder> <cache-dir>\n"
-                 "  geow2-extract verify <cache-dir>\n  geow2-extract audio <cache-dir>\n");
+                 "usage:\n  geow2-extract unpack <package-file | extracted-folder> <data-dir>\n"
+                 "  geow2-extract verify <data-dir>\n  geow2-extract audio <data-dir>\n");
     return 2;
   } catch (const std::exception& e) {
     std::fprintf(stderr, "error: %s\n", e.what());

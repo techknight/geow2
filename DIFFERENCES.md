@@ -258,7 +258,7 @@ Format for each entry:
 - **Original**: the sound banks hold XMA1 audio, decoded by the Xbox
   360's audio hardware at play time (`XMACreateContext`).
 - **Port**: `geow2-extract` decodes every wave once, with FFmpeg's `xma1`
-  decoder, to 16-bit PCM in the cache; the game plays the PCM. FFmpeg is
+  decoder, to 16-bit PCM in the data folder; the game plays the PCM. FFmpeg is
   needed only at extraction. The samples can differ from the console's
   decoder in rounding.
 - **Decided**: 2026-10-15 (FFmpeg at extraction time, with the user).

@@ -49,10 +49,10 @@ class AudioEngine : public AudioSink {
   AudioEngine();
   ~AudioEngine() override;
 
-  // Loads the names from `cache/xex/image.bin`, the waves from
-  // `cache/audio/` and the objects from `cache/files/audio/`. False (and
+  // Loads the names from `data/xex/image.bin`, the waves from
+  // `data/audio/` and the objects from `data/files/audio/`. False (and
   // silence) on failure, with the reason in `error`.
-  bool init(const std::filesystem::path& cache, std::string* error = nullptr);
+  bool init(const std::filesystem::path& data_dir, std::string* error = nullptr);
 
   // Builds the engine from objects in memory: `system` first, then any
   // others whose outputs are connected to System by the names in `names`.

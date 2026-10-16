@@ -16,7 +16,7 @@ if(MSVC)
   add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX)
 endif()
 
-# Extractor: reads the user's XBLA package and writes the cache the game uses.
+# Extractor: reads the user's XBLA package and writes the data folder the game uses.
 add_library(geow2_extract STATIC
   src/extract/aes128.cpp
   src/extract/audio.cpp
@@ -123,7 +123,7 @@ if(GEOW2_BUILD_GAME)
   add_dependencies(geow2 geow2_shaders)
 
   # A playable folder (cmake --install build --prefix <dir>): the game, the
-  # extractor, the shaders and the documents. The user adds the cache.
+  # extractor, the shaders and the documents. The user adds the data folder.
   install(TARGETS geow2 RUNTIME DESTINATION .)
   install(FILES ${SPIRV} DESTINATION shaders)
 endif()

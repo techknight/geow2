@@ -8,7 +8,7 @@ namespace geow2 {
 // The original's own sin, cos and atan2 (sub_8212E9B0, sub_8212EA80,
 // sub_8212FE70): argument reduction and polynomials evaluated in double
 // with fused multiply-adds. Their constants are read from the user's
-// decoded executable (the cache's xex/image.bin), from the tables at
+// decoded executable (the data folder's xex/image.bin), from the tables at
 // 0x82197D20 / 0x82197DA0 / 0x82197E20, so nothing of the original is
 // stored in this repository.
 class GameMath {

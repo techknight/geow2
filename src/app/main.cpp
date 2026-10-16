@@ -1,13 +1,13 @@
 // geow2: the game.
 //
-//   geow2 [--data <cache-dir>] [--profile <dir>] [--fullscreen | --windowed] [--720p | --native]
+//   geow2 [--data <data-dir>] [--profile <dir>] [--fullscreen | --windowed] [--720p | --native]
 //         [--vsync | --no-vsync] [--language en|de|fr|es|it]
-//   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> [--size <w> <h>] [--mode <n>] [--level <n>]
+//   geow2 --data <data-dir> --frames <n> --screenshot <out.png> [--size <w> <h>] [--mode <n>] [--level <n>]
 //         [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--trigger <0-255>] [--spawn <type> <x> <y>]...
 //         [--player <pad> <team> <role>]... [--versus] [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>]
 //         [--inputs <csv>] [--rng-state <file> <step>] [--crt-state <hex>] [--emulator-rounding]
 //         [--trace <csv>] [--positions <file>] [--dump <step> <file>]
-//   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
+//   geow2 --data <data-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
 //
 // The first form opens the window at the front end; the profile, the
 // local score boards and the display settings (display.txt: fullscreen,
@@ -604,7 +604,7 @@ void save_display(const fs::path& dir, const Display& d) {
   f << "fullscreen " << int(d.fullscreen) << "\nexact720p " << int(d.exact_720p) << "\nvsync " << int(d.vsync) << '\n';
 }
 
-int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& cache, const fs::path& profile_dir,
+int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_dir, const fs::path& profile_dir,
                Display display) {
   SDL_Window* window =
       SDL_CreateWindow("geow2", 1280, 720, SDL_WINDOW_RESIZABLE | (display.fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
@@ -629,7 +629,7 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& cache, 
   // The sound: the AOBJ graphs over the extracted waves, mixed in 5.1.
   audio::AudioEngine sound;
   std::string sound_error;
-  const bool has_sound = sound.init(cache, &sound_error);
+  const bool has_sound = sound.init(data_dir, &sound_error);
   if (!has_sound) SDL_Log("no sound: %s", sound_error.c_str());
   audio::AudioDevice output;
   if (has_sound) output.open(sound);
@@ -789,7 +789,7 @@ int button_axis(const std::string& b) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  fs::path cache = fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "cache";
+  fs::path data_dir = fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "data";
   fs::path profile_dir;
   int frames = -1;
   Sticks sticks;
@@ -812,7 +812,7 @@ int main(int argc, char** argv) {
   std::vector<Press> presses;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
-    if (a == "--data" && i + 1 < argc) cache = argv[++i];
+    if (a == "--data" && i + 1 < argc) data_dir = argv[++i];
     else if (a == "--profile" && i + 1 < argc) profile_dir = argv[++i];
     else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
     else if (a == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
@@ -883,7 +883,7 @@ int main(int argc, char** argv) {
       }
     } else {
       std::fprintf(stderr,
-                   "usage: geow2 [--data <cache>] [--profile <dir>] [--fullscreen|--windowed] [--720p|--native]"
+                   "usage: geow2 [--data <data-dir>] [--profile <dir>] [--fullscreen|--windowed] [--720p|--native]"
                    " [--vsync|--no-vsync] [--language <en|de|fr|es|it>] [--seed <n>] [--frames <n> --screenshot <png>"
                    " [--size <w> <h>] [--mode <0-5>] [--level <0-19>] [--stick <x> <y>] [--fire <x> <y>]"
                    " [--bomb <step>] [--spawn <type> <x> <y>]... [--player <pad> <team> <role>]... [--versus]"
@@ -914,13 +914,13 @@ int main(int argc, char** argv) {
       SDL_free(locales);
     }
   }
-  if (!load(game, cache, seed, mode, language == 0 ? 1 : language)) {
+  if (!load(game, data_dir, seed, mode, language == 0 ? 1 : language)) {
     // Started from a desktop there is no console to read the log from.
     if (!headless) {
-      const std::string msg = "The game's data was not found in\n" + cache.string() +
+      const std::string msg = "The game's data was not found in\n" + data_dir.string() +
                               "\n\nCreate it once from your copy of the game:\n"
                               "  geow2-extract unpack <your LIVE package or extracted folder> \"" +
-                              cache.string() + "\"\n\nor start the game with --data <folder>.";
+                              data_dir.string() + "\"\n\nor start the game with --data <folder>.";
       SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Geometry Wars: Retro Evolved 2", msg.c_str(), nullptr);
     }
     return 1;
@@ -943,7 +943,7 @@ int main(int argc, char** argv) {
   }
   Renderer renderer;
   if (!renderer.init(dev, fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "shaders")) return 1;
-  renderer.load_ui_textures(cache / "files");
+  renderer.load_ui_textures(data_dir / "files");
   for (size_t i = 0; i < game.achievements.size() && i < 12; ++i)
     renderer.set_ui_texture(kTexAchievement0 + int(i), game.achievements[i].icon);
   int rc;
@@ -963,7 +963,7 @@ int main(int argc, char** argv) {
     if (exact_720p >= 0) d.exact_720p = exact_720p != 0;
     if (vsync >= 0) d.vsync = vsync != 0;
     if (fullscreen >= 0 || exact_720p >= 0 || vsync >= 0) save_display(profile_dir, d);
-    rc = run_window(dev, renderer, game, cache, profile_dir, d);
+    rc = run_window(dev, renderer, game, data_dir, profile_dir, d);
   }
   renderer.release();
   SDL_DestroyGPUDevice(dev);

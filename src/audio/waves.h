@@ -23,7 +23,7 @@ struct WaveBank {
   std::vector<Wave> waves;  // in bank order (index.txt)
 };
 
-// The banks of the extraction cache: `<dir>/<bank>/<wave>.wav` with the
+// The banks in the data folder: `<dir>/<bank>/<wave>.wav` with the
 // bank order in `<dir>/<bank>/index.txt`.
 class WaveStore {
  public:

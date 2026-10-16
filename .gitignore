@@ -11,7 +11,8 @@ __pycache__/
 *.pyc
 
 # extractor output and game data: never commit anything from the game
-cache/
+/data/
+/cache/
 *.xex
 *.baf
 *.loc
