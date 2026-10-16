@@ -914,7 +914,17 @@ int main(int argc, char** argv) {
       SDL_free(locales);
     }
   }
-  if (!load(game, cache, seed, mode, language == 0 ? 1 : language)) return 1;
+  if (!load(game, cache, seed, mode, language == 0 ? 1 : language)) {
+    // Started from a desktop there is no console to read the log from.
+    if (!headless) {
+      const std::string msg = "The game's data was not found in\n" + cache.string() +
+                              "\n\nCreate it once from your copy of the game:\n"
+                              "  geow2-extract unpack <your LIVE package or extracted folder> \"" +
+                              cache.string() + "\"\n\nor start the game with --data <folder>.";
+      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Geometry Wars: Retro Evolved 2", msg.c_str(), nullptr);
+    }
+    return 1;
+  }
   // Level.StartLevel (value 0x8219D458) for development: Sequence starts at
   // that level (sub_82039628 sets both the level and the one shown).
   if (start_level >= 0) game.sequence.level = game.sequence.shown_level = start_level;
@@ -925,6 +935,10 @@ int main(int argc, char** argv) {
   SDL_GPUDevice* dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
   if (!dev) {
     SDL_Log("no GPU device: %s", SDL_GetError());
+    if (!headless) {
+      const std::string msg = std::string("No usable graphics device (the game needs Vulkan):\n") + SDL_GetError();
+      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Geometry Wars: Retro Evolved 2", msg.c_str(), nullptr);
+    }
     return 1;
   }
   Renderer renderer;
