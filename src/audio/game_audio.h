@@ -16,6 +16,8 @@ class AudioSink {
   virtual void fire(Event e) = 0;
   virtual void set_parameter(Param p, float value) = 0;
   virtual void suspend_songs(bool suspended) = 0;
+  // sub_82079318: the reverb parameter readback.
+  virtual void reverb_readback() {}
 };
 
 // The 35 ms rate gate in front of some events: the call goes through when

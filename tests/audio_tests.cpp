@@ -14,6 +14,7 @@
 #include "audio/engine.h"
 #include "audio/game_audio.h"
 #include "audio/graph.h"
+#include "audio/reverb.h"
 #include "audio/waves.h"
 #include "extract/bytes.h"
 
@@ -385,6 +386,7 @@ class Recorder : public AudioSink {
   void fire(Event e) override { events.push_back(int(e)); }
   void set_parameter(Param p, float v) override { params.emplace_back(int(p), v); }
   void suspend_songs(bool s) override { suspends.push_back(s); }
+  void reverb_readback() override { params.emplace_back(-1, 0.0f); }
 };
 
 static void test_glue() {
@@ -437,6 +439,14 @@ static void test_glue() {
   for (auto& [p, v] : r.params)
     if (p == 8 && near(v, 0.25f)) sfx = true;
   expect(sfx, "glue: the engine receives the volume squared");
+  // sub_82079BC0 reads the reverb parameters back between MayflyNumbers and DistanceFromHill.
+  size_t mayfly = 0, readback = 0, hill = 0;
+  for (size_t i = 0; i < r.params.size(); ++i) {
+    if (r.params[i].first == 2) mayfly = i;
+    if (r.params[i].first == -1) readback = i;
+    if (r.params[i].first == 14) hill = i;
+  }
+  expect(readback == mayfly + 1 && hill == readback + 1, "glue: reverb readback between MayflyNumbers and DistanceFromHill");
   expect(remaining_seconds(60, 70) == 0 && remaining_seconds(60, 10) == 50, "glue: remaining seconds");
 }
 
@@ -508,6 +518,137 @@ static void test_dry_voice() {
   expect(b.ch[2][100] == 5.0f, "dry voice: RMS of 5 passes");
 }
 
+// The reverb's pieces whose results follow from the trace alone.
+static void test_reverb_setup() {
+  expect(reverb_length(0) == 1 && reverb_length(1) == 1 && reverb_length(9973) == 9973 && reverb_length(20000) == 9973,
+         "reverb: length lookup bounds");
+  expect(reverb_length(509) == 509 && reverb_length(10) == 7 && reverb_length(40) == 37 && reverb_length(3432) == 3413,
+         "reverb: the lookup's binary search is not a nearest-prime search");
+
+  I3dl2 p;
+  p.room = -1000;
+  p.reflections_delay = 0.02f;
+  p.reverb_delay = 0.04f;
+  p.diffusion = 100.0f;
+  p.decay_time = 2.0f;
+  p.decay_hf_ratio = 0.5f;
+  ReverbNative n = i3dl2_to_native(p);
+  expect(n.reflections_delay == 20 && n.reverb_delay == 40, "reverb: delays in ms");
+  expect(n.diffusion_early == 15 && n.diffusion_late == 15, "reverb: diffusion 100 -> index 15");
+  expect(n.low_gain == 8 && n.high_gain == 7 && n.decay == 2.0f, "reverb: HF ratio 0.5 -> high gain 7, decay kept");
+  expect(n.room_main == -10.0f && n.position_l == 6 && n.matrix_r == 27 && n.rear_delay == 5 && n.room_size == 100.0f,
+         "reverb: fixed native fields");
+  p.decay_hf_ratio = 2.0f;
+  p.reflections_delay = 0.5f;
+  p.reverb_delay = 0.2f;
+  n = i3dl2_to_native(p);
+  expect(n.high_gain == 8 && n.low_gain == 7 && n.decay == 4.0f, "reverb: HF ratio 2 -> low gain 7, decay scaled");
+  expect(n.reflections_delay == 299 && n.reverb_delay == 84, "reverb: delay clamps");
+  p.reflections_delay = 0.0f;
+  expect(i3dl2_to_native(p).reflections_delay == 1, "reverb: reflections delay at least 1 ms");
+
+  AudioBuffer speakers;
+  speakers.channels = 6;
+  speakers.ch[0].fill(1.0f);
+  std::array<float, kFrameSamples> wet{};
+  wet.fill(0.25f);
+  add_wet_to_speakers(wet, speakers);
+  expect(speakers.ch[0][9] == 1.5f && speakers.ch[1][9] == 0.5f && speakers.ch[2][9] == 0.0f &&
+             speakers.ch[4][9] == 0.0f,
+         "reverb: channel 0 added twice to FL and FR only");
+
+  AudioBuffer mono;
+  mono.channels = 1;
+  mono.ch[0].fill(11.0f);
+  wet_voice(mono);
+  expect(mono.ch[0][0] == 0.0f, "reverb: the wet voice's RMS mute");
+  mono.ch[0].fill(4.0f);
+  wet_voice(mono);
+  expect(mono.ch[0][0] == 2.0f, "reverb: the wet voice at half level");
+}
+
+// Runs `frames` frames of a mono input through the reverb; returns FL and FR.
+static std::pair<std::vector<float>, std::vector<float>> run_reverb(Reverb& r, const std::vector<float>& in) {
+  std::vector<float> fl, fr;
+  Reverb::Output o;
+  for (size_t at = 0; at < in.size(); at += kFrameSamples) {
+    r.process(in.data() + at, in.data() + at, o);
+    fl.insert(fl.end(), o.fl.begin(), o.fl.end());
+    fr.insert(fr.end(), o.fr.begin(), o.fr.end());
+  }
+  return {fl, fr};
+}
+
+static void test_reverb_process() {
+  // Silence stays silent, from the initial state.
+  {
+    Reverb r;
+    const auto [fl, fr] = run_reverb(r, std::vector<float>(kFrameSamples * 8, 0.0f));
+    bool silent = true;
+    for (float v : fl) silent = silent && v == 0.0f;
+    for (float v : fr) silent = silent && v == 0.0f;
+    expect(silent, "reverb: silence in, silence out");
+  }
+  // Only T1's tap gain set (T_370[6] = 0.5, Room 0 dB, Reflections 0 dB):
+  // every other path is zero and every allpass is a pure delay, so an
+  // impulse reaches FL after the pre-delay plus 251 samples (array carries,
+  // the room filter, T1's one-sample tap, the output allpasses 131 and 113)
+  // at 2 x 0.5, and FR after the pre-delay plus 241 (allpasses 107, 127).
+  {
+    ReverbTables t;
+    t.words[(0x8201F370 + 6 * 4 - ReverbTables::kBase) / 4] = 0.5f;
+    Reverb r(&t);
+    I3dl2 p;
+    p.room = 0;
+    p.room_hf = 0;
+    p.reflections = 0;
+    p.reflections_delay = 0.02f;  // 960 samples
+    r.set_i3dl2(p);
+    const size_t t0 = size_t(kFrameSamples) * 40 + 77;  // after the 5000-sample fade
+    std::vector<float> in(size_t(kFrameSamples) * 48, 0.0f);
+    in[t0] = 1.0f;
+    const auto [fl, fr] = run_reverb(r, in);
+    const size_t at_l = t0 + 960 + 251, at_r = t0 + 960 + 241;
+    bool rest = true;
+    for (size_t i = 0; i < fl.size(); ++i) {
+      if (i != at_l && fl[i] != 0.0f) rest = false;
+      if (i != at_r && fr[i] != 0.0f) rest = false;
+    }
+    expect(near(fl[at_l], 1.0f, 1e-3f) && near(fr[at_r], 1.0f, 1e-3f), "reverb: early tap delay and gain");
+    expect(rest, "reverb: nothing else on the early tap path");
+  }
+  // Every operation is linear in the signal: twice the input gives exactly
+  // twice the output; the mono input comes out decorrelated.
+  {
+    ReverbTables t;
+    for (float& w : t.words) w = 0.25f;
+    I3dl2 p;
+    p.room = -100;
+    p.room_hf = -300;
+    p.reflections = -500;
+    p.reverb = -200;
+    Reverb a(&t), b(&t);
+    a.set_i3dl2(p);
+    b.set_i3dl2(p);
+    std::vector<float> in(size_t(kFrameSamples) * 40), in2(in.size());
+    uint32_t s = 1;
+    for (size_t i = 0; i < in.size(); ++i) {
+      s = s * 1664525u + 1013904223u;
+      in[i] = float(int32_t(s >> 8) - (1 << 23)) / float(1 << 23);
+      in2[i] = in[i] * 2.0f;
+    }
+    const auto [fl1, fr1] = run_reverb(a, in);
+    const auto [fl2, fr2] = run_reverb(b, in2);
+    bool exact = true, differs = false;
+    for (size_t i = 0; i < fl1.size(); ++i) {
+      exact = exact && fl2[i] == fl1[i] * 2.0f && fr2[i] == fr1[i] * 2.0f;
+      differs = differs || fl1[i] != fr1[i];
+    }
+    expect(exact, "reverb: linear (2x in, exactly 2x out)");
+    expect(differs, "reverb: left and right differ for a mono input");
+  }
+}
+
 static void run_all() {
   test_reader();
   test_script();
@@ -521,6 +662,8 @@ static void run_all() {
   test_glue();
   test_engine();
   test_dry_voice();
+  test_reverb_setup();
+  test_reverb_process();
 }
 
 int main() {

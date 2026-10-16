@@ -13,6 +13,7 @@
 #include "audio/events.h"
 #include "audio/game_audio.h"
 #include "audio/graph.h"
+#include "audio/reverb.h"
 #include "audio/waves.h"
 
 namespace geow2::audio {
@@ -33,19 +34,32 @@ struct AudioNames {
   std::string ui_out, ui_in, mono_out, ui_mono_in;
   std::string song_out, song_in, song_mono_in;  // with `%i`
   std::string renderer_out, wet_out;
+  // System's twelve reverb ParameterOuts, in I3DL2 order (sub_82078C88:
+  // dat_82003B44 .. dat_82003A00).
+  std::array<std::string, 12> reverb_params;
+  // The reverb set-up's tables (not names, but read from the same image).
+  ReverbTables reverb_tables;
 
   // Reads them from the decrypted image (base 0x82000000); throws
   // FormatError when the image is not the one the port was traced against.
   static AudioNames from_image(std::span<const uint8_t> image);
 };
 
-// The renderer's dry voice, as the game's effect on it (sub_820FD630)
-// leaves it: the frame at 0.5 (sub_820EC0B8 onto a zeroed buffer), then
-// the whole frame zeroed if a sample is above 100 or not finite, or else
-// if its RMS (a fused sum of squares in channel order) is above
-// MasterEffectRMSMuteThreshold, 5.0 (set by sub_82176DE8). The voice
-// reaches the speakers through an identity map at 1.0.
+// A renderer voice as the game's feeder effect on it (sub_820FD630) leaves
+// it: the frame at 0.5 (sub_820EC0B8 onto a zeroed buffer), then the whole
+// frame zeroed if a sample is above 100 or not finite, or else if its RMS
+// (a fused sum of squares in channel order) is above
+// MasterEffectRMSMuteThreshold, 5.0 (set by sub_82176DE8). The dry voice
+// (six channels) reaches the speakers through an identity map at 1.0; the
+// wet voice (mono) feeds the reverb.
 void dry_voice(AudioBuffer& b);
+inline void wet_voice(AudioBuffer& b) { dry_voice(b); }
+
+// The wet voice's channel map (built by sub_820EC910 with param_6 = 1 from
+// sub_820EA118): the reverb's output channel 0 added to the speakers' FL,
+// FR, FL, FR in that order, each a separately rounded add at volume 1.0
+// (sub_821454F8, mode 0).
+void add_wet_to_speakers(const std::array<float, kFrameSamples>& wet, AudioBuffer& speakers);
 
 // The audio engine: the nine AOBJ objects of the original (System, FX,
 // UIMusic, Song_1..6) run as component graphs and mixed to 5.1 (FL FR C LFE
@@ -73,6 +87,9 @@ class AudioEngine : public AudioSink {
   void fire(Event e) override;
   void set_parameter(Param p, float value) override;
   void suspend_songs(bool suspended) override;
+  // sub_82079318: reads System's reverb ParameterOuts and, when any
+  // changed, hands the reverb its new I3DL2 parameters for the next frame.
+  void reverb_readback() override;
 
   // sub_82078520: Song_3's ParameterOut TransitionSwitch, 0 without Song_3.
   float transition_switch() const { return transition_.load(std::memory_order_relaxed); }
@@ -106,6 +123,18 @@ class AudioEngine : public AudioSink {
   std::vector<uint8_t> songs_;  // indices into objects_
   int32_t song3_object_ = -1, song3_out_ = -1;
   AudioBuffer renderer_;  // what System's OutputToRenderer adds this frame
+  AudioBuffer wet_;       // what System's mono WetOutputToRenderer adds this frame
+
+  // The wet voice's reverb. The tables are owned here; the reverb points at them.
+  std::unique_ptr<ReverbTables> reverb_tables_;
+  std::unique_ptr<Reverb> reverb_;
+  Reverb::Output reverb_out_;
+  std::array<int32_t, 12> reverb_outs_{};                // System's ParameterOut components
+  std::array<std::atomic<float>, 12> reverb_values_{};  // their values after the last frame's update
+  std::array<float, 12> reverb_last_{};                  // dat_821D1E78 (game thread), zero at start
+  std::mutex reverb_lock_;
+  I3dl2 reverb_pending_;     // the effect's pending I3DL2 (obj+0x98)
+  bool reverb_set_ = false;  // and its flag (obj+0xCE)
   std::atomic<float> transition_{0.0f};
 
   std::mutex queue_lock_;

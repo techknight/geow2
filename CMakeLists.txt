@@ -153,6 +153,7 @@ add_library(geow2_audio STATIC
   src/audio/engine.cpp
   src/audio/game_audio.cpp
   src/audio/graph.cpp
+  src/audio/reverb.cpp
   src/audio/waves.cpp
 )
 target_link_libraries(geow2_audio PUBLIC geow2_extract)

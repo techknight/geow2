@@ -208,13 +208,42 @@ Format for each entry:
 
 ### Reverb
 
-- **What**: the music's and effects' reverb.
-- **Original**: the System object's mono wet output feeds an XAudio
-  I3DL2 reverb voice whose parameters follow the song (`sub_82078C88`,
-  `sub_82079318`, `sub_820EBAE0`).
-- **Port**: the wet send is computed and dropped: there is no reverb.
-  The reverb's internals are XAudio's own, not in the traced code.
-- **Decided**: 2026-10-15 (until the reverb can be traced).
+- **What**: the details of the music's reverb that are not reproduced.
+- **Original**: the System object's mono `WetOutputToRenderer` feeds a
+  mono XAudio voice: the game's effect on it (`sub_820FD630`) halves the
+  frame and mutes it above 100, on a non-finite sample or above an RMS of
+  5, then XAudio's I3DL2 reverb (`sub_821440E8`, `sub_821429F0`) runs with
+  the parameters `sub_82079318` reads from System each game frame and
+  sends through `sub_820EBAE0` when one changes. Only the reverb's output
+  channel 0 reaches the speakers, added to FL, FR, FL, FR at 1.0 (map
+  built by `sub_820EC910`).
+- **Port**: the same chain (`src/audio/reverb.cpp`), with these
+  differences:
+  - The order in which XAudio adds the dry voice, the wet voice and the
+    submix into the mastering buffer (and its clearing) is not traced:
+    the port starts from the dry voice and adds the wet voice after. Only
+    the float rounding of the sum depends on it.
+  - The set-up's `pow`, `log`, `cos` and the single-precision square root
+    of a double are the host's, not the console runtime's; a coefficient
+    can differ in its last bit.
+  - VMX denormal flushing (feeder, output mix, mastering adds) is not
+    reproduced.
+  - The original reads the twelve ParameterOuts from the game thread; the
+    port's game thread reads the values the audio thread published after
+    its last control update. The parameters take effect at the start of
+    the next audio frame in both.
+  - Only the first wet voice is built, the one System's wet output and
+    the parameters reach (ring 0, index 0). The original can create a
+    second and third (as many as manager `+0xFBB8`, whose setter is not
+    traced), each with its own reverb that never gets parameters; what
+    their rings 1 and 2 carry is not traced, so they are left out.
+  - `Audio.DisableReverb` (a development variable, 0 by default,
+    `sub_82176970`) is not exposed: the reverb is always on.
+  - Not ported because they cannot be traced: what the renderer's 1-, 2-
+    and 5-channel rings carry into the dry voice (nothing in the port
+    writes them), and the stereo voice `+0x22C` with the type-5 effect on
+    its submix `+0x230`.
+- **Decided**: 2026-10-16.
 
 ### Wave playback
 

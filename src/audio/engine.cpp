@@ -74,7 +74,7 @@ void dry_voice(AudioBuffer& b) {
   bool zero = false;
   for (int c = 0; c < n; ++c)
     for (float& x : b.ch[size_t(c)]) {
-      x *= 0.5f;  // dat_82000724
+      x = 0.5f * x + 0.0f;  // dat_82000724, vmaddfp onto zeros (a -0 becomes +0)
       if (x > 100.0f || !std::isfinite(x)) zero = true;  // dat_82001020, sub_82133D40
     }
   if (!zero) {
@@ -84,6 +84,13 @@ void dry_voice(AudioBuffer& b) {
     zero = std::sqrt(acc / float(n * kFrameSamples)) > 5.0f;  // dat_820006F0
   }
   if (zero) b.clear();
+}
+
+void add_wet_to_speakers(const std::array<float, kFrameSamples>& wet, AudioBuffer& speakers) {
+  static constexpr int kMap[4] = {0, 1, 0, 1};
+  for (int out : kMap)
+    for (int i = 0; i < kFrameSamples; ++i)
+      speakers.ch[size_t(out)][size_t(i)] = std::fma(wet[size_t(i)], 1.0f, speakers.ch[size_t(out)][size_t(i)]);
 }
 
 AudioNames AudioNames::from_image(std::span<const uint8_t> img) {
@@ -109,6 +116,10 @@ AudioNames AudioNames::from_image(std::span<const uint8_t> img) {
   n.song_mono_in = image_string(img, 0x82003934);
   n.renderer_out = image_string(img, 0x82003B70);
   n.wet_out = image_string(img, 0x82003B5C);
+  const uint32_t reverb_names[12] = {0x82003B44, 0x82003B28, 0x82003B04, 0x82003AE8, 0x82003AC8, 0x82003AA8,
+                                     0x82003A84, 0x82003A70, 0x82003A58, 0x82003A3C, 0x82003A20, 0x82003A00};
+  for (size_t i = 0; i < 12; ++i) n.reverb_params[i] = image_string(img, reverb_names[i]);
+  n.reverb_tables = ReverbTables::from_image(img);
   for (const std::string& e : n.events)
     if (e.empty()) throw FormatError("audio names: event table incomplete");
   return n;
@@ -202,8 +213,21 @@ void AudioEngine::load(const AudioNames& names, WaveStore waves, const Aobj& sys
   // sub_820799D8: System's dry output feeds the renderer (mgr+0x1C).
   const int32_t r = objects_[0].obj->find(names.renderer_out, ~0u);
   if (r >= 0) connect_audio_output(*objects_[0].obj->comps[size_t(r)], &renderer_);
-  // The mono WetOutputToRenderer feeds the original's I3DL2 reverb voice,
-  // which is not ported (DIFFERENCES.md).
+  // The mono WetOutputToRenderer feeds the wet voice (mgr+0x2C, ring 0):
+  // the feeder effect, then the I3DL2 reverb (sub_820EC910).
+  const int32_t w = objects_[0].obj->find(names.wet_out, ~0u);
+  if (w >= 0) connect_audio_output(*objects_[0].obj->comps[size_t(w)], &wet_);
+  for (size_t i = 0; i < 12; ++i) {
+    reverb_outs_[i] = objects_[0].obj->find(names.reverb_params[i], kFlagParameterOut);
+    reverb_values_[i].store(0.0f, std::memory_order_relaxed);
+  }
+  reverb_tables_ = std::make_unique<ReverbTables>(names.reverb_tables);
+  reverb_ = std::make_unique<Reverb>(reverb_tables_.get());
+  reverb_last_ = {};
+  {
+    std::lock_guard<std::mutex> g(reverb_lock_);
+    reverb_set_ = false;
+  }
   pending_.clear();
   pending_at_ = 0;
 }
@@ -241,6 +265,45 @@ void AudioEngine::suspend_songs(bool suspended) {
   for (uint8_t s : songs_) post({Message::kSuspend, s, -1, suspended ? 1.0f : 0.0f});
 }
 
+void AudioEngine::reverb_readback() {
+  // sub_82079318 (UseDebugSystemParamsInsteadOfSystemDat off): the twelve
+  // values as floats, compared with the last ones sent (dat_821D1E78, zero
+  // at start; fcmpu, so a NaN always differs); on any change the I3DL2
+  // struct with the int fields truncated (fctidz) goes to mgr+0xA8 ->
+  // sub_820EBAE0 -> the wet voice's reverb.
+  if (objects_.empty()) return;
+  std::array<float, 12> v;
+  for (size_t i = 0; i < 12; ++i) v[i] = reverb_values_[i].load(std::memory_order_relaxed);
+  bool changed = false;
+  for (size_t i = 0; i < 12; ++i) changed = changed || !(v[i] == reverb_last_[i]);
+  if (!changed) return;
+  auto as_int = [](float x) {
+    if (x != x) return int32_t(0);  // 0x8000000000000000, low word 0
+    if (x >= 9.2233720368547758e18f) return int32_t(-1);
+    if (x <= -9.2233720368547758e18f) return int32_t(0);
+    return int32_t(uint32_t(uint64_t(int64_t(x))));
+  };
+  I3dl2 p;
+  p.room = as_int(v[0]);
+  p.room_hf = as_int(v[1]);
+  p.rolloff = v[2];
+  p.decay_time = v[3];
+  p.decay_hf_ratio = v[4];
+  p.reflections = as_int(v[5]);
+  p.reflections_delay = v[6];
+  p.reverb = as_int(v[7]);
+  p.reverb_delay = v[8];
+  p.diffusion = v[9];
+  p.density = v[10];
+  p.hf_reference = v[11];
+  {
+    std::lock_guard<std::mutex> g(reverb_lock_);
+    reverb_pending_ = p;
+    reverb_set_ = true;
+  }
+  reverb_last_ = v;
+}
+
 void AudioEngine::run_frame() {
   // sub_820E9A48: drain the queue, update the objects, generate, count.
   {
@@ -272,6 +335,10 @@ void AudioEngine::run_frame() {
     if (o.suspended) continue;
     if (shared_.frame % kUpdatePeriod == 0) o.control_update();
   }
+  for (size_t i = 0; i < 12; ++i)
+    reverb_values_[i].store(reverb_outs_[i] >= 0 ? parameter_out_value(*objects_[0].obj->comps[size_t(reverb_outs_[i])])
+                                                 : 0.0f,
+                            std::memory_order_relaxed);
   if (song3_object_ >= 0 && song3_out_ >= 0)
     transition_.store(parameter_out_value(*objects_[size_t(song3_object_)].obj->comps[size_t(song3_out_)]),
                       std::memory_order_relaxed);
@@ -281,9 +348,27 @@ void AudioEngine::run_frame() {
   // the other objects add to its inputs is heard one frame later.
   renderer_.clear();
   renderer_.channels = 6;
+  wet_.clear();
+  wet_.channels = 1;
   for (Slot& s : objects_)
     if (!s.obj->suspended) s.obj->generate_frame();
   dry_voice(renderer_);
+
+  // The wet voice (Audio.DisableReverb is 0 by default, sub_82176970): the
+  // feeder effect, then the reverb, whose pending parameters it applies
+  // first (sub_821440E8). Its output channel 0 is added after the dry
+  // voice; the original's order of the voices into the mastering buffer
+  // is not traced and only changes the rounding (DIFFERENCES.md).
+  wet_voice(wet_);
+  {
+    std::lock_guard<std::mutex> g(reverb_lock_);
+    if (reverb_set_) {
+      reverb_->set_i3dl2(reverb_pending_);
+      reverb_set_ = false;
+    }
+  }
+  reverb_->process(wet_.ch[0].data(), wet_.ch[0].data(), reverb_out_);
+  add_wet_to_speakers(reverb_out_.fl, renderer_);
   const size_t base = pending_.size();
   pending_.resize(base + size_t(kFrameSamples) * 6);
   float* out = pending_.data() + base;

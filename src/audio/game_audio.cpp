@@ -60,6 +60,7 @@ void GameAudio::frame(const AudioFrame& f) {
   sink_.set_parameter(Param::kPaused, f.paused ? 1.0f : 0.0f);
   sink_.set_parameter(Param::kSfxVolume, f.sfx_option * f.sfx_option);
   sink_.set_parameter(Param::kMayflyNumbers, float(f.mayflies));
+  sink_.reverb_readback();  // sub_82079318, between the hill distance and its parameter
   sink_.set_parameter(Param::kDistanceFromHill, f.distance_from_hill);
   sink_.set_parameter(Param::kMusicVolume, f.music_muted ? 0.0f : f.music_option * f.music_option);
   sink_.set_parameter(Param::kThrust, f.thrust);
