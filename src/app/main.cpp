@@ -898,6 +898,9 @@ int main(int argc, char** argv) {
     SDL_Log("SDL_Init: %s", SDL_GetError());
     return 1;
   }
+  // Sound on its own, so that a machine without an audio device still
+  // plays (silently).
+  if (!headless && !SDL_InitSubSystem(SDL_INIT_AUDIO)) SDL_Log("no audio: %s", SDL_GetError());
   if (profile_dir.empty()) {
     char* pref = SDL_GetPrefPath("geow2", "geow2");
     profile_dir = pref ? fs::path(pref) : fs::path("profile");
