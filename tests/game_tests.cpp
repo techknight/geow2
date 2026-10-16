@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <memory>
 #include <string>
 
@@ -693,6 +694,18 @@ void test_profile() {
   const auto b = p.to_bytes();
   const Profile q = Profile::from_bytes(b);
   expect(q.unlocked == p.unlocked && q.progress == p.progress && q.millions == p.millions, "profile round trip");
+  Profile ok = q;
+  expect(!ok.repair() && ok.unlocked == q.unlocked, "a sound profile needs no repair");
+  Profile bad;
+  bad.sound_volume = std::numeric_limits<float>::quiet_NaN();
+  bad.music_volume = 3.0f;
+  bad.controls = 0x80;
+  bad.score_display = 7;
+  bad.unlocked = 0x100;
+  bad.progress[2] = -5;
+  expect(bad.repair() && bad.sound_volume == 1.0f && bad.music_volume == 1.0f && bad.controls == 2 &&
+             bad.score_display == 0 && bad.unlocked == 2 && bad.progress[2] == 0,
+         "a damaged profile is repaired");
   SequenceCommand c;
   parse_sequence_line("line wall(N) type(grunt) half(1)", c);
   expect(sequence_geom_weight(c) == 28, "line geom weight counts one fewer");

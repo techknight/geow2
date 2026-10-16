@@ -76,6 +76,7 @@
 #include "app/game.h"
 #include "app/png.h"
 #include "app/renderer.h"
+#include "extract/bytes.h"
 #include "game/gravity_well.h"
 #include "game/spawn.h"
 
@@ -97,20 +98,28 @@ struct Press {
 
 int16_t clamp16(int v) { return int16_t(std::clamp(v, -32768, 32767)); }
 
+// The files in the profile folder are replaced whole (written beside, then
+// renamed over), so the game crashing or a full disk never leaves half a
+// file (the data is not synced to the disk before the rename: a power cut
+// at that moment can still lose it).
+void save_text(const fs::path& path, const std::string& s) {
+  if (!replace_file(path, std::span(reinterpret_cast<const uint8_t*>(s.data()), s.size())))
+    SDL_Log("cannot save %s", path.string().c_str());
+}
+
 // The profile block and the local boards on disk.
 Profile load_profile(const fs::path& dir) {
   std::array<uint8_t, 0x30> b{};
   std::ifstream f(dir / "profile.bin", std::ios::binary);
   if (!f || !f.read(reinterpret_cast<char*>(b.data()), std::streamsize(b.size()))) return Profile{};
-  return Profile::from_bytes(b);
+  Profile p = Profile::from_bytes(b);
+  if (p.repair()) SDL_Log("profile.bin had settings out of range; those are back to their defaults");
+  return p;
 }
 
 void save_profile(const fs::path& dir, const Profile& p) {
-  std::error_code ec;
-  fs::create_directories(dir, ec);
   const auto b = p.to_bytes();
-  std::ofstream f(dir / "profile.bin", std::ios::binary | std::ios::trunc);
-  f.write(reinterpret_cast<const char*>(b.data()), std::streamsize(b.size()));
+  if (!replace_file(dir / "profile.bin", b)) SDL_Log("cannot save %s", (dir / "profile.bin").string().c_str());
 }
 
 // One row per line: mode, score, name (tab-separated).
@@ -118,6 +127,7 @@ void load_boards(const fs::path& dir, std::array<LocalBoard, 6>& boards) {
   std::ifstream f(dir / "scores.txt");
   std::string line;
   while (std::getline(f, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();  // a file brought from Windows
     std::istringstream s(line);
     std::string mode, score, name;
     if (!std::getline(s, mode, '\t') || !std::getline(s, score, '\t')) continue;
@@ -132,11 +142,10 @@ void load_boards(const fs::path& dir, std::array<LocalBoard, 6>& boards) {
 }
 
 void save_boards(const fs::path& dir, const std::array<LocalBoard, 6>& boards) {
-  std::error_code ec;
-  fs::create_directories(dir, ec);
-  std::ofstream f(dir / "scores.txt", std::ios::trunc);
+  std::ostringstream f;
   for (int m = 0; m < 6; ++m)
     for (const auto& r : boards[size_t(m)].rows) f << m << '\t' << r.score << '\t' << r.name << '\n';
+  save_text(dir / "scores.txt", f.str());
 }
 
 // The game's sticks from the player's pad, as the player update reads them
@@ -757,10 +766,9 @@ Display load_display(const fs::path& dir) {
 }
 
 void save_display(const fs::path& dir, const Display& d) {
-  std::error_code ec;
-  fs::create_directories(dir, ec);
-  std::ofstream f(dir / "display.txt", std::ios::trunc);
+  std::ostringstream f;
   f << "fullscreen " << int(d.fullscreen) << "\nexact720p " << int(d.exact_720p) << "\nvsync " << int(d.vsync) << '\n';
+  save_text(dir / "display.txt", f.str());
 }
 
 int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_dir, const fs::path& profile_dir,
@@ -788,10 +796,12 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
   // The sound: the AOBJ graphs over the extracted waves, mixed in 5.1.
   audio::AudioEngine sound;
   std::string sound_error;
-  const bool has_sound = sound.init(data_dir, &sound_error);
+  bool has_sound = sound.init(data_dir, &sound_error);
   if (!has_sound) SDL_Log("no sound: %s", sound_error.c_str());
   audio::AudioDevice output;
-  if (has_sound) output.open(sound);
+  // Without an output nothing would drain the engine's message queue (a
+  // device lost later is replaced by SDL, which keeps pulling).
+  if (has_sound && !output.open(sound)) has_sound = false;
   audio::GameAudio glue(sound);
   if (has_sound) {
     glue.start();
@@ -805,10 +815,9 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
     if (f >> std::hex >> bits) g.achieved = uint32_t(bits);
   }
   g.unlocked = [&](uint32_t) {
-    std::error_code ec;
-    fs::create_directories(profile_dir, ec);
-    std::ofstream f(profile_dir / "achievements.txt", std::ios::trunc);
-    f << std::hex << g.achieved << '\n';
+    char line[16];
+    std::snprintf(line, sizeof(line), "%x\n", unsigned(g.achieved));
+    save_text(profile_dir / "achievements.txt", line);
   };
   fe.boot();
   const SDL_GPUTextureFormat format = SDL_GetGPUSwapchainTextureFormat(dev, window);
@@ -836,10 +845,54 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
     }
   };
   read_refresh();
+  // The last frame reached the swapchain. A minimised or hidden window can
+  // hand back no image without waiting for a vblank, so the refresh lock
+  // only counts presented frames; the others step from real time.
+  bool presented = true;
+  // The system UI stand-in (Frontend::set_system_ui): minimised, hidden,
+  // covered, or the focus elsewhere.
+  bool minimised = false, unfocused = false;
+  // A slot whose pad was pulled counts as gone for one step, though the
+  // keyboard (slot 0) or a spare pad taking the slot keeps it connected.
+  std::array<bool, 4> pulled{};
+  auto open_pads = [&]() {
+    int n = 0;
+    SDL_JoystickID* ids = SDL_GetGamepads(&n);
+    for (int i = 0; ids && i < n; ++i) {
+      if (SDL_GetGamepadFromID(ids[i])) continue;  // already open
+      for (auto& p : pads)
+        if (!p) {
+          p = SDL_OpenGamepad(ids[i]);
+          break;
+        }
+    }
+    SDL_free(ids);
+  };
   while (running) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
       if (e.type == SDL_EVENT_QUIT) running = false;
+      switch (e.type) {
+        case SDL_EVENT_WINDOW_MINIMIZED:
+        case SDL_EVENT_WINDOW_HIDDEN:
+        case SDL_EVENT_WINDOW_OCCLUDED:
+          minimised = true;
+          break;
+        case SDL_EVENT_WINDOW_RESTORED:
+        case SDL_EVENT_WINDOW_MAXIMIZED:
+        case SDL_EVENT_WINDOW_SHOWN:
+        case SDL_EVENT_WINDOW_EXPOSED:
+          minimised = false;
+          break;
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+          unfocused = true;
+          break;
+        case SDL_EVENT_WINDOW_FOCUS_GAINED:
+          unfocused = false;
+          break;
+        default:
+          break;
+      }
       if (e.type == SDL_EVENT_WINDOW_DISPLAY_CHANGED || e.type == SDL_EVENT_DISPLAY_CURRENT_MODE_CHANGED)
         read_refresh();
       if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat &&
@@ -850,20 +903,25 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
         save_display(profile_dir, display);
         read_refresh();
       }
-      if (e.type == SDL_EVENT_GAMEPAD_ADDED) {
-        for (auto& p : pads)
-          if (!p) {
-            p = SDL_OpenGamepad(e.gdevice.which);
-            break;
-          }
-      }
+      if (e.type == SDL_EVENT_GAMEPAD_ADDED) open_pads();
       if (e.type == SDL_EVENT_GAMEPAD_REMOVED) {
-        for (auto& p : pads)
-          if (p && SDL_GetGamepadID(p) == e.gdevice.which) {
-            SDL_CloseGamepad(p);
-            p = nullptr;
+        for (size_t i = 0; i < pads.size(); ++i)
+          if (pads[i] && SDL_GetGamepadID(pads[i]) == e.gdevice.which) {
+            SDL_CloseGamepad(pads[i]);
+            pads[i] = nullptr;
+            pulled[i] = true;
           }
+        open_pads();  // a fifth pad takes the freed slot
       }
+    }
+    fe.set_system_ui(minimised || unfocused);
+    // (Before the clock is read: a frame without a command buffer loses no
+    // steps, the next one catches up.)
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
+    if (!cmd) {
+      SDL_Log("no GPU command buffer: %s", SDL_GetError());
+      SDL_Delay(4);
+      continue;
     }
     // Fixed 1/60 s frames from real time: the front end, then the
     // simulation step (the main loop's order, sub_82037E00).
@@ -871,7 +929,7 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
     double dt = double(now - last) / 1e9;
     last = now;
     int steps = 0;
-    if (frames_per_step > 0) {
+    if (frames_per_step > 0 && presented) {
       // Locked to the refresh (a frame that misses a vblank slows the
       // game, as on the console).
       if (++frame_in_step >= frames_per_step) {
@@ -892,12 +950,16 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
       }
       if (pending > kStep) pending = 0.0;
     }
-    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     for (int n = 0; n < steps; ++n) {
       PROFILE("step+audio");
       std::array<PadState, 4> state{};
       for (size_t i = 0; i < 4; ++i) state[i] = pad_state(pads[i]);
       keyboard_pad(state[0], g.flow == 2);
+      for (size_t i = 0; i < 4; ++i)
+        if (pulled[i]) {
+          state[i].connected = false;
+          pulled[i] = false;
+        }
       fe.frame(state);
       // Each joined index's pad (one profile's stick settings for all).
       std::array<Sticks, 4> s{};
@@ -918,16 +980,18 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
       PROFILE("swapchain wait");
       acquired = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window, &swap, &w, &h);
     }
-    if (acquired && swap) draw_frame(dev, r, cmd, swap, format, w, h, g, ui, display.exact_720p, frame720);
+    presented = acquired && swap;
+    if (presented) draw_frame(dev, r, cmd, swap, format, w, h, g, ui, display.exact_720p, frame720);
     SDL_SubmitGPUCommandBuffer(cmd);
+    if (!presented) SDL_Delay(4);  // nothing waited for a vblank: do not spin
     if (g_profile.on) {
       // --perf in the window: a report every 600 presented frames, and
       // every frame with more or fewer than one step.
       if (steps > 1 || dt > 0.025)
         std::printf("frame with %d steps, %.2f ms since the last\n", steps, dt * 1000.0);
       g_profile.end_frame(-1, 1e9);
-      static int presented = 0;
-      if (++presented % 600 == 0) g_profile.report(refresh > 0.0 ? "window" : "window (refresh unknown)");
+      static int frames_shown = 0;
+      if (++frames_shown % 600 == 0) g_profile.report(refresh > 0.0 ? "window" : "window (refresh unknown)");
     }
   }
   if (frame720) SDL_ReleaseGPUTexture(dev, frame720);
@@ -1023,8 +1087,9 @@ int main(int argc, char** argv) {
       const int pad = colon == std::string::npos ? 0 : std::clamp(std::atoi(b.c_str() + colon + 1), 0, 3);
       presses.push_back({f, button_axis(b.substr(0, colon)), pad});
     } else if (a == "--size" && i + 2 < argc) {
-      shot_w = uint32_t(std::atoi(argv[++i]));
-      shot_h = uint32_t(std::atoi(argv[++i]));
+      // Up to 8K (the capture's download buffer is w x h x 4 bytes).
+      shot_w = uint32_t(std::clamp(std::atoi(argv[++i]), 1, 7680));
+      shot_h = uint32_t(std::clamp(std::atoi(argv[++i]), 1, 4320));
     } else if (a == "--stick" && i + 2 < argc) {
       sticks.move_x = clamp16(std::atoi(argv[++i]));
       sticks.move_y = clamp16(std::atoi(argv[++i]));
@@ -1110,11 +1175,12 @@ int main(int argc, char** argv) {
   }
   // Level.StartLevel (value 0x8219D458) for development: Sequence starts at
   // that level (sub_82039628 sets both the level and the one shown).
-  if (start_level >= 0) game.sequence.level = game.sequence.shown_level = start_level;
+  // (After a multiplayer start, which resets Sequence.)
   if (multiplayer) {
     game.lobby = lobby;
     start_multiplayer(game, mode, versus);
   }
+  if (start_level >= 0) game.sequence.level = game.sequence.shown_level = start_level;
   SDL_GPUDevice* dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
   if (!dev) {
     SDL_Log("no GPU device: %s", SDL_GetError());

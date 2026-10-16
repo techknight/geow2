@@ -421,7 +421,7 @@ void Sequence::step(World& w, const Inputs& in) {
       }
       break;
     case 1:
-      // (Or sub_82078520() > 0.5: not traced.)
+      // Or the music's TransitionSwitch (sub_82078520) above 0.5.
       if (4.0f < screen_clock || 0.5f < in.transition) {  // dat_820006F4
         w.play(audio::Event::kSwooshOut);
         phase = 2;

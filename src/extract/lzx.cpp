@@ -158,6 +158,7 @@ void read_lengths(BitReader& br, uint8_t* lens, int first, int last) {
     } else if (z == 19) {
       int y = 4 + int(br.read(1));
       z = pre.decode(br);
+      if (z > 16) throw FormatError("lzx: bad code length run");
       int v = lens[x] - z;
       if (v < 0) v += 17;
       while (y-- && x < last) lens[x++] = uint8_t(v);

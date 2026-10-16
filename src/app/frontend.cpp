@@ -111,16 +111,16 @@ bool Frontend::item_enabled(int i) const {
 void Frontend::default_handler(const MenuInput& in) {
   const uint32_t p = in.pressed;
   const int n = int(screen_.items.size());
+  // The callbacks are called through copies: one that opens another
+  // screen replaces screen_ (and the function in it) while it runs.
   if (n == 0) {
     if (p & (kStart | kA)) {
       sound(audio::Event::kUiConfirm);
-      if (screen_.accept)
-        screen_.accept(in);
-      else if (screen_.back)
-        screen_.back(in);
+      if (const auto f = screen_.accept ? screen_.accept : screen_.back) f(in);
     } else if ((p & kBack) && screen_.back) {
       sound(audio::Event::kUiDelete);
-      screen_.back(in);
+      const auto b = screen_.back;
+      b(in);
     }
     return;
   }
@@ -174,7 +174,8 @@ void Frontend::default_handler(const MenuInput& in) {
   } else if (p & kBack) {
     if (screen_.back) {
       sound(audio::Event::kUiDelete);
-      screen_.back(in);
+      const auto b = screen_.back;
+      b(in);
     }
   } else if (p & (kLeft | kRight)) {
     if (it.adjust && it.action && item_enabled(s)) {
@@ -312,14 +313,15 @@ void Frontend::playing(const MenuInput& in) {
     g_.end_reason = 2;
     return;
   }
-  // START, or a pad of the game's list (dat_8219CE90) gone.
+  // START, a pad of the game's list (dat_8219CE90) gone, or the system UI
+  // showing (sub_8207E228).
   bool lost = false;
   for (int j = 0; j < g_.joined_count && j < 4; ++j) {
     const int pad = g_.joined_pad[size_t(j)];
     if (pad >= 0 && pad < 4 && !pads_[size_t(pad)].connected) lost = true;
   }
   if (in.pressed & kStart) sound(audio::Event::kUiConfirm);
-  if ((in.pressed & kStart) || lost) {
+  if ((in.pressed & kStart) || lost || system_ui_) {
     pause(true);
     g_.flow = 3;
   }
@@ -1024,7 +1026,7 @@ void Frontend::rules(int index, std::function<void(const MenuInput&)> back, int 
          // sub_8207A658: without items, A or X go back.
          if (screen_.items.empty() && (in.pressed & (kA | kX))) {
            sound(audio::Event::kUiDelete);
-           if (screen_.back) screen_.back(in);
+           if (const auto b = screen_.back) b(in);
            return;
          }
          default_handler(in);
@@ -2118,7 +2120,7 @@ void Frontend::board_view(int mode, std::function<void(const MenuInput&)> back) 
        false,
        [this](const MenuInput& in) {
          if (in.pressed & kBack) {
-           if (screen_.back) screen_.back(in);
+           if (const auto b = screen_.back) b(in);
            return;
          }
          const int count = int(boards_[size_t(board_mode_)].rows.size());
@@ -2188,7 +2190,7 @@ void Frontend::achievements_screen() {
        false,
        [this](const MenuInput& in) {
          if (in.pressed & kBack) {
-           if (screen_.back) screen_.back(in);
+           if (const auto b = screen_.back) b(in);
            return;
          }
          const int max_first = std::max(int(g_.achievements.size()) - 6, 0);

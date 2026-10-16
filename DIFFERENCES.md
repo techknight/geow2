@@ -66,7 +66,12 @@ Format for each entry:
   for pads without a profile), and all pads use the one profile's stick
   and bomb settings where the original reads each pad's own profile
   (`sub_8204FF00`).
-- **Decided**: 2026-10-15; multiplayer 2026-10-15.
+  The console's profile is signed; `profile.bin` is not, so a damaged file
+  is repaired on load: settings outside the ranges their menus allow (the
+  volumes 0 to 1, the stick bits, the score display 0 or 1) go back to
+  the defaults of `sub_82093230` and Deadline stays unlocked. The files
+  are written beside and renamed over, never truncated in place.
+- **Decided**: 2026-10-15; multiplayer 2026-10-15; repair 2026-10-16.
 
 ### Language
 
@@ -105,8 +110,24 @@ Format for each entry:
   X and Y, and Escape is START while playing (pause) and B in the menus.
   SDL's triggers (0 to 32767) are scaled to the XInput byte the original
   reads (axes 8 and 9, times 1/255). In multiplayer the keyboard is part
-  of the first pad slot (with a pad there, both work).
-- **Decided**: 2026-10-15; menus 2026-10-15; multiplayer 2026-10-15.
+  of the first pad slot (with a pad there, both work). A pad pulled from
+  any slot counts as disconnected for one step, so the game pauses as the
+  original does for a lost pad (`sub_820336D8`) even though the keyboard,
+  or a spare fifth pad taking the slot, keeps it connected afterwards.
+- **Decided**: 2026-10-15; menus 2026-10-15; multiplayer 2026-10-15;
+  pulled pads 2026-10-16.
+
+### The system UI pause
+
+- **What**: what pauses a game besides START and a lost pad.
+- **Original**: a game pauses while the system UI (the guide) shows:
+  `sub_820336D8` tests `sub_8207E228`, the flag set by XNotify message 9
+  (`XN_SYS_UI`).
+- **Port**: a window that is minimised, hidden, covered or loses the
+  focus stands in for the system UI and pauses the game the same way
+  (the Steam overlay counts when it takes the focus). The game stays
+  paused when the window comes back, as after the guide.
+- **Decided**: 2026-10-16.
 
 ### Resolution
 

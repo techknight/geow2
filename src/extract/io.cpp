@@ -18,4 +18,27 @@ void write_file(const std::filesystem::path& path, std::span<const uint8_t> data
   f.write(reinterpret_cast<const char*>(data.data()), std::streamsize(data.size()));
 }
 
+bool replace_file(const std::filesystem::path& path, std::span<const uint8_t> data) {
+  std::error_code ec;
+  if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), ec);
+  std::filesystem::path tmp = path;
+  tmp += ".tmp";
+  {
+    std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+    f.write(reinterpret_cast<const char*>(data.data()), std::streamsize(data.size()));
+    f.flush();
+    if (!f) {
+      f.close();
+      std::filesystem::remove(tmp, ec);
+      return false;
+    }
+  }
+  std::filesystem::rename(tmp, path, ec);
+  if (ec) {
+    std::filesystem::remove(tmp, ec);
+    return false;
+  }
+  return true;
+}
+
 }  // namespace geow2

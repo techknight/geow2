@@ -1,7 +1,9 @@
 #include "app/renderer.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
+#include <string>
 
 #include "data/tga.h"
 #include "extract/bytes.h"
@@ -23,6 +25,15 @@ constexpr uint32_t kStandardHeight = 720;
 
 // The light map's size (dat_821825FC, dat_82182600).
 constexpr uint32_t kLightW = 150, kLightH = 100;
+
+// Out of GPU memory for something every frame draws from: there is nothing
+// sensible to draw with, so the game stops with a message.
+[[noreturn]] void out_of_gpu_memory(const char* what) {
+  const std::string msg = std::string("Out of graphics memory (") + what + "): " + SDL_GetError();
+  SDL_Log("%s", msg.c_str());
+  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Geometry Wars: Retro Evolved 2", msg.c_str(), nullptr);
+  std::abort();
+}
 
 SDL_GPUShader* load_shader(SDL_GPUDevice* dev, const fs::path& path, SDL_GPUShaderStage stage, uint32_t samplers,
                            uint32_t uniforms) {
@@ -222,7 +233,9 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   const std::vector<uint8_t> sprite = light_sprite_texture();
   SDL_GPUTransferBufferCreateInfo ti{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, uint32_t(sprite.size()), 0};
   SDL_GPUTransferBuffer* t = SDL_CreateGPUTransferBuffer(device, &ti);
-  std::memcpy(SDL_MapGPUTransferBuffer(device, t, false), sprite.data(), sprite.size());
+  void* tp = t ? SDL_MapGPUTransferBuffer(device, t, false) : nullptr;
+  if (!cmd || !tp) out_of_gpu_memory("the render resources");
+  std::memcpy(tp, sprite.data(), sprite.size());
   SDL_UnmapGPUTransferBuffer(device, t);
   SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
   SDL_GPUTextureTransferInfo src{t, 0, kLightSpriteSize, kLightSpriteSize};
@@ -238,7 +251,9 @@ bool Renderer::init(SDL_GPUDevice* device, const fs::path& dir) {
   for (int c = 0; c < 4; ++c) star[(1 * 3 + 1) * 4 + c] = 0xFF;
   SDL_GPUTransferBufferCreateInfo sti{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, sizeof(star), 0};
   SDL_GPUTransferBuffer* st = SDL_CreateGPUTransferBuffer(device, &sti);
-  std::memcpy(SDL_MapGPUTransferBuffer(device, st, false), star, sizeof(star));
+  void* sp = st ? SDL_MapGPUTransferBuffer(device, st, false) : nullptr;
+  if (!sp) out_of_gpu_memory("the render resources");
+  std::memcpy(sp, star, sizeof(star));
   SDL_UnmapGPUTransferBuffer(device, st);
   SDL_GPUTextureTransferInfo ssrc{st, 0, 3, 3};
   SDL_GPUTextureRegion sdst{};
@@ -297,7 +312,13 @@ void Renderer::set_ui_texture(int index, const Image& img) {
   const uint32_t bytes = img.width * img.height * 4;
   SDL_GPUTransferBufferCreateInfo ti{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, bytes, 0};
   SDL_GPUTransferBuffer* up = SDL_CreateGPUTransferBuffer(device_, &ti);
-  void* p = SDL_MapGPUTransferBuffer(device_, up, false);
+  void* p = up ? SDL_MapGPUTransferBuffer(device_, up, false) : nullptr;
+  if (!p) {
+    SDL_Log("cannot upload a %ux%u texture: %s", img.width, img.height, SDL_GetError());
+    if (up) SDL_ReleaseGPUTransferBuffer(device_, up);
+    SDL_ReleaseGPUTexture(device_, tex);
+    return;
+  }
   std::memcpy(p, img.rgba.data(), bytes);
   SDL_UnmapGPUTransferBuffer(device_, up);
   SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
@@ -411,8 +432,10 @@ void Renderer::upload(SDL_GPUCommandBuffer* cmd, Buffer& b, SDL_GPUBufferUsageFl
     SDL_GPUTransferBufferCreateInfo ti{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, cap, 0};
     b.staging = SDL_CreateGPUTransferBuffer(device_, &ti);
     b.capacity = cap;
+    if (!b.buf || !b.staging) out_of_gpu_memory("a vertex or index buffer");
   }
   void* p = SDL_MapGPUTransferBuffer(device_, b.staging, true);
+  if (!p) out_of_gpu_memory("a vertex or index buffer");
   std::memcpy(p, data, size);
   SDL_UnmapGPUTransferBuffer(device_, b.staging);
   SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);

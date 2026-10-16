@@ -75,8 +75,7 @@ class Frontend {
   };
   Frontend(Game& g, const UiText& text, Profile& profile, std::array<LocalBoard, 6>& boards, Hooks hooks);
 
-  // sub_820334A8: the boot screen (the intro is drawn with textures not
-  // yet ported, so the main menu comes at once).
+  // sub_820334A8: the boot screen (the intro, then the main menu).
   void boot();
   // The in-game screen (the HUD) for a game started without the menus
   // (the development captures).
@@ -86,6 +85,10 @@ class Frontend {
   }
   // One frame: the menu input and the state's handler (sub_82033E18).
   void frame(const std::array<PadState, 4>& pads);
+  // sub_8207E228: the system UI (the guide) is showing, which pauses a
+  // game. The port's stand-in is a window that is minimised, hidden or
+  // without the focus.
+  void set_system_ui(bool shown) { system_ui_ = shown; }
   // The UI layer (sub_820924A0) into `c`.
   void draw(UiCanvas& c) const;
   // The player's name (gamertags stand-in: text 0x82 "Player" and 1).
@@ -239,6 +242,7 @@ class Frontend {
   // teams 0 and 1 (dat_821E9FE5 / FE4) and the join prompt's pulse
   // (dat_821E9FE0).
   std::array<PadState, 4> pads_{};
+  bool system_ui_ = false;  // set_system_ui
   std::array<uint32_t, 4> lobby_held_{}, lobby_pressed_{};
   bool copilots_ = false;
   int preset_ = 0;

@@ -107,6 +107,27 @@ Profile Profile::from_bytes(const std::array<uint8_t, 0x30>& b) {
   return p;
 }
 
+bool Profile::repair() {
+  const Profile d;
+  bool changed = false;
+  auto fix = [&](auto& v, auto def, bool ok) {
+    if (!ok) {
+      v = def;
+      changed = true;
+    }
+  };
+  fix(controls, d.controls, controls <= 7);
+  // The volume items step by 0.05 within [0, 1]; NaN fails both tests.
+  fix(sound_volume, d.sound_volume, sound_volume >= 0.0f && sound_volume <= 1.0f);
+  fix(music_volume, d.music_volume, music_volume >= 0.0f && music_volume <= 1.0f);
+  fix(score_display, d.score_display, score_display == 0 || score_display == 1);
+  fix(unlocked, unlocked & 0x3Fu, unlocked <= 0x3Fu);
+  fix(unlocked, unlocked | d.unlocked, (unlocked & d.unlocked) != 0);
+  for (auto& p : progress) fix(p, 0, p >= 0);
+  fix(millions, millions & 0x3Fu, millions <= 0x3Fu);
+  return changed;
+}
+
 bool Profile::game_ended(int mode, int kills, int64_t score) {
   const int x = profile_index(mode);
   bool changed = false;

@@ -38,6 +38,11 @@ struct Profile {
   // The 48-byte block, big-endian as the console stores it.
   std::array<uint8_t, 0x30> to_bytes() const;
   static Profile from_bytes(const std::array<uint8_t, 0x30>& b);
+  // A block from the port's own file (the console's profile is signed,
+  // this file is not): settings outside the ranges their menus allow go
+  // back to the defaults and Deadline stays unlocked. Returns whether
+  // anything was repaired.
+  bool repair();
 
   // sub_820338D8 at a single-player game over (not trial): unlock progress
   // from the kills, the next mode at the threshold, the million bit.

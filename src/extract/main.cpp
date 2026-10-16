@@ -6,10 +6,12 @@
 //   geow2-extract audio <data-dir>       (redo the sound only: needs ffmpeg)
 //   geow2-extract dump-db <data-dir>     (developer aid: every Data.bin value)
 
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <string>
 
 #include "data/flask.h"
@@ -32,14 +34,39 @@ const KnownFile* known(const std::string& path) {
   return nullptr;
 }
 
+std::string lower(std::string s) {
+  for (char& c : s) c = char(std::tolower(static_cast<unsigned char>(c)));
+  return s;
+}
+
+// The file at `rel` under `root`, names matched without regard to case
+// (a folder unpacked by another tool may say data.bin or Audio/).
+std::optional<fs::path> find_nocase(const fs::path& root, const fs::path& rel) {
+  fs::path cur = root;
+  for (const auto& part : rel) {
+    if (fs::exists(cur / part)) {
+      cur /= part;
+      continue;
+    }
+    std::optional<fs::path> hit;
+    std::error_code ec;
+    for (const auto& e : fs::directory_iterator(cur, ec))
+      if (lower(e.path().filename().string()) == lower(part.string())) {
+        hit = e.path();
+        break;
+      }
+    if (!hit) return std::nullopt;
+    cur = *hit;
+  }
+  return cur;
+}
+
 // Collects the package's files, keyed by package path, from an STFS file or a folder.
 std::map<std::string, Bytes> collect(const fs::path& source) {
   std::map<std::string, Bytes> files;
   if (fs::is_directory(source)) {
-    for (const auto& k : kKnownFiles) {
-      const auto p = source / k.path;
-      if (fs::exists(p)) files[k.path] = read_file(p);
-    }
+    for (const auto& k : kKnownFiles)
+      if (const auto p = find_nocase(source, k.path); p && fs::is_regular_file(*p)) files[k.path] = read_file(*p);
     return files;
   }
   Bytes pkg = read_file(source);
@@ -100,9 +127,11 @@ int unpack(const std::string& source, const std::string& data_dir) {
     return 1;
   }
   const fs::path root = data_dir;
-  for (const auto& [path, data] : files) write_file(root / "files" / path, data);
+  // Only the known files, by their known names (a package's own names
+  // never choose where anything is written).
+  for (const auto& k : kKnownFiles) write_file(root / "files" / k.path, files.at(k.path));
   write_xex(files.at("default.xex"), root / "xex");
-  std::printf("unpacked %zu files to %s\n", files.size(), data_dir.c_str());
+  std::printf("unpacked %zu files to %s\n", std::size(kKnownFiles), data_dir.c_str());
   // The sound banks as PCM (XMA through ffmpeg).
   extract_audio(root / "files" / "audio", root / "audio");
   return 0;

@@ -30,5 +30,9 @@ inline void need(std::span<const uint8_t> data, size_t off, size_t len, const ch
 
 Bytes read_file(const std::filesystem::path& path);
 void write_file(const std::filesystem::path& path, std::span<const uint8_t> data);
+// Writes `data` beside `path` and then renames it over `path`, so a failed
+// or interrupted write leaves the old file whole. Creates the folder;
+// returns false (and keeps the old file) on any failure.
+bool replace_file(const std::filesystem::path& path, std::span<const uint8_t> data);
 
 }  // namespace geow2

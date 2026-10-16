@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <string>
 
 #include "extract/aes128.h"
@@ -109,7 +110,19 @@ static void test_bank() {
   expect(x.size() == 12 + 8 + 32 + 8 + 4 && x[20] == 0x65 && x[21] == 0x01 && x[49] == 1, "xma1 riff header");
 }
 
+static void test_replace_file() {
+  const auto dir = std::filesystem::temp_directory_path() / "geow2_replace_test";
+  std::filesystem::remove_all(dir);
+  const auto path = dir / "sub" / "f.txt";
+  const uint8_t one[] = {'1', '1'}, two[] = {'2'};
+  expect(replace_file(path, one) && read_file(path) == Bytes(one, one + 2), "replace_file creates");
+  expect(replace_file(path, two) && read_file(path) == Bytes(two, two + 1), "replace_file replaces");
+  expect(!std::filesystem::exists(dir / "sub" / "f.txt.tmp"), "replace_file leaves no temporary");
+  std::filesystem::remove_all(dir);
+}
+
 int main() {
+  test_replace_file();
   test_bank();
   test_sha1();
   test_aes();
