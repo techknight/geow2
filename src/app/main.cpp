@@ -785,10 +785,18 @@ void save_display(const fs::path& dir, const Display& d) {
   save_text(dir / "display.txt", f.str());
 }
 
+// A Retina display's full resolution on macOS (elsewhere as before: the
+// window's own pixel size).
+#ifdef __APPLE__
+constexpr SDL_WindowFlags kHighDensity = SDL_WINDOW_HIGH_PIXEL_DENSITY;
+#else
+constexpr SDL_WindowFlags kHighDensity = 0;
+#endif
+
 int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_dir, const fs::path& profile_dir,
                Display display) {
   SDL_Window* window =
-      SDL_CreateWindow("geow2", 1280, 720, SDL_WINDOW_RESIZABLE | (display.fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
+      SDL_CreateWindow("geow2", 1280, 720, SDL_WINDOW_RESIZABLE | kHighDensity | (display.fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
   if (!window || !SDL_ClaimWindowForGPUDevice(dev, window)) {
     SDL_Log("cannot open the window: %s", SDL_GetError());
     return 1;
@@ -911,7 +919,9 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
         read_refresh();
       if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat &&
           (e.key.scancode == SDL_SCANCODE_F11 ||
-           (e.key.scancode == SDL_SCANCODE_RETURN && (e.key.mod & SDL_KMOD_ALT)))) {
+           (e.key.scancode == SDL_SCANCODE_RETURN && (e.key.mod & SDL_KMOD_ALT)) ||
+           // macOS's own shortcut, Ctrl+Cmd+F
+           (e.key.scancode == SDL_SCANCODE_F && (e.key.mod & SDL_KMOD_CTRL) && (e.key.mod & SDL_KMOD_GUI)))) {
         display.fullscreen = !display.fullscreen;
         SDL_SetWindowFullscreen(window, display.fullscreen);
         save_display(profile_dir, display);
@@ -1044,7 +1054,10 @@ int button_axis(const std::string& b) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  // The data folder: --data, else "data" next to the program, else "data"
+  // in the user folder (where a macOS app bundle's would go).
   fs::path data_dir = fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "data";
+  bool data_given = false;
   fs::path profile_dir;
   int frames = -1;
   Sticks sticks;
@@ -1067,8 +1080,10 @@ int main(int argc, char** argv) {
   std::vector<Press> presses;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
-    if (a == "--data" && i + 1 < argc) data_dir = argv[++i];
-    else if (a == "--profile" && i + 1 < argc) profile_dir = argv[++i];
+    if (a == "--data" && i + 1 < argc) {
+      data_dir = argv[++i];
+      data_given = true;
+    } else if (a == "--profile" && i + 1 < argc) profile_dir = argv[++i];
     else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
     else if (a == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
     else if (a == "--seed" && i + 1 < argc) seed = std::atoll(argv[++i]);
@@ -1176,6 +1191,11 @@ int main(int argc, char** argv) {
       SDL_free(locales);
     }
   }
+  if (!data_given && !fs::exists(data_dir)) {
+    char* pref = SDL_GetPrefPath("geow2", "geow2");
+    if (pref && fs::exists(fs::path(pref) / "data")) data_dir = fs::path(pref) / "data";
+    SDL_free(pref);
+  }
   if (!load(game, data_dir, seed, mode, language == 0 ? 1 : language)) {
     // Started from a desktop there is no console to read the log from.
     if (!headless) {
@@ -1195,7 +1215,8 @@ int main(int argc, char** argv) {
     start_multiplayer(game, mode, versus);
   }
   if (start_level >= 0) game.sequence.level = game.sequence.shown_level = start_level;
-  SDL_GPUDevice* dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
+  // Vulkan with SPIR-V, or Metal (macOS) with the shaders translated to MSL.
+  SDL_GPUDevice* dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL, false, nullptr);
   if (!dev) {
     SDL_Log("no GPU device: %s", SDL_GetError());
     if (!headless) {

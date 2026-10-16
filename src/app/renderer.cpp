@@ -35,8 +35,12 @@ constexpr uint32_t kLightW = 150, kLightH = 100;
   std::abort();
 }
 
-SDL_GPUShader* load_shader(SDL_GPUDevice* dev, const fs::path& path, SDL_GPUShaderStage stage, uint32_t samplers,
+// The shaders are SPIR-V (Vulkan); on Metal the build's translation of
+// each to MSL (spirv-cross, entry point main0) beside it as <name>.msl.
+SDL_GPUShader* load_shader(SDL_GPUDevice* dev, fs::path path, SDL_GPUShaderStage stage, uint32_t samplers,
                            uint32_t uniforms) {
+  const bool msl = !(SDL_GetGPUShaderFormats(dev) & SDL_GPU_SHADERFORMAT_SPIRV);
+  if (msl) path.replace_extension(".msl");
   Bytes code;
   try {
     code = read_file(path);
@@ -47,8 +51,8 @@ SDL_GPUShader* load_shader(SDL_GPUDevice* dev, const fs::path& path, SDL_GPUShad
   SDL_GPUShaderCreateInfo info{};
   info.code_size = code.size();
   info.code = code.data();
-  info.entrypoint = "main";
-  info.format = SDL_GPU_SHADERFORMAT_SPIRV;
+  info.entrypoint = msl ? "main0" : "main";
+  info.format = msl ? SDL_GPU_SHADERFORMAT_MSL : SDL_GPU_SHADERFORMAT_SPIRV;
   info.stage = stage;
   info.num_samplers = samplers;
   info.num_uniform_buffers = uniforms;

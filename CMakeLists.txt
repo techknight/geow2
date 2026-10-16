@@ -111,6 +111,11 @@ if(GEOW2_BUILD_GAME)
 
   file(GLOB VULKAN_SDK_BINS "C:/VulkanSDK/*/Bin")
   find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin" ${VULKAN_SDK_BINS} REQUIRED)
+  # Metal (macOS) takes MSL: each SPIR-V file translated by spirv-cross with
+  # the resources at their SPIR-V binding numbers, which is SDL's MSL layout.
+  if(APPLE)
+    find_program(SPIRV_CROSS spirv-cross HINTS "$ENV{VULKAN_SDK}/bin" REQUIRED)
+  endif()
   set(SHADER_OUT ${CMAKE_CURRENT_BINARY_DIR}/shaders)
   set(SPIRV)
   foreach(shader line.vert ui_line.vert ui_fill.frag ui_sprite.vert ui_sprite_flat.vert ui_sprite.frag line_body.frag line_cap.frag fullscreen.vert downsample.frag blur.frag combine.frag
@@ -124,6 +129,14 @@ if(GEOW2_BUILD_GAME)
       DEPENDS src/app/shaders/${shader} src/app/shaders/sampling.glsl
       COMMENT "glslc ${shader}")
     list(APPEND SPIRV ${out})
+    if(APPLE)
+      set(msl ${SHADER_OUT}/${shader}.msl)
+      add_custom_command(OUTPUT ${msl}
+        COMMAND ${SPIRV_CROSS} ${out} --msl --msl-version 20100 --msl-decoration-binding --output ${msl}
+        DEPENDS ${out}
+        COMMENT "spirv-cross ${shader}")
+      list(APPEND SPIRV ${msl})
+    endif()
   endforeach()
   add_custom_target(geow2_shaders DEPENDS ${SPIRV})
 
