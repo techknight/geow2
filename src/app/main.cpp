@@ -5,36 +5,45 @@
 //   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> [--size <w> <h>] [--mode <n>] [--level <n>]
 //         [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--trigger <0-255>] [--spawn <type> <x> <y>]...
 //         [--player <pad> <team> <role>]... [--versus] [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>]
-//         [--inputs <csv>]
+//         [--inputs <csv>] [--rng-state <file> <step>] [--crt-state <hex>] [--emulator-rounding]
+//         [--trace <csv>] [--positions <file>] [--dump <step> <file>]
 //   geow2 --data <cache-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
 //
 // The first form opens the window at the front end; the profile, the
 // local score boards and the display settings (display.txt: fullscreen,
 // exact 720p render, vsync; F11 toggles fullscreen) are kept in --profile
-// (default: the user's preferences folder). The second runs n simulation steps of a game of
-// --mode (0 Deadline, 1 Evolved, 2 Sequence, 3 Waves, 4 Pacifism, 5 King)
-// without a window, with a fixed raw stick value (XInput convention),
-// --bomb pulling the trigger on one step and --spawn adding enemies (type
-// 16: a power-up item) at the
-// start, and saves the final frame. --player joins a pad to a multiplayer
-// game (team 0-3, role 0 alone, 1 pilot, 2 copilot; --versus for teams
-// against each other), every pad holding the --stick and --fire values
-// unless --pad-stick / --pad-fire set its own. --inputs replays the pads
-// step by step from a CSV with a step column and raw lx, ly, rx, ry, lt,
-// rt columns for pad 0 and p1_lx .. p3_rt for the others (a step without
-// a row keeps the previous one; a pad without columns keeps its
-// --stick / --fire; --crt-state <hex> sets the C runtime rand()'s state,
-// which the original keeps for the whole session, and the run prints its
-// final value; --emulator-rounding rounds the fused multiply-adds as
-// Xenia does (game/fused.h), for comparing with games recorded there; a
-// <rng-state>-spawner.txt next to the --rng-state
-// file loads the spawner state with it); --positions writes every unit after each step. With
-// a seq_phase column (Sequence's phase in the
-// recorded game) the music's TransitionSwitch, which the original reads
-// from its audio thread, is raised on the steps where that phase went
-// from 1 to 2 or from 5 to 6. The third runs the front end instead,
-// pressing a button (a, b, x, y, start, back, up, down, left, right; pad 0,
-// or another with :<pad>) on the given frames; it never saves.
+// (default: the user's preferences folder).
+//
+// The second runs n simulation steps of a game of --mode (0 Deadline,
+// 1 Evolved, 2 Sequence, 3 Waves, 4 Pacifism, 5 King) without a window,
+// with a fixed raw stick value (XInput convention), --bomb pulling the
+// trigger on one step and --spawn adding enemies (type 16: a power-up
+// item) at the start, and saves the final frame. --player joins a pad to
+// a multiplayer game (team 0-3, role 0 alone, 1 pilot, 2 copilot;
+// --versus for teams against each other), every pad holding the --stick
+// and --fire values unless --pad-stick / --pad-fire set its own.
+//
+// For comparing with games recorded in an emulator of the original:
+// --inputs replays the pads step by step from a CSV with a step column
+// and raw lx, ly, rx, ry, lt, rt columns for pad 0 and p1_lx .. p3_rt for
+// the others (a step without a row keeps the previous one; a pad without
+// columns keeps its --stick / --fire). With a seq_phase column (Sequence's
+// phase in the recorded game) the music's TransitionSwitch, which the
+// original reads from its audio thread, is raised on the steps where that
+// phase went from 1 to 2 or from 5 to 6. --rng-state loads the
+// generator's state (index, then 624 words, in hex) after that step, and
+// with it a <state>-spawner.txt next to it (the spawner block drawn at
+// game start). --crt-state sets the C runtime rand()'s state, which the
+// original keeps for the whole session; the run prints its final value.
+// --emulator-rounding rounds the fused multiply-adds twice and takes the
+// emulator's frsqrte (game/fused.h). --trace writes a CSV row per step
+// (clock, ship, generator, Sequence state, enemy count, particles, units
+// by type, score, kills, multiplier), --positions every unit, shot and
+// geom after each step, --dump the units after one step.
+//
+// The third runs the front end instead, pressing a button (a, b, x, y,
+// start, back, up, down, left, right; pad 0, or another with :<pad>) on
+// the given frames; it never saves.
 
 #include <SDL3/SDL.h>
 
