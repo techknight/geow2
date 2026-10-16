@@ -187,6 +187,16 @@ add_executable(audio_tests tests/audio_tests.cpp)
 target_link_libraries(audio_tests PRIVATE geow2_audio)
 add_test(NAME audio_tests COMMAND audio_tests)
 
+# On Linux, like the static C runtime on Windows: the C++ runtime linked
+# in, so the programs need only the system's C library (glibc 2.38+).
+if(UNIX AND NOT APPLE)
+  foreach(t geow2 geow2-extract)
+    if(TARGET ${t})
+      target_link_options(${t} PRIVATE -static-libstdc++ -static-libgcc)
+    endif()
+  endforeach()
+endif()
+
 # Warnings for our own targets (not SDL's).
 if(NOT MSVC)
   foreach(t geow2_extract geow2_data geow2_game geow2_audio geow2-extract geow2
