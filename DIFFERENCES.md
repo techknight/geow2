@@ -136,11 +136,13 @@ Format for each entry:
   a vblank slows the game down rather than skipping time. On a PAL 50 Hz
   console the step is 1/50 s and the game runs at 50 steps a second
   (`sub_8205D538`, `XGetVideoMode`).
-- **Port**: steps are taken from real time, 60 a second whatever the
-  display's refresh rate, so on a display other than 60 Hz the game still
-  runs at the original speed; after a slow frame the missed steps are run
-  before the next picture (at most 8 at once). There is no 50 Hz mode.
-- **Decided**: 2026-10-15.
+- **Port**: with vsync on a display at about 60 Hz or a whole multiple of
+  it (59.94, 59.95, 120, 240 Hz), one step every refresh, or every 2, 4,
+  ... refreshes, as on the console: a slow frame slows the game. On other
+  displays (144 Hz, say) or with vsync off, steps are taken from real time, 60 a second, with frame times
+  snapped to the refresh period; after a slow frame the missed steps are
+  run before the next picture (at most 8 at once). There is no 50 Hz mode.
+- **Decided**: 2026-10-15; locking to the refresh 2026-10-16.
 
 ### Reciprocal estimates
 

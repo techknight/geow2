@@ -1,4 +1,5 @@
 #include "app/game.h"
+#include "app/profile.h"
 #include "game/fused.h"
 
 namespace fs = std::filesystem;
@@ -1377,6 +1378,7 @@ void ScoreTable::insert(int64_t score, int multiplier, const std::string& name) 
 }
 
 void step(Game& g, std::span<const Sticks> pads) {
+  PROFILE("step total");
   World& w = *g.world;
   w.bomb_kills = 0;
   // The spawner (sub_8203E7E8): the multiplayer power-ups, then Sequence's
@@ -1396,6 +1398,7 @@ void step(Game& g, std::span<const Sticks> pads) {
     };
     in.level_time = g.rules.level_time;
     in.transition = g.transition_switch;
+    PROFILE("spawner");
     g.sequence.step(w, in);
   } else if (any_alive(g)) {
     if (g.rules.mode == 0)
@@ -1413,7 +1416,10 @@ void step(Game& g, std::span<const Sticks> pads) {
   // Then last step's removed objects are deleted (sub_820359E0: removal
   // only queues them, sub_82035A40), the player objects with them; so the
   // spawner above still counted them. Their destructors run here.
-  w.purge();
+  {
+    PROFILE("purge");
+    w.purge();
+  }
   for (int k = 0; k < g.ship_count; ++k)
     if (g.ships[size_t(k)].life.removed) g.ships[size_t(k)].life.present = false;
   std::erase_if(g.player_list, [&g](size_t k) { return !g.ships[k].life.present; });
@@ -1435,14 +1441,23 @@ void step(Game& g, std::span<const Sticks> pads) {
   }
   // Then the other objects, shots included, in creation order (the player
   // list is walked first, so shots fired this step move this step).
-  w.update_entities();
+  {
+    PROFILE("entities");
+    w.update_entities();
+  }
   // Shots against enemies (sub_820523B0).
-  shot_collisions(w, g.bullets);
+  {
+    PROFILE("shot collisions");
+    shot_collisions(w, g.bullets);
+  }
   std::erase_if(g.bullets, [](const Bullet& b) { return b.removed; });
   // Players crossing gates' beams (sub_820476F0).
   gate_crossings(w);
   // Geoms are pulled in and picked up (sub_8204D410).
-  collect_geoms(w);
+  {
+    PROFILE("geoms");
+    collect_geoms(w);
+  }
   // Power-ups are picked up (sub_8204B770).
   pick_up_items(g);
   // The HUD rows' pulses fade (0.9 a step, 0x82000D70).
@@ -1600,9 +1615,15 @@ void step(Game& g, std::span<const Sticks> pads) {
   // Kill markers: radius 32 (dat_82001140), strength 6 (dat_82001414).
   in.pushes.emplace_back();
   for (const Vec2& m : w.death_markers) in.pushes.back().push_back({m.x, m.y, 32.0f, 6.0f});
-  g.grid.step(in, kArenaHalfX, kArenaHalfY);
-  grid_lines(g.grid, g.grid_tuning, g.grid_fade, g.grid_lines);
-  grid_warp_mesh(g.grid, g.grid_tuning, g.warp_mesh);
+  {
+    PROFILE("grid step");
+    g.grid.step(in, kArenaHalfX, kArenaHalfY);
+  }
+  {
+    PROFILE("grid lines+mesh");
+    grid_lines(g.grid, g.grid_tuning, g.grid_fade, g.grid_lines);
+    grid_warp_mesh(g.grid, g.grid_tuning, g.warp_mesh);
+  }
   // The draw then eases the fade in (sub_8205CAF0; in game, so toward 1).
   g.grid_fade = grid_fade_step(g.grid_fade, true);
   g.grid_visible = g.grid_fade > kGridVisible;
@@ -1612,7 +1633,10 @@ void step(Game& g, std::span<const Sticks> pads) {
   // colour * 8 (sub_82051DB8); the players their colour unit's glow
   // (sub_82050D00).
   g.lights.clear();
-  w.light_entities(g.lights);
+  {
+    PROFILE("entity lights");
+    w.light_entities(g.lights);
+  }
   for (const Bullet& b : g.bullets) {
     const float c[3] = {b.colour[0] * 8.0f, b.colour[1] * 8.0f, b.colour[2] * 8.0f};
     emit_light(g.lights, b.radius * 6.0f, b.x, b.y, c);
@@ -1637,21 +1661,30 @@ void step(Game& g, std::span<const Sticks> pads) {
   w.effects.step(kStep);
   well_particle_forces(w);
   g.particle_quads.clear();
-  w.particles.step(w.particle_tuning, kStep, w.half_x, w.half_y, w.attractors, w.repulsors, g.particle_quads,
-                   g.lights);
+  {
+    PROFILE("particles");
+    w.particles.step(w.particle_tuning, kStep, w.half_x, w.half_y, w.attractors, w.repulsors, g.particle_quads,
+                     g.lights);
+  }
 
   // The line debris: drawn by the render set-up (sub_82074600), then
   // stepped on the render worker (sub_82074B28) with the stars.
   g.debris_lines.clear();
-  w.debris.draw(g.debris_lines, g.lights);
-  w.debris.step(w.smash, kStep, w.half_x, w.half_y);
+  {
+    PROFILE("debris");
+    w.debris.draw(g.debris_lines, g.lights);
+    w.debris.step(w.smash, kStep, w.half_x, w.half_y);
+  }
   // The lingering numbers likewise (sub_8205A8F0, then sub_8205A7F0).
   g.linger_lines.clear();
   w.popups.draw(g.font, g.linger_lines);
   w.popups.step(kStep);
 
   // The stars' step (sub_82075548, on the render worker each frame).
-  g.stars.update(*g.gm, 1.0f, g.star_vertices);
+  {
+    PROFILE("stars");
+    g.stars.update(*g.gm, 1.0f, g.star_vertices);
+  }
 
   // What the wells' pulls and shoves did to the players' velocity: each
   // added to it in turn, as the original's go straight into the ship's
@@ -1764,7 +1797,11 @@ void draw_game_hud(const Game& g, LineBatch& ui) {
 void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format,
             uint32_t w, uint32_t h, const Game& g, const UiCanvas& ui) {
   static LineBatch front;
-  foreground(g, front);
+  {
+    PROFILE("foreground lines");
+    foreground(g, front);
+  }
+  PROFILE("render build+record");
   r.draw(cmd, target, format, w, h, camera_view_projection(g.camera, *g.gm), g.star_vertices,
          g.grid_visible ? &g.grid_lines : nullptr, g.walls, g.particle_quads, g.linger_lines, front, ui, g.ui,
          camera_view_projection(CameraState{}, *g.gm));
@@ -1774,6 +1811,7 @@ void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_
 // original renders one frame per step).
 void tick(Game& g, std::span<const Sticks> pads, Renderer& r, SDL_GPUCommandBuffer* cmd) {
   step(g, pads);
+  PROFILE("light map upload");
   r.update_light_map(cmd, g.warp_mesh, g.lights);
 }
 

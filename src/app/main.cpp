@@ -39,7 +39,9 @@
 // emulator's frsqrte (game/fused.h). --trace writes a CSV row per step
 // (clock, ship, generator, Sequence state, enemy count, particles, units
 // by type, score, kills, multiplier), --positions every unit, shot and
-// geom after each step, --dump the units after one step.
+// geom after each step, --dump the units after one step. --perf also
+// draws every step offscreen at --size and prints the time of each phase
+// (src/app/profile.h) every 600 steps.
 //
 // The third runs the front end instead, pressing a button (a, b, x, y,
 // start, back, up, down, left, right; pad 0, or another with :<pad>) on
@@ -49,6 +51,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -61,6 +64,7 @@
 #include <vector>
 
 #include "app/frontend.h"
+#include "app/profile.h"
 #include "game/fused.h"
 #include "audio/device.h"
 #include "audio/engine.h"
@@ -389,6 +393,21 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
   // "step type:x:y ...".
   std::ofstream positions;
   if (!positions_path.empty()) positions.open(positions_path, std::ios::trunc);
+  // --perf: every step is also drawn (offscreen, at --size) and waited
+  // for, and the phase times are reported every 600 steps.
+  SDL_GPUTexture* prof_target = nullptr;
+  const UiCanvas prof_ui{};
+  if (g_profile.on) {
+    SDL_GPUTextureCreateInfo tci{};
+    tci.type = SDL_GPU_TEXTURETYPE_2D;
+    tci.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
+    tci.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+    tci.width = w;
+    tci.height = h;
+    tci.layer_count_or_depth = 1;
+    tci.num_levels = 1;
+    prof_target = SDL_CreateGPUTexture(dev, &tci);
+  }
   for (int i = 0; i < frames; ++i) {
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     // By joined index, from each joined pad.
@@ -402,8 +421,28 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
     std::array<Sticks, 4> s{};
     for (int j = 0; j < g.joined_count && j < 4; ++j) s[size_t(j)] = pads[size_t(g.joined_pad[size_t(j)] & 3)];
     if (i == bomb_step) s[0].right_trigger = 255;
-    tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
-    SDL_SubmitGPUCommandBuffer(cmd);
+    if (prof_target) {
+      {
+        PROFILE("frame (cpu)");
+        tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
+        render(r, cmd, prof_target, SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM, w, h, g, prof_ui);
+      }
+      SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+      {
+        PROFILE("gpu wait");
+        if (fence) SDL_WaitForGPUFences(dev, true, &fence, 1);
+      }
+      if (fence) SDL_ReleaseGPUFence(dev, fence);
+      g_profile.end_frame(i + 1);
+      if ((i + 1) % 600 == 0) {
+        char label[32];
+        std::snprintf(label, sizeof(label), "steps %d-%d", i - 598, i + 1);
+        g_profile.report(label);
+      }
+    } else {
+      tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
+      SDL_SubmitGPUCommandBuffer(cmd);
+    }
     // --rng-state: the generator's state read from the oracle (the index,
     // then 624 words, in hex), loaded after that step.
     if (!rng_path.empty() && i + 1 == rng_step) {
@@ -675,16 +714,39 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
   UiCanvas ui;
   uint64_t last = SDL_GetTicksNS();
   double pending = 0.0;
+  // Pacing. The original takes one step per vblank. With vsync on a
+  // display at 60 Hz or a whole multiple of it (59.94, 120, 240, ...) the
+  // steps lock to the refresh: one every `frames_per_step` presented
+  // frames, so frame-time jitter never shows as a doubled or missing step.
+  // Other rates (or vsync off) step from real time, with frame times
+  // snapped to the refresh period first.
+  double refresh = 0.0;
+  int frames_per_step = 0;
+  int frame_in_step = 0;
+  auto read_refresh = [&]() {
+    refresh = 0.0;
+    frames_per_step = 0;
+    if (const SDL_DisplayMode* m = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window)))
+      refresh = double(m->refresh_rate);
+    if (display.vsync && refresh > 0.0) {
+      const int k = int(std::lround(refresh / 60.0));
+      if (k >= 1 && std::fabs(refresh / k - 60.0) < 0.6) frames_per_step = k;
+    }
+  };
+  read_refresh();
   while (running) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
       if (e.type == SDL_EVENT_QUIT) running = false;
+      if (e.type == SDL_EVENT_WINDOW_DISPLAY_CHANGED || e.type == SDL_EVENT_DISPLAY_CURRENT_MODE_CHANGED)
+        read_refresh();
       if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat &&
           (e.key.scancode == SDL_SCANCODE_F11 ||
            (e.key.scancode == SDL_SCANCODE_RETURN && (e.key.mod & SDL_KMOD_ALT)))) {
         display.fullscreen = !display.fullscreen;
         SDL_SetWindowFullscreen(window, display.fullscreen);
         save_display(profile_dir, display);
+        read_refresh();
       }
       if (e.type == SDL_EVENT_GAMEPAD_ADDED) {
         for (auto& p : pads)
@@ -704,10 +766,33 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
     // Fixed 1/60 s frames from real time: the front end, then the
     // simulation step (the main loop's order, sub_82037E00).
     const uint64_t now = SDL_GetTicksNS();
-    pending += double(now - last) / 1e9;
+    double dt = double(now - last) / 1e9;
     last = now;
+    int steps = 0;
+    if (frames_per_step > 0) {
+      // Locked to the refresh (a frame that misses a vblank slows the
+      // game, as on the console).
+      if (++frame_in_step >= frames_per_step) {
+        frame_in_step = 0;
+        steps = 1;
+      }
+    } else {
+      if (refresh > 0.0) {
+        // Snap to whole refresh periods when close.
+        const double period = 1.0 / refresh;
+        const double n = std::round(dt / period);
+        if (n >= 1.0 && std::fabs(dt - n * period) < 0.25 * period) dt = n * period;
+      }
+      pending += dt;
+      while (pending >= kStep && steps < 8) {
+        pending -= kStep;
+        ++steps;
+      }
+      if (pending > kStep) pending = 0.0;
+    }
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
-    for (int n = 0; pending >= kStep && n < 8; ++n) {
+    for (int n = 0; n < steps; ++n) {
+      PROFILE("step+audio");
       std::array<PadState, 4> state{};
       for (size_t i = 0; i < 4; ++i) state[i] = pad_state(pads[i]);
       keyboard_pad(state[0], g.flow == 2);
@@ -741,17 +826,29 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
         glue.frame(f);
         g.transition_switch = sound.transition_switch();
       }
-      pending -= kStep;
     }
-    if (pending > kStep) pending = 0.0;
+    PROFILE("ui+draw+present");
     ui.clear();
     fe.draw(ui);
     r.tuning.bloom_level = g.bloom_level;
     SDL_GPUTexture* swap = nullptr;
     uint32_t w = 0, h = 0;
-    if (SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window, &swap, &w, &h) && swap)
-      draw_frame(dev, r, cmd, swap, format, w, h, g, ui, display.exact_720p, frame720);
+    bool acquired;
+    {
+      PROFILE("swapchain wait");
+      acquired = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window, &swap, &w, &h);
+    }
+    if (acquired && swap) draw_frame(dev, r, cmd, swap, format, w, h, g, ui, display.exact_720p, frame720);
     SDL_SubmitGPUCommandBuffer(cmd);
+    if (g_profile.on) {
+      // --perf in the window: a report every 600 presented frames, and
+      // every frame with more or fewer than one step.
+      if (steps > 1 || dt > 0.025)
+        std::printf("frame with %d steps, %.2f ms since the last\n", steps, dt * 1000.0);
+      g_profile.end_frame(-1, 1e9);
+      static int presented = 0;
+      if (++presented % 600 == 0) g_profile.report(refresh > 0.0 ? "window" : "window (refresh unknown)");
+    }
   }
   if (frame720) SDL_ReleaseGPUTexture(dev, frame720);
   for (auto& p : pads)
@@ -823,6 +920,7 @@ int main(int argc, char** argv) {
     else if (a == "--trace" && i + 1 < argc) trace_path = argv[++i];
     else if (a == "--inputs" && i + 1 < argc) inputs_path = argv[++i];
     else if (a == "--emulator-rounding") emulator_rounding = true;
+    else if (a == "--perf") g_profile.on = true;
     else if (a == "--crt-state" && i + 1 < argc) crt_state = int64_t(std::strtoul(argv[++i], nullptr, 16));
     else if (a == "--positions" && i + 1 < argc) positions_path = argv[++i];
     else if (a == "--rng-state" && i + 2 < argc) {
@@ -887,7 +985,7 @@ int main(int argc, char** argv) {
                    " [--vsync|--no-vsync] [--language <en|de|fr|es|it>] [--seed <n>] [--frames <n> --screenshot <png>"
                    " [--size <w> <h>] [--mode <0-5>] [--level <0-19>] [--stick <x> <y>] [--fire <x> <y>]"
                    " [--bomb <step>] [--spawn <type> <x> <y>]... [--player <pad> <team> <role>]... [--versus]"
-                   " [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] [--inputs <csv>] [--emulator-rounding] [--crt-state <hex>]"
+                   " [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] [--inputs <csv>] [--emulator-rounding] [--crt-state <hex>] [--perf]"
                    " | --frontend [--press <frame> <button>]...]\n");
       return 2;
     }
