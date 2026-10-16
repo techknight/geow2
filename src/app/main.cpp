@@ -464,6 +464,14 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
         std::snprintf(u, sizeof(u), " %.9g:%.9g:%.9g:%.9g", double(b.x), double(b.y), double(b.vx), double(b.vy));
         positions << u;
       }
+      // Then the geoms (type 0x22): x:y:vx:vy.
+      positions << " |";
+      for (const auto& e : g.world->entities) {
+        if (e->type != 0x22 || (e->flags & kEntityRemoved)) continue;
+        char u[128];
+        std::snprintf(u, sizeof(u), " %.9g:%.9g:%.9g:%.9g", double(e->x), double(e->y), double(e->vx), double(e->vy));
+        positions << u;
+      }
       positions << '\n';
     }
     if (trace.is_open()) {
