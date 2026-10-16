@@ -39,6 +39,14 @@ struct AudioNames {
   static AudioNames from_image(std::span<const uint8_t> image);
 };
 
+// The renderer's dry voice, as the game's effect on it (sub_820FD630)
+// leaves it: the frame at 0.5 (sub_820EC0B8 onto a zeroed buffer), then
+// the whole frame zeroed if a sample is above 100 or not finite, or else
+// if its RMS (a fused sum of squares in channel order) is above
+// MasterEffectRMSMuteThreshold, 5.0 (set by sub_82176DE8). The voice
+// reaches the speakers through an identity map at 1.0.
+void dry_voice(AudioBuffer& b);
+
 // The audio engine: the nine AOBJ objects of the original (System, FX,
 // UIMusic, Song_1..6) run as component graphs and mixed to 5.1 (FL FR C LFE
 // SL SR) at 48 kHz in 256-sample frames. Game-thread calls are queued and

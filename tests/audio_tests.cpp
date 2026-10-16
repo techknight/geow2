@@ -3,6 +3,7 @@
 
 #include <bit>
 #include <cmath>
+#include <limits>
 #include <cstdio>
 #include <string>
 #include <utility>
@@ -483,6 +484,30 @@ static void test_engine() {
   expect(e.transition_switch() == 0.0f, "engine: no Song_3, TransitionSwitch 0");
 }
 
+// The dry voice: half level; a sample above 100, a NaN or an RMS above 5
+// silences the whole frame.
+static void test_dry_voice() {
+  AudioBuffer b;
+  b.channels = 6;
+  b.ch[3][7] = 3.0f;
+  dry_voice(b);
+  expect(b.ch[3][7] == 1.5f, "dry voice: half level");
+  b.ch[0][0] = 201.0f;
+  dry_voice(b);
+  expect(b.ch[3][7] == 0.0f && b.ch[0][0] == 0.0f, "dry voice: above 100 silences the frame");
+  b.ch[5][255] = std::numeric_limits<float>::quiet_NaN();
+  b.ch[1][1] = 1.0f;
+  dry_voice(b);
+  expect(b.ch[1][1] == 0.0f && b.ch[5][255] == 0.0f, "dry voice: NaN silences the frame");
+  // RMS after halving: 11 on every sample is 5.5 > 5; 10 is 5, not above.
+  for (auto& c : b.ch) c.fill(11.0f);
+  dry_voice(b);
+  expect(b.ch[2][100] == 0.0f, "dry voice: RMS above 5 silences the frame");
+  for (auto& c : b.ch) c.fill(10.0f);
+  dry_voice(b);
+  expect(b.ch[2][100] == 5.0f, "dry voice: RMS of 5 passes");
+}
+
 static void run_all() {
   test_reader();
   test_script();
@@ -495,6 +520,7 @@ static void run_all() {
   test_source();
   test_glue();
   test_engine();
+  test_dry_voice();
 }
 
 int main() {

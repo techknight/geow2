@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -67,6 +68,23 @@ std::filesystem::path find_file(const std::filesystem::path& dir, const std::str
 }
 
 }  // namespace
+
+void dry_voice(AudioBuffer& b) {
+  const int n = b.channels;
+  bool zero = false;
+  for (int c = 0; c < n; ++c)
+    for (float& x : b.ch[size_t(c)]) {
+      x *= 0.5f;  // dat_82000724
+      if (x > 100.0f || !std::isfinite(x)) zero = true;  // dat_82001020, sub_82133D40
+    }
+  if (!zero) {
+    float acc = 0.0f;
+    for (int c = 0; c < n; ++c)
+      for (float x : b.ch[size_t(c)]) acc = std::fmaf(x, x, acc);
+    zero = std::sqrt(acc / float(n * kFrameSamples)) > 5.0f;  // dat_820006F0
+  }
+  if (zero) b.clear();
+}
 
 AudioNames AudioNames::from_image(std::span<const uint8_t> img) {
   AudioNames n;
@@ -265,6 +283,7 @@ void AudioEngine::run_frame() {
   renderer_.channels = 6;
   for (Slot& s : objects_)
     if (!s.obj->suspended) s.obj->generate_frame();
+  dry_voice(renderer_);
   const size_t base = pending_.size();
   pending_.resize(base + size_t(kFrameSamples) * 6);
   float* out = pending_.data() + base;
