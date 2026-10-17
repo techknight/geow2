@@ -28,12 +28,6 @@ using namespace geow2;
 
 namespace {
 
-const KnownFile* known(const std::string& path) {
-  for (const auto& k : kKnownFiles)
-    if (path == k.path) return &k;
-  return nullptr;
-}
-
 std::string lower(std::string s) {
   for (char& c : s) c = char(std::tolower(static_cast<unsigned char>(c)));
   return s;

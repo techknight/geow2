@@ -29,8 +29,10 @@ Format for each entry:
   this machine (saved with the profile). It is shown wherever the
   original shows a Live board: the results screen's right-hand list (the
   rows around the last game's, which is highlighted), the mode-select
-  tiles' best score, and the leaderboard screens (one "Overall" view; up
-  and down scroll, no gamer cards). The session tables behave as in the
+  tiles' best score, and the leaderboard screens (one "Overall" view of
+  ten rows, no gamer cards; the right stick, LB/LT and RB/RT scroll as
+  the original's friends board does, `sub_82089650`, and up and down
+  also move one row). The session tables behave as in the
   original. Achievements are unlocked and listed locally with the
   original icons. There is no online service.
 - **Decided**: 2026-10-14; local boards' shape 2026-10-15.

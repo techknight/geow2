@@ -94,7 +94,8 @@ add_library(geow2_game STATIC
 target_link_libraries(geow2_game PUBLIC geow2_data)
 
 add_executable(geow2-extract src/extract/main.cpp)
-target_link_libraries(geow2-extract PRIVATE geow2_extract geow2_data geow2_game)
+# (geow2_game brings geow2_data and geow2_extract; naming them again duplicates them on the link line.)
+target_link_libraries(geow2-extract PRIVATE geow2_game)
 
 # The game: SDL3 (window, input, GPU) and SPIR-V shaders compiled with glslc.
 option(GEOW2_BUILD_GAME "Build the game (needs network access for SDL3 and the Vulkan SDK's glslc)" ON)

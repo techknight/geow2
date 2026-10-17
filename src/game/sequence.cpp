@@ -10,8 +10,6 @@
 namespace geow2 {
 namespace {
 
-constexpr float kTwoPow32 = 2.32830644e-10f;  // dat_820006E4
-
 // The C runtime's ctype tests in the "C" locale: space (ctype & 8,
 // sub_8212FB60) and letters or digits (ctype & 0x107, sub_8212FB80).
 bool is_space(char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; }

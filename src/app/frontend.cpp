@@ -28,12 +28,6 @@ int mode_of_text(int text) {
   }
 }
 
-// The text id of a mode's name.
-int text_of_mode(int mode) {
-  static const int kText[6] = {0x1E, 0x1C, 0x1D, 0x1F, 0x20, 0x21};
-  return mode >= 0 && mode < 6 ? kText[mode] : 0x1E;
-}
-
 // The selection pulse: fma(fma(cos(phase), 3, 1), 0.5, 1.5), 0.5 .. 3.5.
 float pulse_factor(const Game& g, float phase) {
   const float c = float(g.gm->cos(phase));
@@ -2127,6 +2121,38 @@ void Frontend::board_view(int mode, std::function<void(const MenuInput&)> back) 
          const int max_first = std::max(count - 10, 0);
          if (in.pressed & kUp) board_first_ = std::clamp(board_first_ - 1, 0, max_first);
          if (in.pressed & kDown) board_first_ = std::clamp(board_first_ + 1, 0, max_first);
+         // sub_82089650: the right stick fills an accumulator (signed RY²
+         // times 0.333 a frame), LB/LT and RB/RT add a page of 8; at most
+         // one row each way a frame, sound 0x16 when that moves the row; the
+         // remainder settles 4 frames after the last such input.
+         const float ry = in.analog[1];
+         if (std::fabs(ry) > 0.1f) {  // dat_82000714
+           board_hold_ = 4;
+           const float sq = ry * ry;
+           board_scroll_ = fmadds(ry >= 0.0f ? sq : -sq, 0.333f, board_scroll_);  // fsel; dat_82005E44
+         }
+         if (in.pressed & (kLb | kLt)) {
+           board_scroll_ = board_scroll_ - 8.0f;  // dat_82000D18
+           board_hold_ = 4;
+         }
+         if (in.pressed & (kRb | kRt)) {
+           board_scroll_ = board_scroll_ + 8.0f;
+           board_hold_ = 4;
+         }
+         auto step = [&](int d) {
+           const int row = std::clamp(board_first_ + d, 0, max_first);
+           if (row != board_first_ && board_hold_ == 4) sound(audio::Event::kUiChange);
+           board_first_ = row;
+         };
+         if (board_scroll_ <= -1.0f) {
+           board_scroll_ = board_scroll_ + 1.0f;
+           step(-1);
+         }
+         if (board_scroll_ >= 1.0f) {
+           board_scroll_ = board_scroll_ - 1.0f;
+           step(1);
+         }
+         if ((board_hold_ < 1 || --board_hold_ == 0) && std::fabs(board_scroll_) < 1.0f) board_scroll_ = 0.0f;
        },
        0);
   screen_.tips = [this](TextLayout& l) {
