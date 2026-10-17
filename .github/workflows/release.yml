@@ -1,0 +1,256 @@
+# Builds the release archives for Windows (x64, code-signed), macOS (universal,
+# Developer ID-signed and notarized) and Linux (x86-64), and publishes them.
+#   - Push a tag like v1.0.0 (matching project(VERSION) in CMakeLists.txt) →
+#     a GitHub Release with the three archives, SHA256SUMS and, in a public
+#     repository, build provenance attestations.
+#   - Run manually (Actions ▸ Release ▸ Run workflow) → the archives as build
+#     artifacts only.
+#
+# Repository secrets; each platform's signing is skipped while its secrets are
+# unset, leaving that build unsigned.
+#   macOS (Developer ID):
+#     MACOS_CERTIFICATE_P12       base64 of the Developer ID Application .p12
+#     MACOS_CERTIFICATE_PASSWORD  its password
+#     NOTARY_KEY_P8               base64 of the App Store Connect API key (.p8)
+#     NOTARY_KEY_ID               the key's ID
+#     NOTARY_ISSUER_ID            the App Store Connect issuer UUID
+#   Windows (Azure Artifact Signing, OIDC through the "release" environment):
+#     AZURE_TENANT_ID             Entra tenant of the app registration
+#     AZURE_CLIENT_ID             app registration with a federated credential for
+#                                 repo:<owner>/geow2:environment:release and the
+#                                 "Artifact Signing Certificate Profile Signer" role
+#     ARTIFACT_SIGNING_ENDPOINT   e.g. https://eus.codesigning.azure.net
+#     ARTIFACT_SIGNING_ACCOUNT    the Artifact Signing account name
+#     ARTIFACT_SIGNING_PROFILE    the Public Trust certificate profile name
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: v
+        name: Version from CMakeLists.txt (and the tag, if any)
+        run: |
+          version=$(sed -n 's/^project(geow2 VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "tag $GITHUB_REF_NAME does not match project(VERSION $version)" >&2
+            exit 1
+          fi
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    # The OIDC token's subject is then repo:<owner>/<repo>:environment:release for
+    # every run (tag or manual), so one federated credential covers all releases.
+    environment: release
+    permissions:
+      contents: read
+      id-token: write   # OIDC login to Azure for signing
+    env:
+      SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' }}   # `secrets` can't be used in a step `if`
+      OUT: geow2-${{ needs.version.outputs.version }}-windows-x64
+    steps:
+      - uses: actions/checkout@v5
+      - uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          install_runtime: false
+          cache: true
+      - run: pip install ninja
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Build and test
+        run: |
+          cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+          cmake --install build --prefix ${{ env.OUT }}
+
+      - name: Azure login
+        if: env.SIGNING == 'true'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          # No subscription: the app's only role is on the certificate profile.
+          allow-no-subscriptions: true
+
+      - name: Sign
+        if: env.SIGNING == 'true'
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ secrets.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.ARTIFACT_SIGNING_PROFILE }}
+          files-folder: ${{ env.OUT }}
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Get-AuthenticodeSignature "$env:OUT\geow2.exe", "$env:OUT\geow2-extract.exe" | Format-List Path, Status, SignerCertificate
+          Compress-Archive -Path "$env:OUT" -DestinationPath "$env:OUT.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: ${{ env.OUT }}.zip
+
+  macos:
+    needs: version
+    runs-on: macos-15
+    env:
+      SIGNING: ${{ secrets.MACOS_CERTIFICATE_P12 != '' }}
+      OUT: geow2-${{ needs.version.outputs.version }}-macos
+    steps:
+      - uses: actions/checkout@v5
+      - run: brew install ninja shaderc spirv-cross
+      - name: Build (universal) and test
+        run: |
+          cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+          cmake --install build --prefix "$OUT"
+          lipo -info "$OUT/geow2.app/Contents/MacOS/geow2" "$OUT/geow2-extract"
+
+      - name: Import signing certificate
+        if: env.SIGNING == 'true'
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          rm "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Sign and notarize
+        if: env.SIGNING == 'true'
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          ID="Developer ID Application"
+          codesign --force --options runtime --timestamp --sign "$ID" "$OUT/geow2-extract"
+          codesign --force --options runtime --timestamp --sign "$ID" "$OUT/geow2.app"
+          codesign --verify --strict --verbose=2 "$OUT/geow2.app"
+          codesign --verify --strict --verbose=2 "$OUT/geow2-extract"
+          echo "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          ditto -c -k --keepParent "$OUT" "$OUT.zip"
+          xcrun notarytool submit "$OUT.zip" --key "$RUNNER_TEMP/AuthKey.p8" \
+            --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
+          rm "$RUNNER_TEMP/AuthKey.p8" "$OUT.zip"
+          xcrun stapler staple "$OUT/geow2.app"
+          spctl --assess --type execute -vv "$OUT/geow2.app"
+
+      - name: Package
+        run: ditto -c -k --keepParent "$OUT" "$OUT.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: ${{ env.OUT }}.zip
+
+      - name: Clean up keychain
+        if: always() && env.SIGNING == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+
+  linux:
+    needs: version
+    runs-on: ubuntu-24.04
+    # Built on Ubuntu 22.04 (glibc 2.35), so the program runs on SteamOS and on
+    # most distributions of the last few years.
+    container: ubuntu:22.04
+    env:
+      OUT: geow2-${{ needs.version.outputs.version }}-linux-x86_64
+      CXX: g++-12
+    steps:
+      - name: Tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y git ca-certificates python3-pip g++-12 glslc \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
+            libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl-dev libdrm-dev \
+            libgbm-dev libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev
+          pip3 install cmake ninja
+      - uses: actions/checkout@v5
+      - name: Build and test
+        run: |
+          cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+          cmake --install build --prefix "$OUT"
+          objdump -T "$OUT/geow2" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+          tar czf "$OUT.tar.gz" "$OUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: ${{ env.OUT }}.tar.gz
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [version, windows, macos, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write       # attestations
+      attestations: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum geow2-* > SHA256SUMS
+          cat SHA256SUMS
+      - name: Attest build provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/geow2-*
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          # The release notes: this version's section of CHANGELOG.md, then how
+          # to verify the downloads.
+          awk -v v="## $VERSION" '$0 == v {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
+          cat >> notes.md <<'EOF'
+
+          **You need your own copy of the Xbox Live Arcade game**: see "Getting started" in the README to make the data folder with `geow2-extract`.
+
+          - **Windows**: x64, code-signed. Unzip and run `geow2.exe`.
+          - **macOS**: universal (Apple silicon and Intel), macOS 11 or later, signed and notarized. Unzip and open `geow2.app`.
+          - **Linux**: x86-64, needs a Vulkan driver. Unpack and run `geow2`.
+
+          Verify a download: `sha256sum -c SHA256SUMS --ignore-missing`, or `gh attestation verify <file> -R techknight/geow2`.
+          EOF
+          gh release create "$GITHUB_REF_NAME" dist/geow2-* dist/SHA256SUMS \
+            --title "geow2 $VERSION" --notes-file notes.md
