@@ -51,6 +51,8 @@ struct RenderTuning {
 // targets, each blurred into a five-level bloom, then composited.
 class Renderer {
  public:
+  // A fatal error also shows a message box (off for runs without a window).
+  static inline bool error_boxes = true;
   bool init(SDL_GPUDevice* device, const std::filesystem::path& shader_dir);
   // The UI's textures from the user's files (D3DX's TGA reading, A8R8G8B8,
   // one level); a missing one is left out and its sprites are skipped.

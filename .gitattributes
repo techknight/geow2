@@ -5,3 +5,5 @@
 *.bin binary
 *.wav binary
 *.ogg binary
+*.ico binary
+*.icns binary

@@ -21,3 +21,20 @@ Data.bin
 ArcadeInfo.xml
 584108FF/
 dist/
+
+# what the extractor and the game write (never commit them)
+*.wav
+*.xma.tmp
+image.bin
+xex/
+profile/
+profile.bin
+scores.txt
+display.txt
+achievements.txt
+
+# editors and systems
+.DS_Store
+.vscode/
+.idea/
+CMakeUserPresets.json

@@ -22,6 +22,7 @@
 #include "extract/sha1.h"
 #include "extract/stfs.h"
 #include "extract/xex.h"
+#include "version.h"
 
 namespace fs = std::filesystem;
 using namespace geow2;
@@ -264,10 +265,18 @@ int main(int argc, char** argv) {
       return 0;
     }
     if (cmd == "dump-db" && argc == 3) return dump_db(argv[2]);
-    std::fprintf(stderr,
+    if (cmd == "--version") {
+      std::printf("geow2-extract %s\n", GEOW2_VERSION);
+      return 0;
+    }
+    const bool help = cmd == "--help" || cmd == "-h";
+    std::fprintf(help ? stdout : stderr,
+                 "geow2-extract %s\n"
                  "usage:\n  geow2-extract unpack <package-file | extracted-folder> <data-dir>\n"
-                 "  geow2-extract verify <data-dir>\n  geow2-extract audio <data-dir>\n");
-    return 2;
+                 "  geow2-extract verify <data-dir>\n  geow2-extract audio <data-dir>\n"
+                 "  geow2-extract --version\n",
+                 GEOW2_VERSION);
+    return help ? 0 : 2;
   } catch (const std::exception& e) {
     std::fprintf(stderr, "error: %s\n", e.what());
     return 1;

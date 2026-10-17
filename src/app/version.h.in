@@ -1,0 +1,4 @@
+#pragma once
+
+// Configured by CMakeLists.txt from project(VERSION).
+#define GEOW2_VERSION "@PROJECT_VERSION@"

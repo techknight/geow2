@@ -1,8 +1,14 @@
-"""Pre-commit guard: refuse staged files that are, or look like, game data.
+"""Guard: refuse files that are, or look like, game data.
 
-Checks every staged file for:
+    python tools/guard.py          the staged files (the pre-commit hook)
+    python tools/guard.py --all    every tracked file (CI)
+
+Checks each file for:
 - a SHA-1 equal to a file of the original package (hashes below),
-- a leading magic of one of the original formats,
+- a leading magic of one of the original formats, or of what the extractor
+  writes (decoded sound),
+- a PNG anywhere but res/ (the project's own icons; screenshots of the game
+  stay out),
 - a size over 1 MiB (nothing we write should be that large).
 """
 import hashlib
@@ -41,8 +47,10 @@ KNOWN_SHA1 = {
     "A43E38F1F90AA1018BA15DA5AB1E8045A396D3E1",
 }
 
-# Leading magics of the original formats (and of a decrypted XEX's PE image).
-MAGICS = [b"LIVE", b"CON ", b"PIRS", b"XEX2", b"XTLO", b"FLSK", b"BANK", b"AOBJ", b"MZ"]
+# Leading magics of the original formats, of a decrypted XEX's PE image and
+# of the extractor's decoded sound (WAV).
+MAGICS = [b"LIVE", b"CON ", b"PIRS", b"XEX2", b"XTLO", b"FLSK", b"BANK", b"AOBJ", b"MZ", b"RIFF"]
+PNG = b"\x89PNG"
 
 MAX_SIZE = 1 << 20
 
@@ -59,14 +67,27 @@ def staged_blob(path):
     return subprocess.run(["git", "show", f":{path}"], capture_output=True, check=True).stdout
 
 
+def tracked_files():
+    out = subprocess.run(["git", "ls-files", "-z"], capture_output=True, check=True).stdout
+    return [p for p in out.decode("utf-8").split("\0") if p]
+
+
+def tracked_blob(path):
+    with open(path, "rb") as f:
+        return f.read()
+
+
 def main():
+    every = "--all" in sys.argv[1:]
     bad = []
-    for path in staged_files():
-        data = staged_blob(path)
+    for path in tracked_files() if every else staged_files():
+        data = tracked_blob(path) if every else staged_blob(path)
         if hashlib.sha1(data).hexdigest().upper() in KNOWN_SHA1:
             bad.append(f"{path}: identical to a file of the original game")
         elif any(data.startswith(m) for m in MAGICS):
-            bad.append(f"{path}: starts with the magic of an original game format")
+            bad.append(f"{path}: starts with the magic of an original game format or of extracted data")
+        elif data.startswith(PNG) and not path.startswith("res/"):
+            bad.append(f"{path}: a PNG outside res/ (no screenshots or game images)")
         elif len(data) > MAX_SIZE:
             bad.append(f"{path}: larger than 1 MiB")
     for b in bad:

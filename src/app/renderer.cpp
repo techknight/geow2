@@ -31,7 +31,7 @@ constexpr uint32_t kLightW = 150, kLightH = 100;
 [[noreturn]] void out_of_gpu_memory(const char* what) {
   const std::string msg = std::string("Out of graphics memory (") + what + "): " + SDL_GetError();
   SDL_Log("%s", msg.c_str());
-  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Geometry Wars: Retro Evolved 2", msg.c_str(), nullptr);
+  if (Renderer::error_boxes) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "geow2", msg.c_str(), nullptr);
   std::abort();
 }
 

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=geow2
+GenericName=Arcade shooter
+Comment=Native port of an Xbox Live Arcade twin-stick shooter (needs your own copy of the game)
+Exec=geow2
+Icon=geow2
+Terminal=false
+Categories=Game;ArcadeGame;
+StartupWMClass=com.techknight.geow2

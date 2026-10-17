@@ -51,6 +51,8 @@
 // the given frames; it never saves.
 
 #include <SDL3/SDL.h>
+// On Windows the game is a window program: SDL provides its WinMain.
+#include <SDL3/SDL_main.h>
 
 #include <algorithm>
 #include <array>
@@ -67,6 +69,7 @@
 #include <string>
 #include <vector>
 
+#include "app/console.h"
 #include "app/frontend.h"
 #include "app/profile.h"
 #include "game/fused.h"
@@ -76,9 +79,11 @@
 #include "app/game.h"
 #include "app/png.h"
 #include "app/renderer.h"
+#include "data/png_read.h"
 #include "extract/bytes.h"
 #include "game/gravity_well.h"
 #include "game/spawn.h"
+#include "version.h"
 
 namespace fs = std::filesystem;
 using namespace geow2;
@@ -801,6 +806,21 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
     SDL_Log("cannot open the window: %s", SDL_GetError());
     return 1;
   }
+#if !defined(_WIN32) && !defined(__APPLE__)
+  // The window's icon from geow2.png next to the program (Windows takes the
+  // executable's icon resource, macOS the bundle's).
+  try {
+    const Bytes png = read_file(fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "geow2.png");
+    if (const std::optional<Image> icon = decode_png(png)) {
+      if (SDL_Surface* s = SDL_CreateSurfaceFrom(int(icon->width), int(icon->height), SDL_PIXELFORMAT_RGBA32,
+                                                 const_cast<uint8_t*>(icon->rgba.data()), int(icon->width * 4))) {
+        SDL_SetWindowIcon(window, s);
+        SDL_DestroySurface(s);
+      }
+    }
+  } catch (const std::exception&) {
+  }
+#endif
   // Vsync (the default), or immediate presentation when the driver has it.
   if (!display.vsync &&
       SDL_WindowSupportsGPUPresentMode(dev, window, SDL_GPU_PRESENTMODE_IMMEDIATE))
@@ -1054,8 +1074,11 @@ int button_axis(const std::string& b) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  // The data folder: --data, else "data" next to the program, else "data"
-  // in the user folder (where a macOS app bundle's would go).
+  attach_parent_console();
+  // The name, version and app id (Wayland's, matching geow2.desktop).
+  SDL_SetAppMetadata("geow2", GEOW2_VERSION, "com.techknight.geow2");
+  // The data folder: --data, else "data" next to the program (next to
+  // geow2.app on macOS), else "data" in the user folder.
   fs::path data_dir = fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "data";
   bool data_given = false;
   fs::path profile_dir;
@@ -1154,15 +1177,31 @@ int main(int argc, char** argv) {
         p.fire_x = x;
         p.fire_y = y;
       }
+    } else if (a == "--version") {
+      std::printf("geow2 %s\n", GEOW2_VERSION);
+      return 0;
     } else {
-      std::fprintf(stderr,
-                   "usage: geow2 [--data <data-dir>] [--profile <dir>] [--fullscreen|--windowed] [--720p|--native]"
-                   " [--vsync|--no-vsync] [--language <en|de|fr|es|it>] [--seed <n>] [--frames <n> --screenshot <png>"
-                   " [--size <w> <h>] [--mode <0-5>] [--level <0-19>] [--stick <x> <y>] [--fire <x> <y>]"
-                   " [--bomb <step>] [--spawn <type> <x> <y>]... [--player <pad> <team> <role>]... [--versus]"
-                   " [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] [--inputs <csv>] [--emulator-rounding] [--crt-state <hex>] [--perf] [--audio-out <wav>]"
-                   " | --frontend [--press <frame> <button>]...]\n");
-      return 2;
+      // --help and --help-dev print to stdout and succeed; anything else
+      // unknown is an error.
+      const bool help = a == "--help" || a == "-h", dev = a == "--help-dev";
+      FILE* out = help || dev ? stdout : stderr;
+      std::fprintf(out,
+                   "geow2 %s\n"
+                   "usage: geow2 [--data <data-dir>] [--profile <dir>] [--fullscreen | --windowed]\n"
+                   "             [--720p | --native] [--vsync | --no-vsync] [--language en|de|fr|es|it]\n"
+                   "             [--version] [--help-dev]\n",
+                   GEOW2_VERSION);
+      if (dev)
+        std::fprintf(out,
+                     "development (headless runs; see the comment at the top of src/app/main.cpp):\n"
+                     "  geow2 --frames <n> (--screenshot <png> | --audio-out <wav>) [--size <w> <h>] [--seed <n>]\n"
+                     "        [--mode <0-5>] [--level <0-19>] [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>]\n"
+                     "        [--spawn <type> <x> <y>]... [--player <pad> <team> <role>]... [--versus]\n"
+                     "        [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] [--inputs <csv>]\n"
+                     "        [--rng-state <file> <step>] [--crt-state <hex>] [--emulator-rounding]\n"
+                     "        [--trace <csv>] [--positions <file>] [--dump <step> <file>] [--perf]\n"
+                     "  geow2 --frames <n> --screenshot <png> --frontend [--press <frame> <button>]...\n");
+      return help || dev ? 0 : 2;
     }
   }
   // --frames with --screenshot or --audio-out runs without a window.
@@ -1192,6 +1231,13 @@ int main(int argc, char** argv) {
     }
   }
   if (!data_given && !fs::exists(data_dir)) {
+    // geow2.app/Contents/Resources/ is the base path in a bundle: the folder
+    // holding the app comes first.
+    const fs::path base = fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "").parent_path();
+    const fs::path app = base.parent_path().parent_path();
+    if (app.extension() == ".app" && fs::exists(app.parent_path() / "data")) data_dir = app.parent_path() / "data";
+  }
+  if (!data_given && !fs::exists(data_dir)) {
     char* pref = SDL_GetPrefPath("geow2", "geow2");
     if (pref && fs::exists(fs::path(pref) / "data")) data_dir = fs::path(pref) / "data";
     SDL_free(pref);
@@ -1203,7 +1249,7 @@ int main(int argc, char** argv) {
                               "\n\nCreate it once from your copy of the game:\n"
                               "  geow2-extract unpack <your LIVE package or extracted folder> \"" +
                               data_dir.string() + "\"\n\nor start the game with --data <folder>.";
-      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Geometry Wars: Retro Evolved 2", msg.c_str(), nullptr);
+      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "geow2", msg.c_str(), nullptr);
     }
     return 1;
   }
@@ -1220,11 +1266,12 @@ int main(int argc, char** argv) {
   if (!dev) {
     SDL_Log("no GPU device: %s", SDL_GetError());
     if (!headless) {
-      const std::string msg = std::string("No usable graphics device (the game needs Vulkan):\n") + SDL_GetError();
-      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Geometry Wars: Retro Evolved 2", msg.c_str(), nullptr);
+      const std::string msg = std::string("No usable graphics device (the game needs Vulkan, or Metal on macOS):\n") + SDL_GetError();
+      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "geow2", msg.c_str(), nullptr);
     }
     return 1;
   }
+  Renderer::error_boxes = !headless;
   Renderer renderer;
   if (!renderer.init(dev, fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "shaders")) return 1;
   renderer.load_ui_textures(data_dir / "files");

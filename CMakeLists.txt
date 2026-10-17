@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.28)
-project(geow2 LANGUAGES CXX)
+# macOS 11 is the oldest the game supports (before project(), which reads it).
+set(CMAKE_OSX_DEPLOYMENT_TARGET 11.0 CACHE STRING "Oldest macOS to run on")
+project(geow2 VERSION 1.0.0 LANGUAGES CXX)
+if(WIN32)
+  enable_language(RC)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -36,6 +41,22 @@ add_library(geow2_extract STATIC
   src/extract/xex.cpp
 )
 target_include_directories(geow2_extract PUBLIC src)
+# version.h from project(VERSION).
+configure_file(src/app/version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/version.h @ONLY)
+target_include_directories(geow2_extract PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/generated)
+
+# Windows: the icon and version resources and the manifest (UTF-8 code
+# page, long paths) for one executable.
+function(geow2_windows_resources target description)
+  if(NOT WIN32)
+    return()
+  endif()
+  set(RC_NAME ${target})
+  set(RC_DESCRIPTION ${description})
+  set(RC_ICON ${CMAKE_CURRENT_SOURCE_DIR}/res/geow2.ico)
+  configure_file(res/geow2.rc.in ${CMAKE_CURRENT_BINARY_DIR}/generated/${target}.rc @ONLY)
+  target_sources(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated/${target}.rc res/geow2.manifest)
+endfunction()
 
 # Readers for the original data formats, shared by the extractor and the game.
 add_library(geow2_data STATIC
@@ -96,6 +117,7 @@ target_link_libraries(geow2_game PUBLIC geow2_data)
 add_executable(geow2-extract src/extract/main.cpp)
 # (geow2_game brings geow2_data and geow2_extract; naming them again duplicates them on the link line.)
 target_link_libraries(geow2-extract PRIVATE geow2_game)
+geow2_windows_resources(geow2-extract "geow2 data extractor")
 
 # The game: SDL3 (window, input, GPU) and SPIR-V shaders compiled with glslc.
 option(GEOW2_BUILD_GAME "Build the game (needs network access for SDL3 and the Vulkan SDK's glslc)" ON)
@@ -104,10 +126,10 @@ if(GEOW2_BUILD_GAME)
   set(SDL_SHARED OFF CACHE BOOL "" FORCE)
   set(SDL_STATIC ON CACHE BOOL "" FORCE)
   set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+  # SDL's 3.4.18 release archive, checked against its SHA-256.
   FetchContent_Declare(SDL3
-    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-    GIT_TAG release-3.4.18
-    GIT_SHALLOW TRUE)
+    URL https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz
+    URL_HASH SHA256=9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3)
   FetchContent_MakeAvailable(SDL3)
 
   file(GLOB VULKAN_SDK_BINS "C:/VulkanSDK/*/Bin")
@@ -141,17 +163,36 @@ if(GEOW2_BUILD_GAME)
   endforeach()
   add_custom_target(geow2_shaders DEPENDS ${SPIRV})
 
-  add_executable(geow2 src/app/frontend.cpp src/app/game.cpp src/app/main.cpp src/app/png.cpp src/app/renderer.cpp)
+  # A window program on Windows (no console), an app bundle on macOS.
+  add_executable(geow2 WIN32 MACOSX_BUNDLE
+    src/app/console.cpp src/app/frontend.cpp src/app/game.cpp src/app/main.cpp src/app/png.cpp src/app/renderer.cpp)
   target_link_libraries(geow2 PRIVATE geow2_game geow2_audio SDL3::SDL3-static)
   add_dependencies(geow2 geow2_shaders)
+  geow2_windows_resources(geow2 "geow2")
+  if(APPLE)
+    # geow2.app: the icon and the shaders in Contents/Resources, where
+    # SDL_GetBasePath() points.
+    configure_file(res/Info.plist.in ${CMAKE_CURRENT_BINARY_DIR}/generated/Info.plist @ONLY)
+    set_target_properties(geow2 PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_BINARY_DIR}/generated/Info.plist)
+    target_sources(geow2 PRIVATE res/geow2.icns ${SPIRV})
+    set_source_files_properties(res/geow2.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    set_source_files_properties(${SPIRV} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/shaders GENERATED TRUE)
+  endif()
 
   # A playable folder (cmake --install build --prefix <dir>): the game, the
   # extractor, the shaders and the documents. The user adds the data folder.
-  install(TARGETS geow2 RUNTIME DESTINATION .)
-  install(FILES ${SPIRV} DESTINATION shaders)
+  install(TARGETS geow2 RUNTIME DESTINATION . BUNDLE DESTINATION .)
+  if(NOT APPLE)
+    install(FILES ${SPIRV} DESTINATION shaders)
+  endif()
+  if(UNIX AND NOT APPLE)
+    # The window's icon (read at start) and a desktop entry.
+    install(FILES res/linux/geow2-256.png DESTINATION . RENAME geow2.png)
+    install(FILES res/geow2.desktop DESTINATION .)
+  endif()
 endif()
 install(TARGETS geow2-extract RUNTIME DESTINATION .)
-install(FILES README.md LICENSE DIFFERENCES.md DESTINATION .)
+install(FILES README.md LICENSE DIFFERENCES.md THIRD-PARTY-NOTICES.md DESTINATION .)
 
 enable_testing()
 add_executable(extract_tests tests/extract_tests.cpp)
