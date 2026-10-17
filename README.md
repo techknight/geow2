@@ -26,9 +26,9 @@ with the original icons, and local multiplayer for up to four players
 
 <!-- Screenshots are hosted as GitHub attachments, not in the repository:
      they show the game's own artwork, which is never committed. -->
-<img width="1920" height="1080" alt="m9-release-evolved-busy-20261017" src="https://github.com/user-attachments/assets/f94de91b-5741-405c-aad8-ce88469dad54" />
+<img width="1920" height="1080" alt="Evolved mode: gravity wells bursting among dozens of enemies on the warped, glowing grid" src="https://github.com/user-attachments/assets/f94de91b-5741-405c-aad8-ce88469dad54" />
 
-<img width="1920" height="1080" alt="m9-release-deadline-snakes-20261017" src="https://github.com/user-attachments/assets/ea0beb7b-ecd0-4b78-9948-73e089d7cf0f" />
+<img width="1920" height="1080" alt="Deadline mode: snakes and enemies swarming late in a game, the grid lit orange" src="https://github.com/user-attachments/assets/ea0beb7b-ecd0-4b78-9948-73e089d7cf0f" />
 
 ## Getting started
 
