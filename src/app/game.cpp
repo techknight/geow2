@@ -1028,7 +1028,7 @@ bool load(Game& g, const fs::path& data_dir, int64_t seed, int mode, int languag
   // (dat_82000F18); a colour index above 0 (its seventh argument, +0xA0)
   // switches the model to player1..4 by the eighth and the tint to
   // player<index>. Single player is taken to use index 0: the original's
-  // ship is white there, as "player"'s tint is (oracle).
+  // ship is white there, as "player"'s tint is (seen in the original).
   const auto unit = find_unit(*g.db, "player");
   if (!unit) {
     SDL_Log("Data.bin has no player unit");

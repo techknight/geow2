@@ -488,7 +488,7 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
                  const fs::path& dump_path, int dump_step, const fs::path& positions_path, const fs::path& data_dir,
                  const fs::path& audio_path) {
   // --trace: after each step, the clock and slot 0's object (x, y, vx,
-  // vy) at full precision, as the oracle's memory reads give them.
+  // vy) at full precision, as memory reads of the original in an emulator give them.
   std::ofstream trace;
   if (!trace_path.empty()) {
     trace.open(trace_path, std::ios::trunc);
@@ -577,8 +577,8 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
       samples.resize(at + 800 * 6);
       sound.render(samples.data() + at, 800);
     }
-    // --rng-state: the generator's state read from the oracle (the index,
-    // then 624 words, in hex), loaded after that step.
+    // --rng-state: the generator's state read from the original in an
+    // emulator (the index, then 624 words, in hex), loaded after that step.
     if (!rng_path.empty() && i + 1 == rng_step) {
       std::ifstream f(rng_path);
       uint32_t words[GameRng::kWords] = {};

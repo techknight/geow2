@@ -7,8 +7,8 @@
 namespace geow2 {
 namespace {
 
-// The Ui.Colour.* defaults (static initialisers 0x82174A38..0x821763E8;
-// each value's constant cited in colourvars.txt): rgb, alpha.
+// The Ui.Colour.* defaults (the static initialisers at
+// 0x82174A38..0x821763E8): rgb, alpha.
 constexpr float kColours[kUiSlotCount][4] = {
     {0.0879999995f, 0.0f, 1.00300002f, 1.0f},         // Background
     {1.0f, 0.219999999f, 0.0f, 1.0f},                 // Selection

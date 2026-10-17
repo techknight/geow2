@@ -1,0 +1,54 @@
+name: Bug report
+description: Something plays, looks or sounds different from the original, or does not work.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Never attach or link game files** (the package, the data
+        folder or anything from it); issues that do are deleted.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you saw, and what you expected (what the original does, if you know).
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: geow2 version
+      description: The output of `geow2 --version`.
+      placeholder: geow2 1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: System
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Steam Deck (Proton)
+        - Steam Deck (Linux build)
+    validations:
+      required: true
+  - type: input
+    id: details
+    attributes:
+      label: System details
+      description: Operating system version, graphics card and driver, gamepad.
+  - type: textarea
+    id: verify
+    attributes:
+      label: Output of `geow2-extract verify data`
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Anything the game printed
+      description: Start it from a terminal to see its messages.
+      render: text

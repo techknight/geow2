@@ -8,7 +8,8 @@ Format for each entry:
 
 - **What**: the behaviour that differs.
 - **Original**: what the Xbox 360 build does, with the source (decompiled
-  function, data file, or oracle capture) that shows it.
+  function, data file, or a capture of the original running in an
+  emulator) that shows it.
 - **Port**: what we do instead and why.
 - **Decided**: date.
 
@@ -213,8 +214,8 @@ Format for each entry:
   attached (`VdGetCurrentDisplayGamma`: sRGB, BT.709 or a power) and sets
   the display hardware's ramp to re-encode the image, taken as sRGB, for
   that display (`sub_820AAE20`, `sub_820AAFB0`, set at device creation by
-  `sub_820AE1A0`; the game sets no ramp of its own). Oracle captures
-  (Xenia, which reports an HDTV) match this ramp.
+  `sub_820AE1A0`; the game sets no ramp of its own). Captures of the original
+  in an emulator (Xenia, which reports an HDTV) match this ramp.
 - **Port**: applies the same ramp at the end of the composite, built for
   BT.709 (a high-definition TV, the usual connection), since a PC reports
   no such setting. The display type is a renderer setting.
@@ -315,7 +316,7 @@ Format for each entry:
   decoder, to 16-bit PCM in the data folder; the game plays the PCM. FFmpeg is
   needed only at extraction. The samples can differ from the console's
   decoder in rounding.
-- **Decided**: 2026-10-15 (FFmpeg at extraction time, with the user).
+- **Decided**: 2026-10-15.
 
 ### Particle pool limit
 

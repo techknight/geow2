@@ -192,7 +192,7 @@ if(GEOW2_BUILD_GAME)
   endif()
 endif()
 install(TARGETS geow2-extract RUNTIME DESTINATION .)
-install(FILES README.md LICENSE DIFFERENCES.md THIRD-PARTY-NOTICES.md DESTINATION .)
+install(FILES README.md CHANGELOG.md LICENSE DIFFERENCES.md THIRD-PARTY-NOTICES.md DESTINATION .)
 
 enable_testing()
 add_executable(extract_tests tests/extract_tests.cpp)
@@ -230,7 +230,7 @@ target_link_libraries(audio_tests PRIVATE geow2_audio)
 add_test(NAME audio_tests COMMAND audio_tests)
 
 # On Linux, like the static C runtime on Windows: the C++ runtime linked
-# in, so the programs need only the system's C library (glibc 2.38+).
+# in, so the programs need only the system's C library.
 if(UNIX AND NOT APPLE)
   foreach(t geow2 geow2-extract)
     if(TARGET ${t})
