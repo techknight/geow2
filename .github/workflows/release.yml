@@ -190,11 +190,17 @@ jobs:
       - name: Tools
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y git ca-certificates python3-pip g++-12 glslc \
+          DEBIAN_FRONTEND=noninteractive apt-get install -y git ca-certificates curl xz-utils python3-pip g++-12 \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
             libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl-dev libdrm-dev \
             libgbm-dev libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev
           pip3 install cmake ninja
+      # glslc (Ubuntu 22.04 has no package for it): from the Vulkan SDK, whose
+      # bin folder CMakeLists.txt finds through VULKAN_SDK.
+      - uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          install_runtime: false
+          cache: true
       - uses: actions/checkout@v5
       - name: Build and test
         run: |
