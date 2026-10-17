@@ -22,6 +22,11 @@ results, unlocking the modes, local score boards and local achievements
 with the original icons, and local multiplayer for up to four players
 (versus and co-op, teams and copilots, power-ups).
 
+## Screenshots
+
+<!-- Screenshots are hosted as GitHub attachments, not in the repository:
+     they show the game's own artwork, which is never committed. -->
+
 ## Getting started
 
 1. Download the archive for your system from
