@@ -1,0 +1,81 @@
+# Builds and tests geow2 on Windows, Linux and macOS for every push to main
+# and every pull request, and checks that no game data is in the tree.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: No game data in the tree
+        run: python3 tools/guard.py --all
+
+  build:
+    name: build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+          - name: linux
+            os: ubuntu-24.04
+          - name: macos
+            os: macos-15
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Tools (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build glslc libx11-dev libxext-dev libxrandr-dev \
+            libxcursor-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev \
+            libdecor-0-dev libegl-dev libdrm-dev libgbm-dev libasound2-dev libpulse-dev \
+            libpipewire-0.3-dev libudev-dev libdbus-1-dev
+
+      - name: Tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja shaderc spirv-cross
+
+      - name: Vulkan SDK for glslc (Windows)
+        if: runner.os == 'Windows'
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          install_runtime: false
+          cache: true
+
+      - name: Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: pip install ninja
+
+      - name: MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Install
+        run: cmake --install build --prefix dist
+
+      - name: Version
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then dist/geow2.app/Contents/MacOS/geow2 --version; else dist/geow2 --version; fi
+          dist/geow2-extract --version
