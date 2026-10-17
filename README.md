@@ -1,5 +1,8 @@
 # geow2
 
+[![CI](https://github.com/techknight/geow2/actions/workflows/ci.yml/badge.svg)](https://github.com/techknight/geow2/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/techknight/geow2)](https://github.com/techknight/geow2/releases/latest)
+
 A native port of Geometry Wars: Retro Evolved 2 (Xbox 360, Xbox Live
 Arcade, 2008) for Windows, macOS and Linux, rebuilt from reverse
 engineering of the original executable. It plays the original's six
