@@ -1766,7 +1766,7 @@ void draw_game_hud(const Game& g, LineBatch& ui) {
   // King's zones while nothing fired and no shield kill (from 10, text 0xA3 / 0xA4)
   // and Waves' rocket walls likewise (from 4, 0xA5 / 0xA6).
   if (frozen(g) || g.multiplayer) return;
-  const float* normal = UiPalette::defaults()[kUiNormal].data();
+  const Rgba normal = UiPalette::defaults()[kUiNormal];  // a copy: defaults() is a temporary
   std::string hint;
   if (g.rules.mode == 5 && !p.fired && !p.shield_hit && g.world->records[0].zones >= 10) {
     const int n = g.world->records[0].zones;
