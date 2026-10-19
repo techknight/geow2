@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Setup inside the game: when there is no data folder, geow2 asks for
+  your copy of the game (the package file or an extracted folder) and
+  makes the data folder itself, with a progress bar. It works with a
+  gamepad, so it can be done on a Steam Deck. `geow2-extract` still
+  works as before.
+- On Windows the game finds `ffmpeg.exe` next to itself, and on a Mac
+  Homebrew's FFmpeg even when started from the Finder.
+- Linux: an optional bin/ and share/ install layout (`GEOW2_UNIX_LAYOUT`)
+  with a desktop entry, AppStream metainfo and icons under the app ID
+  `com.geow2.geow2`, which the window now reports.
+
 ## 1.0.0
 
 The first release.

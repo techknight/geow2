@@ -35,21 +35,26 @@ with the original icons, and local multiplayer for up to four players
 
 1. Download the archive for your system from
    [Releases](https://github.com/techknight/geow2/releases) and unpack it.
-2. Make the data folder from your copy of the game, once. You need your
-   XBLA package (the `LIVE` file in `584108FF/000D0000/`, or a folder
-   holding the files extracted from it) and
-   [FFmpeg](https://ffmpeg.org/download.html) on your PATH (or its path
-   in the environment variable `GEOW2_FFMPEG`) to decode the game's
-   sound. In a terminal, in the folder you unpacked:
+2. Install [FFmpeg](https://ffmpeg.org/download.html), which decodes the
+   game's sound: on your PATH, or `ffmpeg.exe` next to `geow2.exe` on
+   Windows, or `brew install ffmpeg` on a Mac, or your distribution's
+   package on Linux (or its path in the environment variable
+   `GEOW2_FFMPEG`).
+3. Start `geow2` (`geow2.exe` on Windows, `geow2.app` on macOS). The
+   first time, it asks for your copy of the game: choose the XBLA package
+   (the `LIVE` file in `584108FF/000D0000/`) or a folder holding the
+   files extracted from it. It accepts only the release the port was made
+   from (version 0x102), checks every file's SHA-1 and makes the data
+   folder in your user folder (below), once.
 
-       geow2-extract unpack <your package or extracted folder> data
-       geow2-extract verify data
+Or make the data folder yourself, in a terminal in the folder you
+unpacked:
 
-   (On macOS and Linux write `./geow2-extract`.) The tool accepts only
-   the release the port was made from (version 0x102) and checks every
-   file's SHA-1. The data folder is the same on every system: you can
-   make it on one machine and copy it to another.
-3. Start `geow2` (`geow2.exe` on Windows, `geow2.app` on macOS).
+    geow2-extract unpack <your package or extracted folder> data
+    geow2-extract verify data
+
+(On macOS and Linux write `./geow2-extract`.) The data folder works on
+every system: you can make it on one machine and copy it to another.
 
 Where the game looks for `data`: next to the program (next to
 `geow2.app` on macOS), then in your user folder (below), or wherever
@@ -59,7 +64,7 @@ Where the game looks for `data`: next to the program (next to
   "protected your PC" for a while after each release, until the new
   version builds up reputation: choose "More info", then "Run anyway".
 - **macOS** (11 or later, Apple Silicon or Intel): the app is signed and
-  notarized. FFmpeg for the extraction: `brew install ffmpeg`.
+  notarized.
 - **Linux** (x86-64): any current distribution with a Vulkan driver.
   `geow2.desktop` and `geow2.png` in the archive can go to
   `~/.local/share/applications` and `~/.local/share/icons`.
