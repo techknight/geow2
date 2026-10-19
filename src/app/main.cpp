@@ -8,6 +8,7 @@
 //         [--player <pad> <team> <role>]... [--versus] [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>]
 //         [--inputs <csv>] [--rng-state <file> <step>] [--crt-state <hex>] [--emulator-rounding]
 //         [--trace <csv>] [--positions <file>] [--dump <step> <file>] [--perf]
+//         [--record <raw-file> <first-step>]
 //   geow2 --data <data-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
 //
 // The first form opens the window at the front end; the profile, the
@@ -44,7 +45,9 @@
 // by type, score, kills, multiplier), --positions every unit, shot and
 // geom after each step, --dump the units after one step. --perf also
 // draws every step offscreen at --size and prints the time of each phase
-// (src/app/profile.h) every 600 steps.
+// (src/app/profile.h) every 600 steps. --record appends every frame from
+// that step to the last, with the HUD, to one file as raw RGBA at --size
+// (for a video encoder: 60 frames a second).
 //
 // The third runs the front end instead, pressing a button (a, b, x, y,
 // start, back, up, down, left, right; pad 0, or another with :<pad>) on
@@ -279,8 +282,9 @@ void draw_frame(SDL_GPUDevice* dev, Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_
   SDL_BlitGPUTexture(cmd, &blit);
 }
 
+// The frame as a PNG at `out`, or appended to `raw` as w x h RGBA bytes.
 int capture(SDL_GPUDevice* dev, Renderer& r, const Game& g, const UiCanvas& ui, const fs::path& out, uint32_t w,
-            uint32_t h, bool exact_720p = false) {
+            uint32_t h, bool exact_720p = false, std::ofstream* raw = nullptr) {
   SDL_GPUTextureCreateInfo tci{};
   tci.type = SDL_GPU_TEXTURETYPE_2D;
   tci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
@@ -312,7 +316,10 @@ int capture(SDL_GPUDevice* dev, Renderer& r, const Game& g, const UiCanvas& ui, 
   SDL_WaitForGPUFences(dev, true, &fence, 1);
   SDL_ReleaseGPUFence(dev, fence);
   const auto* px = static_cast<const uint8_t*>(SDL_MapGPUTransferBuffer(dev, down, false));
-  write_png(out, w, h, {px, size_t(w) * h * 4});
+  if (raw)
+    raw->write(reinterpret_cast<const char*>(px), std::streamsize(size_t(w) * h * 4));
+  else
+    write_png(out, w, h, {px, size_t(w) * h * 4});
   SDL_UnmapGPUTransferBuffer(dev, down);
   SDL_ReleaseGPUTransferBuffer(dev, down);
   SDL_ReleaseGPUTexture(dev, tex);
@@ -486,7 +493,7 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
                  const StepInputs& inputs, int bomb_step, const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h,
                  bool exact_720p, const fs::path& trace_path, const fs::path& rng_path, int rng_step,
                  const fs::path& dump_path, int dump_step, const fs::path& positions_path, const fs::path& data_dir,
-                 const fs::path& audio_path) {
+                 const fs::path& audio_path, const fs::path& record_path, int record_from) {
   // --trace: after each step, the clock and slot 0's object (x, y, vx,
   // vy) at full precision, as memory reads of the original in an emulator give them.
   std::ofstream trace;
@@ -535,6 +542,14 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
     tci.num_levels = 1;
     prof_target = SDL_CreateGPUTexture(dev, &tci);
   }
+  // The in-game screen (the HUD), drawn for --record and the final frame.
+  Profile profile;
+  std::array<LocalBoard, 6> boards;
+  Frontend fe(g, g.text, profile, boards, {});
+  fe.watch_game();
+  // --record: every frame from that step on, as raw RGBA at --size.
+  std::ofstream record;
+  if (!record_path.empty()) record.open(record_path, std::ios::binary | std::ios::trunc);
   for (int i = 0; i < frames; ++i) {
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     // By joined index, from each joined pad.
@@ -576,6 +591,11 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
       const size_t at = samples.size();
       samples.resize(at + 800 * 6);
       sound.render(samples.data() + at, 800);
+    }
+    if (record.is_open() && i + 1 >= record_from) {
+      UiCanvas ui;
+      fe.draw(ui);
+      if (capture(dev, r, g, ui, {}, w, h, exact_720p, &record)) return 1;
     }
     // --rng-state: the generator's state read from the original in an
     // emulator (the index, then 624 words, in hex), loaded after that step.
@@ -679,10 +699,8 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
             << g.world->records[0].multiplier << '\n';
     }
   }
-  Profile profile;
-  std::array<LocalBoard, 6> boards;
-  Frontend fe(g, g.text, profile, boards, {});
-  fe.watch_game();
+  if (record.is_open()) SDL_Log("recorded %d frames of %ux%u to %s", std::max(0, frames - std::max(record_from, 1) + 1),
+                                w, h, record_path.string().c_str());
   UiCanvas ui;
   fe.draw(ui);
   if (!out.empty() && capture(dev, r, g, ui, out, w, h, exact_720p)) return 1;
@@ -1088,7 +1106,8 @@ int main(int argc, char** argv) {
   std::array<LobbyPad, 4> lobby{};
   bool versus = false, multiplayer = false;
   fs::path screenshot;
-  fs::path trace_path, rng_path, dump_path, inputs_path, positions_path, audio_path;
+  fs::path trace_path, rng_path, dump_path, inputs_path, positions_path, audio_path, record_path;
+  int record_from = 1;
   int rng_step = -1, dump_step = -1;
   uint32_t shot_w = 1280, shot_h = 720;
   int64_t seed = -1;
@@ -1120,6 +1139,10 @@ int main(int argc, char** argv) {
     else if (a == "--crt-state" && i + 1 < argc) crt_state = int64_t(std::strtoul(argv[++i], nullptr, 16));
     else if (a == "--positions" && i + 1 < argc) positions_path = argv[++i];
     else if (a == "--audio-out" && i + 1 < argc) audio_path = argv[++i];
+    else if (a == "--record" && i + 2 < argc) {
+      record_path = argv[++i];
+      record_from = std::atoi(argv[++i]);
+    }
     else if (a == "--rng-state" && i + 2 < argc) {
       rng_path = argv[++i];
       rng_step = std::atoi(argv[++i]);
@@ -1200,12 +1223,13 @@ int main(int argc, char** argv) {
                      "        [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] [--inputs <csv>]\n"
                      "        [--rng-state <file> <step>] [--crt-state <hex>] [--emulator-rounding]\n"
                      "        [--trace <csv>] [--positions <file>] [--dump <step> <file>] [--perf]\n"
+                     "        [--record <raw-file> <first-step>]\n"
                      "  geow2 --frames <n> --screenshot <png> --frontend [--press <frame> <button>]...\n");
       return help || dev ? 0 : 2;
     }
   }
-  // --frames with --screenshot or --audio-out runs without a window.
-  const bool headless = frames >= 0 && (!screenshot.empty() || !audio_path.empty());
+  // --frames with --screenshot, --audio-out or --record runs without a window.
+  const bool headless = frames >= 0 && (!screenshot.empty() || !audio_path.empty() || !record_path.empty());
   // The GPU device needs the video subsystem even when no window is opened.
   if (!SDL_Init(headless ? SDL_INIT_VIDEO : (SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))) {
     SDL_Log("SDL_Init: %s", SDL_GetError());
@@ -1287,7 +1311,7 @@ int main(int argc, char** argv) {
     if (crt_state >= 0) game.world->crt.set_state(uint32_t(crt_state));
     rc = run_headless(dev, renderer, game, frames, per_pad, inputs, bomb_step, spawns, screenshot, shot_w, shot_h,
                       exact_720p == 1, trace_path, rng_path, rng_step, dump_path, dump_step, positions_path, data_dir,
-                      audio_path);
+                      audio_path, record_path, record_from);
     SDL_Log("crt state %08x", game.world->crt.state());
   } else {
     Display d = load_display(profile_dir);
