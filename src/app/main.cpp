@@ -10,6 +10,7 @@
 //         [--trace <csv>] [--positions <file>] [--dump <step> <file>] [--perf]
 //         [--record <raw-file> <first-step>]
 //   geow2 --data <data-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
+//   geow2 [--data <data-dir>] --setup-preview <out.png> | --setup-from <package>
 //
 // The first form opens the window at the front end; the profile, the
 // local score boards and the display settings (display.txt: fullscreen,
@@ -52,6 +53,12 @@
 // The third runs the front end instead, pressing a button (a, b, x, y,
 // start, back, up, down, left, right; pad 0, or another with :<pad>) on
 // the given frames; it never saves.
+//
+// The fourth shows the setup window (src/app/setup.h), which otherwise
+// appears only when no data folder is found: --setup-preview saves its
+// first screen and quits, --setup-from makes the data folder (in --data,
+// or the user folder) from that package without the file chooser, then
+// plays.
 
 #include <SDL3/SDL.h>
 // On Windows the game is a window program: SDL provides its WinMain.
@@ -82,6 +89,7 @@
 #include "app/game.h"
 #include "app/png.h"
 #include "app/renderer.h"
+#include "app/setup.h"
 #include "data/png_read.h"
 #include "extract/bytes.h"
 #include "game/gravity_well.h"
@@ -1121,6 +1129,7 @@ int main(int argc, char** argv) {
   fs::path screenshot;
   fs::path trace_path, rng_path, dump_path, inputs_path, positions_path, audio_path, record_path;
   int record_from = 1;
+  SetupDev setup_dev;
   int rng_step = -1, dump_step = -1;
   uint32_t shot_w = 1280, shot_h = 720;
   int64_t seed = -1;
@@ -1152,6 +1161,8 @@ int main(int argc, char** argv) {
     else if (a == "--crt-state" && i + 1 < argc) crt_state = int64_t(std::strtoul(argv[++i], nullptr, 16));
     else if (a == "--positions" && i + 1 < argc) positions_path = argv[++i];
     else if (a == "--audio-out" && i + 1 < argc) audio_path = argv[++i];
+    else if (a == "--setup-preview" && i + 1 < argc) setup_dev.preview = argv[++i];
+    else if (a == "--setup-from" && i + 1 < argc) setup_dev.source = argv[++i];
     else if (a == "--record" && i + 2 < argc) {
       record_path = argv[++i];
       record_from = std::atoi(argv[++i]);
@@ -1237,7 +1248,8 @@ int main(int argc, char** argv) {
                      "        [--rng-state <file> <step>] [--crt-state <hex>] [--emulator-rounding]\n"
                      "        [--trace <csv>] [--positions <file>] [--dump <step> <file>] [--perf]\n"
                      "        [--record <raw-file> <first-step>]\n"
-                     "  geow2 --frames <n> --screenshot <png> --frontend [--press <frame> <button>]...\n");
+                     "  geow2 --frames <n> --screenshot <png> --frontend [--press <frame> <button>]...\n"
+                     "  geow2 [--data <dir>] --setup-preview <png> | --setup-from <package>\n");
       return help || dev ? 0 : 2;
     }
   }
@@ -1278,6 +1290,23 @@ int main(int argc, char** argv) {
     char* pref = SDL_GetPrefPath("geow2", "geow2");
     if (pref && fs::exists(fs::path(pref) / "data")) data_dir = fs::path(pref) / "data";
     SDL_free(pref);
+  }
+  // No data folder anywhere: the setup window makes one from the player's
+  // copy of the game, in the user folder (or where --data says).
+  // --setup-preview and --setup-from show it regardless.
+  if ((!headless && !fs::exists(data_dir / "files" / "Data.bin")) || !setup_dev.preview.empty() ||
+      !setup_dev.source.empty()) {
+    fs::path target = data_dir;
+    if (!data_given) {
+      char* pref = SDL_GetPrefPath("geow2", "geow2");
+      target = (pref ? fs::path(pref) : profile_dir) / "data";
+      SDL_free(pref);
+    }
+    if (!run_setup(target, setup_dev) || !setup_dev.preview.empty()) {
+      SDL_Quit();
+      return 0;
+    }
+    data_dir = target;
   }
   if (!load(game, data_dir, seed, mode, language == 0 ? 1 : language)) {
     // Started from a desktop there is no console to read the log from.

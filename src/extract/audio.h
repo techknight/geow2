@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "extract/bytes.h"
+#include "extract/hooks.h"
 
 namespace geow2 {
 
@@ -37,10 +38,15 @@ Bytes wav_pcm16(uint32_t sample_rate, uint32_t channels, std::span<const uint8_t
 // stream) that FFmpeg's xma1 decoder reads.
 Bytes xma1_riff(const BankWave& w);
 
+// Whether `ffmpeg` (the executable named by GEOW2_FFMPEG, else the one on
+// PATH) runs.
+bool ffmpeg_available(const ExtractHooks& hooks = {});
+
 // Writes every wave of every bank in `audio_dir` as `<out>/<bank>/<wave>.wav`
-// (16-bit PCM) and `<out>/<bank>/index.txt`. XMA waves go through
-// `ffmpeg` (the executable named by GEOW2_FFMPEG, else the one on PATH);
-// without it they are skipped with a message. Returns the waves written.
-size_t extract_audio(const std::filesystem::path& audio_dir, const std::filesystem::path& out);
+// (16-bit PCM) and `<out>/<bank>/index.txt`. XMA waves go through `ffmpeg`;
+// without it they are skipped with a message. Progress runs from `from` to
+// `to` over the waves. Returns the waves written.
+size_t extract_audio(const std::filesystem::path& audio_dir, const std::filesystem::path& out,
+                     const ExtractHooks& hooks = {}, double from = 0.0, double to = 1.0);
 
 }  // namespace geow2

@@ -43,6 +43,7 @@ add_library(geow2_extract STATIC
   src/extract/sha1.cpp
   src/extract/lzx.cpp
   src/extract/stfs.cpp
+  src/extract/unpack.cpp
   src/extract/xex.cpp
 )
 target_include_directories(geow2_extract PUBLIC src)
@@ -170,7 +171,8 @@ if(GEOW2_BUILD_GAME)
 
   # A window program on Windows (no console), an app bundle on macOS.
   add_executable(geow2 WIN32 MACOSX_BUNDLE
-    src/app/console.cpp src/app/frontend.cpp src/app/game.cpp src/app/main.cpp src/app/png.cpp src/app/renderer.cpp)
+    src/app/console.cpp src/app/frontend.cpp src/app/game.cpp src/app/main.cpp src/app/png.cpp src/app/renderer.cpp
+    src/app/setup.cpp)
   target_link_libraries(geow2 PRIVATE geow2_game geow2_audio SDL3::SDL3-static)
   add_dependencies(geow2 geow2_shaders)
   geow2_windows_resources(geow2 "geow2")

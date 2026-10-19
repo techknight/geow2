@@ -6,22 +6,17 @@
 //   geow2-extract audio <data-dir>       (redo the sound only: needs ffmpeg)
 //   geow2-extract dump-db <data-dir>     (developer aid: every Data.bin value)
 
-#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <map>
-#include <optional>
 #include <string>
 
 #include "data/flask.h"
 #include "data/xtlo.h"
 #include "game/model_geometry.h"
 #include "extract/audio.h"
-#include "extract/known_files.h"
-#include "extract/sha1.h"
-#include "extract/stfs.h"
-#include "extract/xex.h"
+#include "extract/unpack.h"
 #include "version.h"
 
 namespace fs = std::filesystem;
@@ -29,106 +24,14 @@ using namespace geow2;
 
 namespace {
 
-std::string lower(std::string s) {
-  for (char& c : s) c = char(std::tolower(static_cast<unsigned char>(c)));
-  return s;
-}
+// Every line the library logs, printed.
+const ExtractHooks kPrint{[](const std::string& line) { std::printf("%s\n", line.c_str()); }, {}, {}};
 
-// The file at `rel` under `root`, names matched without regard to case
-// (a folder unpacked by another tool may say data.bin or Audio/).
-std::optional<fs::path> find_nocase(const fs::path& root, const fs::path& rel) {
-  fs::path cur = root;
-  for (const auto& part : rel) {
-    if (fs::exists(cur / part)) {
-      cur /= part;
-      continue;
-    }
-    std::optional<fs::path> hit;
-    std::error_code ec;
-    for (const auto& e : fs::directory_iterator(cur, ec))
-      if (lower(e.path().filename().string()) == lower(part.string())) {
-        hit = e.path();
-        break;
-      }
-    if (!hit) return std::nullopt;
-    cur = *hit;
-  }
-  return cur;
-}
-
-// Collects the package's files, keyed by package path, from an STFS file or a folder.
-std::map<std::string, Bytes> collect(const fs::path& source) {
-  std::map<std::string, Bytes> files;
-  if (fs::is_directory(source)) {
-    for (const auto& k : kKnownFiles)
-      if (const auto p = find_nocase(source, k.path); p && fs::is_regular_file(*p)) files[k.path] = read_file(*p);
-    return files;
-  }
-  Bytes pkg = read_file(source);
-  const std::string pkg_sha = sha1_hex(pkg);
-  if (pkg_sha != kKnownPackageSha1)
-    std::printf("note: package SHA-1 %s is not the known one; checking the files inside\n", pkg_sha.c_str());
-  StfsPackage stfs(std::move(pkg));
-  for (const auto& f : stfs.files()) files[f.path] = stfs.read(f);
-  return files;
-}
-
-int check(const std::map<std::string, Bytes>& files) {
-  int bad = 0;
-  for (const auto& k : kKnownFiles) {
-    auto it = files.find(k.path);
-    if (it == files.end()) {
-      std::printf("missing   %s\n", k.path);
-      ++bad;
-    } else if (it->second.size() != k.size || sha1_hex(it->second) != k.sha1) {
-      std::printf("mismatch  %s\n", k.path);
-      ++bad;
-    }
-  }
-  return bad;
-}
-
-void write_xex(const Bytes& xex, const fs::path& dir) {
-  XexImage img = xex_load(xex);
-  write_file(dir / "image.bin", img.image);
-
-  std::string info;
-  char line[256];
-  std::snprintf(line, sizeof line, "original_pe_name %s\nload_address 0x%08X\nentry_point 0x%08X\nimage_size 0x%08zX\nimage_flags 0x%08X\n",
-                img.original_pe_name.c_str(), img.load_address, img.entry_point, img.image.size(), img.image_flags);
-  info += line;
-  for (const auto& r : img.page_runs) {
-    std::snprintf(line, sizeof line, "pages 0x%08X 0x%08X %s\n", r.address, r.size,
-                  r.info == 1 ? "code" : r.info == 2 ? "data" : r.info == 3 ? "rodata" : "other");
-    info += line;
-  }
-  write_file(dir / "info.txt", {reinterpret_cast<const uint8_t*>(info.data()), info.size()});
-
-  std::string imports;
-  for (const auto& i : img.imports) {
-    std::snprintf(line, sizeof line, "0x%08X %s %u %s\n", i.record_address, i.library.c_str(), i.ordinal,
-                  i.is_thunk ? "thunk" : "record");
-    imports += line;
-  }
-  write_file(dir / "imports.txt", {reinterpret_cast<const uint8_t*>(imports.data()), imports.size()});
-  std::printf("xex: %s, %zu bytes at 0x%08X, entry 0x%08X, %zu imports, all hashes good\n", img.original_pe_name.c_str(),
-              img.image.size(), img.load_address, img.entry_point, img.imports.size());
-}
-
-int unpack(const std::string& source, const std::string& data_dir) {
-  auto files = collect(source);
-  if (int bad = check(files)) {
+int unpack_command(const std::string& source, const std::string& data_dir) {
+  if (int bad = unpack(source, data_dir, kPrint)) {
     std::printf("%d file(s) missing or different: this is not the supported release (584108FF v0x102)\n", bad);
     return 1;
   }
-  const fs::path root = data_dir;
-  // Only the known files, by their known names (a package's own names
-  // never choose where anything is written).
-  for (const auto& k : kKnownFiles) write_file(root / "files" / k.path, files.at(k.path));
-  write_xex(files.at("default.xex"), root / "xex");
-  std::printf("unpacked %zu files to %s\n", std::size(kKnownFiles), data_dir.c_str());
-  // The sound banks as PCM (XMA through ffmpeg).
-  extract_audio(root / "files" / "audio", root / "audio");
   return 0;
 }
 
@@ -246,7 +149,7 @@ int check_database(const fs::path& files) {
 
 int verify(const std::string& data_dir) {
   const fs::path files = fs::path(data_dir) / "files";
-  int bad = check(collect(files));
+  int bad = check_package(collect_package(files, kPrint), kPrint);
   if (!bad) bad += check_text(files);
   if (!bad) bad += check_database(files);
   std::printf(bad ? "%d problem(s)\n" : "all files good\n", bad);
@@ -258,10 +161,10 @@ int verify(const std::string& data_dir) {
 int main(int argc, char** argv) {
   try {
     const std::string cmd = argc > 1 ? argv[1] : "";
-    if (cmd == "unpack" && argc == 4) return unpack(argv[2], argv[3]);
+    if (cmd == "unpack" && argc == 4) return unpack_command(argv[2], argv[3]);
     if (cmd == "verify" && argc == 3) return verify(argv[2]);
     if (cmd == "audio" && argc == 3) {
-      extract_audio(fs::path(argv[2]) / "files" / "audio", fs::path(argv[2]) / "audio");
+      extract_audio(fs::path(argv[2]) / "files" / "audio", fs::path(argv[2]) / "audio", kPrint);
       return 0;
     }
     if (cmd == "dump-db" && argc == 3) return dump_db(argv[2]);

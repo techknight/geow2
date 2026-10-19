@@ -1,5 +1,6 @@
 #include "extract/audio.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -49,16 +50,25 @@ std::string ffmpeg_command() {
   return "ffmpeg";
 }
 
-bool have_ffmpeg(const std::string& ffmpeg) {
+}  // namespace
+
+int ExtractHooks::system(const std::string& command) const {
+  if (run) return run(command);
 #ifdef _WIN32
-  const std::string cmd = "\"" + ffmpeg + " -hide_banner -version >nul 2>&1\"";
+  // cmd.exe /c drops the outer quotes of a line that starts with one.
+  return std::system(("\"" + command + "\"").c_str());
 #else
-  const std::string cmd = ffmpeg + " -hide_banner -version >/dev/null 2>&1";
+  return std::system(command.c_str());
 #endif
-  return std::system(cmd.c_str()) == 0;
 }
 
-}  // namespace
+bool ffmpeg_available(const ExtractHooks& hooks) {
+#ifdef _WIN32
+  return hooks.system(ffmpeg_command() + " -hide_banner -version >nul 2>&1") == 0;
+#else
+  return hooks.system(ffmpeg_command() + " -hide_banner -version >/dev/null 2>&1") == 0;
+#endif
+}
 
 Bank parse_bank(std::span<const uint8_t> file) {
   // Header (0x34): "BANK", header size 0x34, version 4, wave count, kind
@@ -136,22 +146,36 @@ Bytes xma1_riff(const BankWave& w) {
   return riff(fmt, w.data);
 }
 
-size_t extract_audio(const std::filesystem::path& audio_dir, const std::filesystem::path& out) {
+size_t extract_audio(const std::filesystem::path& audio_dir, const std::filesystem::path& out,
+                     const ExtractHooks& hooks, double from, double to) {
   namespace fs = std::filesystem;
   const std::string ffmpeg = ffmpeg_command();
-  const bool decoder = have_ffmpeg(ffmpeg);
+  const bool decoder = ffmpeg_available(hooks);
   if (!decoder)
-    std::printf("audio: ffmpeg not found (put it on PATH or set GEOW2_FFMPEG): XMA waves skipped, the game will be "
-                "partly silent\n");
-  size_t written = 0, skipped = 0;
+    hooks.say("audio: ffmpeg not found (put it on PATH or set GEOW2_FFMPEG): XMA waves skipped, the game will be "
+              "partly silent");
+  // The banks first, to count the waves for the progress.
+  struct Loaded {
+    fs::path path;
+    Bytes file;
+    Bank bank;
+  };
+  std::vector<Loaded> banks;
+  size_t total = 0;
   for (const auto& entry : fs::directory_iterator(audio_dir)) {
     if (entry.path().extension() != ".baf") continue;
-    const Bytes file = read_file(entry.path());
-    const Bank bank = parse_bank(file);
-    const fs::path dir = out / entry.path().stem();
+    Loaded& l = banks.emplace_back(Loaded{entry.path(), read_file(entry.path()), {}});
+    l.bank = parse_bank(l.file);
+    total += l.bank.waves.size();
+  }
+  size_t written = 0, skipped = 0, done = 0;
+  for (const Loaded& l : banks) {
+    const Bank& bank = l.bank;
+    const fs::path dir = out / l.path.stem();
     fs::create_directories(dir);
     std::string index;
     for (size_t i = 0; i < bank.waves.size(); ++i) {
+      hooks.step(from + (to - from) * double(done++) / double(std::max<size_t>(total, 1)));
       const BankWave& w = bank.waves[i];
       char line[160];
       std::snprintf(line, sizeof line, "%zu %s format %u rate %u channels %u gain %g flags 0x%X\n", i, w.name.c_str(),
@@ -167,11 +191,8 @@ size_t extract_audio(const std::filesystem::path& audio_dir, const std::filesyst
       } else if (w.format == 8 && decoder) {
         const fs::path tmp = dir / (w.name + ".xma.tmp");
         write_file(tmp, xma1_riff(w));
-        std::string cmd = ffmpeg + " -hide_banner -loglevel error -y -i " + quote(tmp) + " -c:a pcm_s16le " + quote(wav);
-#ifdef _WIN32
-        cmd = "\"" + cmd + "\"";
-#endif
-        const int rc = std::system(cmd.c_str());
+        const int rc =
+            hooks.system(ffmpeg + " -hide_banner -loglevel error -y -i " + quote(tmp) + " -c:a pcm_s16le " + quote(wav));
         fs::remove(tmp);
         if (rc != 0) throw FormatError("audio: ffmpeg failed on " + bank.name + "/" + w.name);
         ++written;
@@ -181,8 +202,9 @@ size_t extract_audio(const std::filesystem::path& audio_dir, const std::filesyst
     }
     write_file(dir / "index.txt", {reinterpret_cast<const uint8_t*>(index.data()), index.size()});
   }
-  std::printf("audio: %zu waves written to %s%s\n", written, out.string().c_str(),
-              skipped ? (", " + std::to_string(skipped) + " skipped").c_str() : "");
+  hooks.say("audio: " + std::to_string(written) + " waves written to " + out.string() +
+            (skipped ? ", " + std::to_string(skipped) + " skipped" : ""));
+  hooks.step(to);
   return written;
 }
 
