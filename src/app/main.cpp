@@ -106,6 +106,18 @@ struct Press {
 
 int16_t clamp16(int v) { return int16_t(std::clamp(v, -32768, 32767)); }
 
+// The folder holding the shaders and the window's icon: next to the program
+// (the release archives, geow2.app's Resources), else ../share/geow2 (an
+// install with GEOW2_UNIX_LAYOUT, such as the Flatpak).
+fs::path resource_dir() {
+  const fs::path base = fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "");
+  std::error_code ec;
+  if (fs::exists(base / "shaders", ec)) return base;
+  const fs::path share = base.parent_path().parent_path() / "share" / "geow2";
+  if (fs::exists(share / "shaders", ec)) return share;
+  return base;
+}
+
 // The files in the profile folder are replaced whole (written beside, then
 // renamed over), so the game crashing or a full disk never leaves half a
 // file (the data is not synced to the disk before the rename: a power cut
@@ -825,10 +837,10 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
     return 1;
   }
 #if !defined(_WIN32) && !defined(__APPLE__)
-  // The window's icon from geow2.png next to the program (Windows takes the
+  // The window's icon from geow2.png beside the shaders (Windows takes the
   // executable's icon resource, macOS the bundle's).
   try {
-    const Bytes png = read_file(fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "geow2.png");
+    const Bytes png = read_file(resource_dir() / "geow2.png");
     if (const std::optional<Image> icon = decode_png(png)) {
       if (SDL_Surface* s = SDL_CreateSurfaceFrom(int(icon->width), int(icon->height), SDL_PIXELFORMAT_RGBA32,
                                                  const_cast<uint8_t*>(icon->rgba.data()), int(icon->width * 4))) {
@@ -1093,8 +1105,9 @@ int button_axis(const std::string& b) {
 
 int main(int argc, char** argv) {
   attach_parent_console();
-  // The name, version and app id (Wayland's, matching geow2.desktop).
-  SDL_SetAppMetadata("geow2", GEOW2_VERSION, "com.techknight.geow2");
+  // The name, version and app id (Wayland's, matching the desktop entry's
+  // name and StartupWMClass, and the Flatpak's id).
+  SDL_SetAppMetadata("geow2", GEOW2_VERSION, "com.geow2.geow2");
   // The data folder: --data, else "data" next to the program (next to
   // geow2.app on macOS), else "data" in the user folder.
   fs::path data_dir = fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "data";
@@ -1297,7 +1310,7 @@ int main(int argc, char** argv) {
   }
   Renderer::error_boxes = !headless;
   Renderer renderer;
-  if (!renderer.init(dev, fs::path(SDL_GetBasePath() ? SDL_GetBasePath() : "") / "shaders")) return 1;
+  if (!renderer.init(dev, resource_dir() / "shaders")) return 1;
   renderer.load_ui_textures(data_dir / "files");
   for (size_t i = 0; i < game.achievements.size() && i < 12; ++i)
     renderer.set_ui_texture(kTexAchievement0 + int(i), game.achievements[i].icon);

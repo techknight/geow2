@@ -30,6 +30,11 @@ else()
   endif()
 endif()
 
+# Installed as one playable folder (the release archives), or with
+# GEOW2_UNIX_LAYOUT as a Linux package expects (bin/, share/; the Flatpak).
+option(GEOW2_UNIX_LAYOUT "Install in a bin/ and share/ layout (Linux packages)" OFF)
+set(GEOW2_APP_ID com.geow2.geow2)
+
 # Extractor: reads the user's XBLA package and writes the data folder the game uses.
 add_library(geow2_extract STATIC
   src/extract/aes128.cpp
@@ -179,20 +184,45 @@ if(GEOW2_BUILD_GAME)
     set_source_files_properties(${SPIRV} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/shaders GENERATED TRUE)
   endif()
 
-  # A playable folder (cmake --install build --prefix <dir>): the game, the
-  # extractor, the shaders and the documents. The user adds the data folder.
-  install(TARGETS geow2 RUNTIME DESTINATION . BUNDLE DESTINATION .)
-  if(NOT APPLE)
-    install(FILES ${SPIRV} DESTINATION shaders)
-  endif()
-  if(UNIX AND NOT APPLE)
-    # The window's icon (read at start) and a desktop entry.
-    install(FILES res/linux/geow2-256.png DESTINATION . RENAME geow2.png)
-    install(FILES res/geow2.desktop DESTINATION .)
+  if(GEOW2_UNIX_LAYOUT)
+    # bin/, share/geow2/ (shaders and the window's icon), the desktop entry,
+    # metainfo and icons under the app id, and the licences.
+    install(TARGETS geow2 RUNTIME DESTINATION bin)
+    install(FILES ${SPIRV} DESTINATION share/geow2/shaders)
+    install(FILES res/linux/geow2-256.png DESTINATION share/geow2 RENAME geow2.png)
+    set(DESKTOP_ICON ${GEOW2_APP_ID})
+    configure_file(res/geow2.desktop.in ${CMAKE_CURRENT_BINARY_DIR}/generated/${GEOW2_APP_ID}.desktop @ONLY)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/generated/${GEOW2_APP_ID}.desktop DESTINATION share/applications)
+    install(FILES res/${GEOW2_APP_ID}.metainfo.xml DESTINATION share/metainfo)
+    foreach(size 16 32 48 64 128 256 512)
+      install(FILES res/linux/geow2-${size}.png DESTINATION share/icons/hicolor/${size}x${size}/apps
+              RENAME ${GEOW2_APP_ID}.png)
+    endforeach()
+  else()
+    # A playable folder (cmake --install build --prefix <dir>): the game,
+    # the extractor, the shaders and the documents. The user adds the data
+    # folder.
+    install(TARGETS geow2 RUNTIME DESTINATION . BUNDLE DESTINATION .)
+    if(NOT APPLE)
+      install(FILES ${SPIRV} DESTINATION shaders)
+    endif()
+    if(UNIX AND NOT APPLE)
+      # The window's icon (read at start) and a desktop entry.
+      install(FILES res/linux/geow2-256.png DESTINATION . RENAME geow2.png)
+      set(DESKTOP_ICON geow2)
+      configure_file(res/geow2.desktop.in ${CMAKE_CURRENT_BINARY_DIR}/generated/geow2.desktop @ONLY)
+      install(FILES ${CMAKE_CURRENT_BINARY_DIR}/generated/geow2.desktop DESTINATION .)
+    endif()
   endif()
 endif()
-install(TARGETS geow2-extract RUNTIME DESTINATION .)
-install(FILES README.md CHANGELOG.md LICENSE DIFFERENCES.md THIRD-PARTY-NOTICES.md DESTINATION .)
+if(GEOW2_UNIX_LAYOUT)
+  install(TARGETS geow2-extract RUNTIME DESTINATION bin)
+  install(FILES LICENSE THIRD-PARTY-NOTICES.md DESTINATION share/licenses/${GEOW2_APP_ID})
+  install(FILES README.md CHANGELOG.md DIFFERENCES.md DESTINATION share/doc/geow2)
+else()
+  install(TARGETS geow2-extract RUNTIME DESTINATION .)
+  install(FILES README.md CHANGELOG.md LICENSE DIFFERENCES.md THIRD-PARTY-NOTICES.md DESTINATION .)
+endif()
 
 enable_testing()
 add_executable(extract_tests tests/extract_tests.cpp)

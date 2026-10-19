@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The AppStream entry for Linux software centres (the Flatpak, Discover).
+     Installed by GEOW2_UNIX_LAYOUT; one <release> per CHANGELOG.md section. -->
+<component type="desktop-application">
+  <id>com.geow2.geow2</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>geow2</name>
+  <summary>Geometry Wars: Retro Evolved 2 port</summary>
+  <developer id="com.geow2">
+    <name>Derek Quenneville</name>
+  </developer>
+  <description>
+    <p>
+      A native port of Geometry Wars: Retro Evolved 2 (Xbox 360, Xbox Live Arcade, 2008), rebuilt from
+      reverse engineering of the original executable. It plays the original's six modes (Deadline, King,
+      Evolved, Pacifism, Waves and Sequence), its menus, local score boards and achievements, and local
+      multiplayer for up to four players, at any resolution.
+    </p>
+    <p>
+      geow2 contains no game data. It needs your own copy of the Xbox Live Arcade release (title ID 584108FF,
+      version 0x102): on first start it asks for the package and makes its data folder from it.
+    </p>
+    <p>
+      geow2 is an unofficial project, not affiliated with or endorsed by Activision, Bizarre Creations or
+      Microsoft. Geometry Wars is a trademark of Activision Publishing, Inc.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.geow2.geow2.desktop</launchable>
+  <url type="homepage">https://geow2.com</url>
+  <url type="bugtracker">https://github.com/techknight/geow2/issues</url>
+  <url type="vcs-browser">https://github.com/techknight/geow2</url>
+  <categories>
+    <category>Game</category>
+    <category>ArcadeGame</category>
+  </categories>
+  <keywords>
+    <keyword>twin-stick</keyword>
+    <keyword>shooter</keyword>
+    <keyword>arcade</keyword>
+    <keyword>Xbox Live Arcade</keyword>
+  </keywords>
+  <branding>
+    <color type="primary" scheme_preference="light">#9fb7ff</color>
+    <color type="primary" scheme_preference="dark">#1a2a6e</color>
+  </branding>
+  <content_rating type="oars-1.1">
+    <content_attribute id="violence-fantasy">mild</content_attribute>
+  </content_rating>
+  <supports>
+    <control>gamepad</control>
+    <control>keyboard</control>
+  </supports>
+  <recommends>
+    <display_length compare="ge">768</display_length>
+  </recommends>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Evolved: snakes and gravity wells on the warped grid</caption>
+      <image>https://geow2.com/media/screens/evolved.jpg</image>
+    </screenshot>
+    <screenshot>
+      <caption>Deadline: the last seconds of a three-minute game</caption>
+      <image>https://geow2.com/media/screens/deadline.jpg</image>
+    </screenshot>
+    <screenshot>
+      <caption>King: firing only from inside the zones</caption>
+      <image>https://geow2.com/media/screens/king.jpg</image>
+    </screenshot>
+    <screenshot>
+      <caption>Pacifism: no weapons, only gates</caption>
+      <image>https://geow2.com/media/screens/pacifism.jpg</image>
+    </screenshot>
+    <screenshot>
+      <caption>Waves: walls of rockets</caption>
+      <image>https://geow2.com/media/screens/waves.jpg</image>
+    </screenshot>
+    <screenshot>
+      <caption>Sequence: one of twenty set levels</caption>
+      <image>https://geow2.com/media/screens/sequence.jpg</image>
+    </screenshot>
+    <screenshot>
+      <caption>Local multiplayer: three players in versus</caption>
+      <image>https://geow2.com/media/screens/multiplayer.jpg</image>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="1.0.0" date="2026-10-17">
+      <description>
+        <p>The first release: all six modes, the front end, local score boards and achievements, and local
+        multiplayer for up to four players.</p>
+      </description>
+    </release>
+  </releases>
+</component>
