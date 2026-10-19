@@ -1,0 +1,77 @@
+# The geow2 Flatpak. Built by .github/workflows/flatpak.yml; for a local
+# build (Linux, with flatpak-builder and the 26.08 SDK installed):
+#
+#   flatpak-builder --user --install --force-clean build-flatpak flatpak/com.geow2.geow2.yml
+#
+# The game's data is not in it: on first start the setup window makes the
+# data folder from the player's package, in
+# ~/.var/app/com.geow2.geow2/data/geow2/geow2/data.
+id: com.geow2.geow2
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+command: geow2
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  # The GPU and gamepads (including Steam Input's virtual pads).
+  - --device=all
+modules:
+  # FFmpeg, only what the extractor's command needs: the package's sound
+  # is XMA1 in a RIFF wrapper, decoded to 16-bit PCM WAV
+  # (src/extract/audio.cpp). The runtime's own FFmpeg has no XMA decoder.
+  # LGPL 2.1 or later (no GPL parts enabled); installed as /app/bin/ffmpeg,
+  # which comes first on the sandbox's PATH.
+  - name: ffmpeg
+    config-opts:
+      - --disable-everything
+      - --disable-autodetect
+      - --disable-doc
+      - --disable-debug
+      - --disable-ffplay
+      - --disable-ffprobe
+      - --disable-network
+      - --disable-swscale
+      - --disable-avdevice
+      - --disable-postproc
+      - --enable-protocol=file
+      - --enable-demuxer=wav
+      - --enable-muxer=wav
+      - --enable-decoder=xma1,xma2,wmapro
+      - --enable-encoder=pcm_s16le
+      - --enable-filter=aresample,aformat,anull
+    cleanup:
+      - /include
+      - /lib
+      - /share/ffmpeg
+    post-install:
+      - install -Dm644 COPYING.LGPLv2.1 /app/share/licenses/com.geow2.geow2/ffmpeg-COPYING.LGPLv2.1
+    sources:
+      - type: archive
+        url: https://ffmpeg.org/releases/ffmpeg-7.1.tar.xz
+        sha256: 40973d44970dbc83ef302b0609f2e74982be2d85916dd2ee7472d30678a7abe6
+
+  - name: geow2
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - -DGEOW2_UNIX_LAYOUT=ON
+      # SDL from the archive below instead of a download (no network here):
+      # the same release and checksum as CMakeLists.txt's FetchContent.
+      - -DFETCHCONTENT_SOURCE_DIR_SDL3=/run/build/geow2/sdl3
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - build
+          - build-audio
+          - build-flatpak
+          - dist
+          - .flatpak-builder
+      - type: archive
+        url: https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz
+        sha256: 9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3
+        dest: sdl3

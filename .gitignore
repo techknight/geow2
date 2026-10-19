@@ -38,3 +38,7 @@ achievements.txt
 .vscode/
 .idea/
 CMakeUserPresets.json
+
+# flatpak-builder
+.flatpak-builder/
+build-flatpak/

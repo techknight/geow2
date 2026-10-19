@@ -1,0 +1,37 @@
+# Builds the Flatpak (flatpak/com.geow2.geow2.yml) in Flathub's build
+# image and uploads it as a single-file bundle, geow2.flatpak, which
+# installs with `flatpak install --user geow2.flatpak`.
+name: Flatpak
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "res/**"
+      - "flatpak/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/flatpak.yml"
+  pull_request:
+    paths:
+      - "flatpak/**"
+      - ".github/workflows/flatpak.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flatpak:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: geow2.flatpak
+          manifest-path: flatpak/com.geow2.geow2.yml
+          cache-key: flatpak-builder-${{ github.sha }}
