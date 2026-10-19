@@ -7,7 +7,8 @@ A native port of Geometry Wars: Retro Evolved 2 (Xbox 360, Xbox Live
 Arcade, 2008) for Windows, macOS and Linux, rebuilt from reverse
 engineering of the original executable. It plays the original's six
 modes, its front end and its local multiplayer exactly as the console
-does, at any resolution.
+does, at any resolution. Website, with clips of every mode:
+**[geow2.com](https://geow2.com)**.
 
 **geow2 contains no game data.** It needs your own copy of the Xbox Live
 Arcade release (title ID 584108FF). A bundled tool turns that copy into
