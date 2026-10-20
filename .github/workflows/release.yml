@@ -1,5 +1,6 @@
 # Builds the release archives for Windows (x64, code-signed), macOS (universal,
-# Developer ID-signed and notarized) and Linux (x86-64), and publishes them.
+# Developer ID-signed and notarized), Linux (x86-64) and the Flatpak (signed
+# repository and bundle), and publishes them.
 #   - Push a tag like v1.0.0 (matching project(VERSION) in CMakeLists.txt) →
 #     a GitHub Release with the three archives, SHA256SUMS and, in a public
 #     repository, build provenance attestations.
@@ -215,9 +216,78 @@ jobs:
           name: linux
           path: ${{ env.OUT }}.tar.gz
 
+  # The Flatpak (flatpak/com.geow2.geow2.yml), signed, as the OSTree
+  # repository that geow2.com/flatpak/repo/ serves (geow2-site's workflow
+  # unpacks it from the latest release) and as a single-file bundle that
+  # takes its updates from there.
+  #   FLATPAK_GPG_KEY   the repository's private signing key (armored);
+  #                     unset, the repository and bundle are unsigned
+  flatpak:
+    needs: version
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
+      options: --privileged
+    env:
+      SIGNING: ${{ secrets.FLATPAK_GPG_KEY != '' }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Import the signing key
+        if: env.SIGNING == 'true'
+        env:
+          FLATPAK_GPG_KEY: ${{ secrets.FLATPAK_GPG_KEY }}
+        run: |
+          echo "$FLATPAK_GPG_KEY" | gpg --batch --import
+          echo "KEY_ID=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ {print $10; exit}')" >> "$GITHUB_ENV"
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: flatpak/com.geow2.geow2.yml
+          branch: stable
+          gpg-sign: ${{ env.KEY_ID }}
+          build-bundle: false
+          upload-artifact: false
+          cache-key: flatpak-release-${{ github.sha }}
+
+      - name: Repository and bundle
+        run: |
+          SIGN=""
+          if [ -n "$KEY_ID" ]; then
+            SIGN="--gpg-sign=$KEY_ID"
+            gpg --export "$KEY_ID" > geow2.gpg
+          fi
+          flatpak build-update-repo $SIGN --generate-static-deltas --title=geow2 --default-branch=stable repo
+          flatpak build-bundle $SIGN --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            --repo-url=https://geow2.com/flatpak/repo/ ${KEY_ID:+--gpg-keys=geow2.gpg} \
+            repo "geow2-$VERSION-x86_64.flatpak" com.geow2.geow2 stable
+          tar czf "geow2-$VERSION-flatpak-repo.tar.gz" -C repo .
+          ls -l geow2-*
+
+      # Installs from the repository as a user would (the signature checked
+      # against the public key alone) and runs the program's --help.
+      - name: Install from the repository
+        run: |
+          if [ -n "$KEY_ID" ]; then
+            flatpak remote-add --user --gpg-import=geow2.gpg geow2-test "file://$PWD/repo"
+          else
+            flatpak remote-add --user --no-gpg-verify geow2-test "file://$PWD/repo"
+          fi
+          flatpak install --user --noninteractive geow2-test com.geow2.geow2
+          flatpak info --user com.geow2.geow2
+          flatpak run --user --command=geow2 com.geow2.geow2 --help || true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: flatpak
+          path: |
+            geow2-${{ env.VERSION }}-x86_64.flatpak
+            geow2-${{ env.VERSION }}-flatpak-repo.tar.gz
+
   publish:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [version, windows, macos, linux]
+    needs: [version, windows, macos, linux, flatpak]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -255,6 +325,7 @@ jobs:
           - **Windows**: x64, code-signed. Unzip and run `geow2.exe`.
           - **macOS**: universal (Apple silicon and Intel), macOS 11 or later, signed and notarized. Unzip and open `geow2.app`.
           - **Linux**: x86-64, needs a Vulkan driver. Unpack and run `geow2`.
+          - **Steam Deck and Linux, Flatpak**: install from https://geow2.com/flatpak/ (updates come through Discover or `flatpak update`). The `.flatpak` file is the same app as a single file. The `-flatpak-repo` archive is what geow2.com serves.
 
           Verify a download: `sha256sum -c SHA256SUMS --ignore-missing`, or `gh attestation verify <file> -R techknight/geow2`.
           EOF
