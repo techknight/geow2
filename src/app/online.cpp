@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
+#include <ctime>
 #include <cstdlib>
 #include <deque>
 #include <fstream>
@@ -34,7 +35,7 @@ struct Online::Core {
   bool syncing = false;
   size_t snapshot = 0;             // the log's size when the running sync was sent
   std::optional<SyncReply> reply;  // a finished sync, for update()
-  std::string status;
+  std::string error;  // why the last sync failed, "" when it succeeded
   std::array<std::vector<GroupRow>, 6> boards;
   PairingView pairing;
   uint64_t pairing_id = 0;         // a newer pairing (or a cancel) stops the old one's polling
@@ -79,6 +80,7 @@ Online::Online(fs::path profile_dir) : dir_(std::move(profile_dir)), core_(std::
     else if (key == "group") state_.group = value;
     else if (key == "cursor") state_.cursor = std::atoll(value.c_str());
     else if (key == "sent") state_.sent = size_t(std::atoll(value.c_str()));
+    else if (key == "last_sync") state_.last_sync = std::atoll(value.c_str());
   }
   std::thread([core = core_] { Core::run(core); }).detach();
 }
@@ -96,7 +98,7 @@ void Online::save() const {
   std::ostringstream s;
   s << "server " << state_.server << "\ntoken " << state_.token << "\nplayer_id " << state_.player_id
     << "\nplayer_name " << state_.player_name << "\ngroup " << state_.group << "\ncursor " << state_.cursor << "\nsent "
-    << state_.sent << "\n";
+    << state_.sent << "\nlast_sync " << state_.last_sync << "\n";
   const std::string text = s.str();
   replace_file(dir_ / "online.txt", {reinterpret_cast<const uint8_t*>(text.data()), text.size()});
 }
@@ -137,14 +139,10 @@ std::optional<Online::Applied> Online::update(ScoreLog& log, OnlineProgress& pro
     snapshot = core_->snapshot;
     if (reply) {
       core_->syncing = false;
-      if (reply->error.empty()) {
-        core_->boards = reply->boards;
-        core_->status = "Synced.";
-      } else {
-        core_->status = reply->error;
-      }
+      if (reply->error.empty()) core_->boards = reply->boards;
+      core_->error = reply->error;
     }
-    if (paired) core_->status = "Paired as " + paired->player_name + ".";
+    if (paired) core_->error.clear();
   }
   if (paired) {
     // A new pairing: a fresh start with this server (everything in the
@@ -175,6 +173,7 @@ std::optional<Online::Applied> Online::update(ScoreLog& log, OnlineProgress& pro
   achievements |= reply->progress.achievements;
   state_.cursor = reply->cursor;
   state_.sent = snapshot;
+  state_.last_sync = int64_t(std::time(nullptr));
   if (!reply->group.empty()) state_.group = reply->group;
   if (!reply->player_name.empty()) state_.player_name = reply->player_name;
   save();
@@ -248,7 +247,7 @@ void Online::unpair() {
   {
     std::lock_guard lock(core_->m);
     core_->boards = {};
-    core_->status.clear();
+    core_->error.clear();
   }
   save();
 }
@@ -263,7 +262,24 @@ void Online::set_server(const std::string& base) {
 
 std::string Online::status() const {
   std::lock_guard lock(core_->m);
-  return core_->syncing ? "Syncing..." : core_->status;
+  if (core_->syncing) return "syncing...";
+  if (!core_->error.empty()) return "sync failed: " + core_->error;
+  if (state_.last_sync <= 0) return "not synced yet";
+  const std::time_t t = std::time_t(state_.last_sync);
+  std::tm local{};
+#ifdef _WIN32
+  localtime_s(&local, &t);
+#else
+  localtime_r(&t, &local);
+#endif
+  char when[32];
+  std::strftime(when, sizeof(when), "%Y-%m-%d %H:%M", &local);
+  return std::string("last synced at ") + when;
+}
+
+std::string Online::error() const {
+  std::lock_guard lock(core_->m);
+  return core_->error;
 }
 
 std::array<std::vector<GroupRow>, 6> Online::group_boards() const {

@@ -2317,8 +2317,9 @@ void Frontend::online_screen(bool reset) {
                          "devices, and the leaderboards show the group's best scores. It syncs when the game starts "
                          "and after each game.") +
                 6.0f;
-           const std::string status = online_->status();
-           if (!status.empty()) line(status, P[kUiNormal], 7.0f);
+           // The status after a blank line.
+           y += 10.0f;
+           line("Current status: " + online_->status(), P[kUiNormal], 7.0f);
            return;
          }
          y += text_box(font, c.lines, P, 40.0f, y, 7.0f, 7.0f, 3.0f, 560.0f, 0, 0, P[kUiNormal],

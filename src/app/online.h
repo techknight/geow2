@@ -23,6 +23,7 @@ class Online {
     std::string server, token, player_id, player_name, group;
     int64_t cursor = 0;  // the server's events seen
     size_t sent = 0;     // the log's events up to here are on the server
+    int64_t last_sync = 0;  // when a sync last succeeded, seconds since 1970 (0: never)
   };
 
   enum class Pairing { kIdle, kStarting, kWaiting, kPaired, kFailed };
@@ -68,8 +69,12 @@ class Online {
   // changed.
   void set_server(const std::string& base);
 
-  // The last sync's outcome, for the Online scores screen.
+  // For the Online scores screen: "syncing...", "last synced at
+  // 2026-10-19 23:25" (local time), "sync failed: <why>" or "not synced
+  // yet".
   std::string status() const;
+  // Why the last sync failed, or "" when it succeeded.
+  std::string error() const;
   // The group's boards from the last sync: per mode, each player's best.
   std::array<std::vector<GroupRow>, 6> group_boards() const;
 

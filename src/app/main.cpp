@@ -342,9 +342,8 @@ int online_command(const fs::path& dir, const std::string& pair_server) {
     if (!online.syncing()) break;
     SDL_Delay(100);
   }
-  const std::string status = online.status();
-  if (status != "Synced.") {
-    std::fprintf(stderr, "sync failed: %s\n", status.c_str());
+  if (const std::string error = online.error(); !error.empty()) {
+    std::fprintf(stderr, "sync failed: %s\n", error.c_str());
     return 1;
   }
   save_score_log(dir, log);
@@ -965,7 +964,7 @@ struct PreviewOnline : OnlineMenu {
   std::string server() const override { return "https://geow2-scores.example.workers.dev"; }
   std::string player() const override { return "Ace"; }
   std::string group() const override { return "Friday Night Grid"; }
-  std::string status() const override { return "Synced."; }
+  std::string status() const override { return "last synced at 2026-10-19 23:25"; }
   std::string set_server(const std::string&) override { return ""; }
   void start_pairing() override {}
   Pairing pairing() const override {
