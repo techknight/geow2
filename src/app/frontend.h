@@ -194,7 +194,7 @@ class Frontend {
   // Screens.
   void main_menu(bool reset);              // sub_8208FD00
   void quit_confirm();                     // sub_8208FEB0
-  void mode_select(bool reset);            // sub_8208ED00
+  void mode_select(bool refresh_boards);   // sub_8208ED00
   void mode_select_update(const MenuInput& in);  // sub_8208D918
   void mode_tile(UiCanvas& c, int index, int text, bool selected) const;  // sub_8208DD58
   void rules(int index, std::function<void(const MenuInput&)> back, int item_text, Action start);  // sub_8207BF88

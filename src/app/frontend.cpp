@@ -797,14 +797,19 @@ void Frontend::quit_confirm() {
 // ---------------------------------------------------------------------------
 // Mode select
 
-void Frontend::mode_select(bool reset) {
+void Frontend::mode_select(bool refresh_boards) {
+  // sub_8208ED00 opens menu 3 without a reset: the selection is the one
+  // remembered (after a game, the mode just played). Its argument only asks
+  // for a Live board refresh (sub_8208BA90), which the local boards don't
+  // need.
+  (void)refresh_boards;
   open(3, [this](const MenuInput&) { main_menu(false); },
        [this](UiCanvas& c) {
          draw_header(c, 0x41);
          ui_panel(c, 0.0f, 46.0f, 22.0f, cursor_, palette_[kUiBackground], 2);
          ui_panel(c, 618.0f, 46.0f, 640.0f, cursor_, palette_[kUiBackground], 4);
        },
-       reset, [this](const MenuInput& in) { mode_select_update(in); }, 0);
+       false, [this](const MenuInput& in) { mode_select_update(in); }, 0);
   screen_.tips = [this](TextLayout& l) {
     const int sel = selection_value();
     const int mode = mode_of_text(kModeItems[sel < 6 ? sel : 0]);
