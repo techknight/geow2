@@ -121,6 +121,20 @@ add_library(geow2_game STATIC
 )
 target_link_libraries(geow2_game PUBLIC geow2_data)
 
+# Online scores: JSON, HTTPS through the system's library (WinHTTP, or
+# libcurl loaded at run time) and the score server's API.
+add_library(geow2_net STATIC
+  src/net/http.cpp
+  src/net/json.cpp
+  src/net/scores.cpp
+)
+target_link_libraries(geow2_net PUBLIC geow2_game)
+if(WIN32)
+  target_link_libraries(geow2_net PRIVATE winhttp)
+else()
+  target_link_libraries(geow2_net PRIVATE ${CMAKE_DL_LIBS})
+endif()
+
 add_executable(geow2-extract src/extract/main.cpp)
 # (geow2_game brings geow2_data and geow2_extract; naming them again duplicates them on the link line.)
 target_link_libraries(geow2-extract PRIVATE geow2_game)
@@ -173,8 +187,8 @@ if(GEOW2_BUILD_GAME)
   # A window program on Windows (no console), an app bundle on macOS.
   add_executable(geow2 WIN32 MACOSX_BUNDLE
     src/app/console.cpp src/app/frontend.cpp src/app/game.cpp src/app/main.cpp src/app/png.cpp src/app/renderer.cpp
-    src/app/setup.cpp)
-  target_link_libraries(geow2 PRIVATE geow2_game geow2_audio SDL3::SDL3-static)
+    src/app/online.cpp src/app/setup.cpp)
+  target_link_libraries(geow2 PRIVATE geow2_game geow2_audio geow2_net SDL3::SDL3-static)
   add_dependencies(geow2 geow2_shaders)
   geow2_windows_resources(geow2 "geow2")
   if(APPLE)
@@ -237,6 +251,9 @@ add_test(NAME data_tests COMMAND data_tests)
 add_executable(game_tests tests/game_tests.cpp)
 target_link_libraries(game_tests PRIVATE geow2_game)
 add_test(NAME game_tests COMMAND game_tests)
+add_executable(net_tests tests/net_tests.cpp)
+target_link_libraries(net_tests PRIVATE geow2_net)
+add_test(NAME net_tests COMMAND net_tests)
 
 # Audio engine: the AOBJ component graphs (sounds, mixers, filters,
 # scripts), the waves and the 5.1 mix; the SDL3 output when the game is
@@ -274,8 +291,8 @@ endif()
 
 # Warnings for our own targets (not SDL's).
 if(NOT MSVC)
-  foreach(t geow2_extract geow2_data geow2_game geow2_audio geow2-extract geow2
-            extract_tests data_tests game_tests audio_tests)
+  foreach(t geow2_extract geow2_data geow2_game geow2_audio geow2_net geow2-extract geow2
+            extract_tests data_tests game_tests audio_tests net_tests)
     if(TARGET ${t})
       target_compile_options(${t} PRIVATE -Wall -Wextra)
     endif()

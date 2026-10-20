@@ -3,6 +3,7 @@
 //   geow2 [--data <data-dir>] [--profile <dir>] [--fullscreen | --windowed] [--720p | --native]
 //         [--vsync | --no-vsync] [--language en|de|fr|es|it]
 //   geow2 [--profile <dir>] --merge-profile <another device's profile folder>
+//   geow2 [--profile <dir>] --online-pair <score server> | --online-sync
 //   geow2 --data <data-dir> --frames <n> --screenshot <out.png> | --audio-out <out.wav> [--size <w> <h>]
 //         [--mode <n>] [--level <n>]
 //         [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--trigger <0-255>] [--spawn <type> <x> <y>]...
@@ -18,7 +19,9 @@
 // exact 720p render, vsync; F11 toggles fullscreen) are kept in --profile
 // (default: the user's preferences folder). --merge-profile adds another
 // device's profile folder (its games, unlocks and achievements) to it and
-// quits.
+// quits. --online-pair pairs the profile with a group's score server
+// (app/online.h; the code to confirm on a phone is printed) and syncs;
+// --online-sync syncs a paired profile. Both quit after.
 //
 // The second runs n simulation steps of a game of --mode (0 Deadline,
 // 1 Evolved, 2 Sequence, 3 Waves, 4 Pacifism, 5 King) without a window,
@@ -94,6 +97,7 @@
 #include "app/game.h"
 #include "app/png.h"
 #include "app/renderer.h"
+#include "app/online.h"
 #include "app/setup.h"
 #include "data/png_read.h"
 #include "extract/bytes.h"
@@ -207,6 +211,22 @@ void save_achievements(const fs::path& dir, uint32_t bits) {
   save_text(dir / "achievements.txt", line);
 }
 
+// The progress a score server merges, from and back into the profile block.
+OnlineProgress online_progress(const Profile& p, uint32_t achievements) {
+  OnlineProgress o;
+  o.unlocked = p.unlocked;
+  o.millions = p.millions;
+  o.progress = p.progress;
+  o.achievements = achievements;
+  return o;
+}
+
+void apply_online_progress(Profile& p, const OnlineProgress& o) {
+  p.unlocked = o.unlocked;
+  p.millions = o.millions;
+  p.progress = o.progress;
+}
+
 // One row per line: mode, score, name (tab-separated). Kept beside
 // scores.log for earlier versions of the game.
 void save_boards(const fs::path& dir, const std::array<LocalBoard, 6>& boards) {
@@ -242,6 +262,83 @@ int merge_profile(const fs::path& dir, const fs::path& other) {
   std::printf("merged %s into %s: %zu new game(s), %s, %d new achievement(s)\n", other.string().c_str(),
               dir.string().c_str(), games, progress ? "unlocks or progress added" : "no new unlocks or progress",
               std::popcount(achieved & ~had));
+  return 0;
+}
+
+// --online-pair <server> pairs this device from a terminal (the code to
+// confirm on a signed-in phone is printed) and syncs; --online-sync syncs
+// a paired device. Neither opens a window.
+int online_command(const fs::path& dir, const std::string& pair_server) {
+  fs::create_directories(dir);
+  const std::string device = device_id(dir);
+  ScoreLog log = load_score_log(dir, device);
+  Profile profile = load_profile(dir);
+  uint32_t achievements = load_achievements(dir);
+  OnlineProgress progress = online_progress(profile, achievements);
+  Online online(dir);
+  if (!pair_server.empty()) {
+    const std::string base = server_base(pair_server);
+    if (base.empty()) {
+      std::fprintf(stderr, "not a server address: %s\n", pair_server.c_str());
+      return 1;
+    }
+    online.start_pairing(base, Online::device_name());
+    bool shown = false;
+    for (;;) {
+      const Online::PairingView p = online.pairing();
+      if (p.state == Online::Pairing::kWaiting && !shown) {
+        std::printf("Confirm this code on your phone: %s\n  %s\n", p.code.c_str(), p.url.c_str());
+        std::fflush(stdout);
+        shown = true;
+      }
+      if (p.state == Online::Pairing::kFailed) {
+        std::fprintf(stderr, "pairing failed: %s\n", p.error.c_str());
+        return 1;
+      }
+      if (online.update(log, progress, achievements)) break;  // paired: its first sync has started
+      SDL_Delay(200);
+    }
+    std::printf("paired as %s\n", online.state().player_name.c_str());
+  } else {
+    if (!online.paired()) {
+      std::fprintf(stderr, "this device is not paired (use --online-pair <server>)\n");
+      return 1;
+    }
+    online.sync(log, progress);
+  }
+  size_t games = 0;
+  uint32_t new_achievements = 0;
+  bool changed = false;
+  while (online.syncing() || !online.state().token.empty()) {
+    if (auto a = online.update(log, progress, achievements)) {
+      games += a->new_games;
+      new_achievements |= a->new_achievements;
+      changed |= a->progress;
+    }
+    if (!online.syncing()) break;
+    SDL_Delay(100);
+  }
+  const std::string status = online.status();
+  if (status != "Synced.") {
+    std::fprintf(stderr, "sync failed: %s\n", status.c_str());
+    return 1;
+  }
+  save_score_log(dir, log);
+  std::array<LocalBoard, 6> boards;
+  boards_from(log, boards);
+  save_boards(dir, boards);
+  apply_online_progress(profile, progress);
+  if (changed) save_profile(dir, profile);
+  if (new_achievements) save_achievements(dir, achievements);
+  std::printf("synced with %s (%s) as %s: %zu new game(s) from the server, %s, %d new achievement(s)\n",
+              online.state().server.c_str(), online.state().group.c_str(), online.state().player_name.c_str(), games,
+              changed ? "unlocks or progress added" : "no new unlocks or progress", std::popcount(new_achievements));
+  static const char* const kModes[6] = {"Deadline", "Evolved", "Sequence", "Waves", "Pacifism", "King"};
+  const auto group = online.group_boards();
+  for (int m = 0; m < 6; ++m)
+    for (size_t i = 0; i < group[size_t(m)].size() && i < 3; ++i)
+      std::printf("  %-9s %zu. %-20s %lld\n", kModes[m], i + 1, group[size_t(m)][i].name.c_str(),
+                  (long long)group[size_t(m)][i].score);
   return 0;
 }
 
@@ -1198,6 +1295,8 @@ int main(int argc, char** argv) {
   int record_from = 1;
   SetupDev setup_dev;
   fs::path merge_from;
+  std::string online_pair;
+  bool online_sync = false;
   int rng_step = -1, dump_step = -1;
   uint32_t shot_w = 1280, shot_h = 720;
   int64_t seed = -1;
@@ -1230,6 +1329,8 @@ int main(int argc, char** argv) {
     else if (a == "--positions" && i + 1 < argc) positions_path = argv[++i];
     else if (a == "--audio-out" && i + 1 < argc) audio_path = argv[++i];
     else if (a == "--merge-profile" && i + 1 < argc) merge_from = argv[++i];
+    else if (a == "--online-pair" && i + 1 < argc) online_pair = argv[++i];
+    else if (a == "--online-sync") online_sync = true;
     else if (a == "--setup-preview" && i + 1 < argc) setup_dev.preview = argv[++i];
     else if (a == "--setup-from" && i + 1 < argc) setup_dev.source = argv[++i];
     else if (a == "--record" && i + 2 < argc) {
@@ -1306,7 +1407,8 @@ int main(int argc, char** argv) {
                    "usage: geow2 [--data <data-dir>] [--profile <dir>] [--fullscreen | --windowed]\n"
                    "             [--720p | --native] [--vsync | --no-vsync] [--language en|de|fr|es|it]\n"
                    "             [--version] [--help-dev]\n"
-                   "       geow2 [--profile <dir>] --merge-profile <another device's profile folder>\n",
+                   "       geow2 [--profile <dir>] --merge-profile <another device's profile folder>\n"
+                   "       geow2 [--profile <dir>] --online-pair <score server> | --online-sync\n",
                    GEOW2_VERSION);
       if (dev)
         std::fprintf(out,
@@ -1340,6 +1442,11 @@ int main(int argc, char** argv) {
   }
   if (!merge_from.empty()) {
     const int rc = merge_profile(profile_dir, merge_from);
+    SDL_Quit();
+    return rc;
+  }
+  if (!online_pair.empty() || online_sync) {
+    const int rc = online_command(profile_dir, online_pair);
     SDL_Quit();
     return rc;
   }
