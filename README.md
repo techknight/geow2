@@ -78,7 +78,7 @@ Controls: a gamepad (left stick moves, right stick fires, either trigger
 sets off a bomb, START pauses; the sticks and the bomb buttons can be
 swapped in Help and options), or the keyboard: WASD moves, the arrow keys
 fire (and move through menus), Space bombs, Enter selects, Escape goes
-back in menus and pauses a game. "Return to arcade" quits.
+back in menus and pauses a game. "Quit" in the main menu quits.
 
 Multiplayer takes up to four pads (the keyboard counts as the first):
 choose Multiplayer in the main menu, and the others join with A or START.

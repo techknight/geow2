@@ -776,7 +776,10 @@ void Frontend::main_menu(bool reset) {
     help(true);
     menu_pad_ = in.pad;
   });
-  add_item(0x07, [this](const MenuInput&, int, int) { quit_confirm(); });
+  // The original's 0x07 "Return to arcade" names the console's dashboard;
+  // the port quits, so the item is labelled with the game's own key tip for
+  // it, 0x37 "Quit" (DIFFERENCES.md "Leaving the game").
+  add_item(0x37, [this](const MenuInput&, int, int) { quit_confirm(); });
   menu_pad_ = -1;  // sub_82033698: every pad drives the main menu
 }
 

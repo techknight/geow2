@@ -14,6 +14,8 @@
 - Every finished game is kept in `scores.log`, so progress from two
   devices can be combined: `geow2 --merge-profile <the other device's
   profile folder>` adds its games, unlocks and achievements.
+- The main menu's last item reads "Quit" (the game's own word for it, in
+  every language) in place of "Return to arcade".
 - Setup inside the game: when there is no data folder, geow2 asks for
   your copy of the game (the package file or an extracted folder) and
   makes the data folder itself, with a progress bar. It works with a

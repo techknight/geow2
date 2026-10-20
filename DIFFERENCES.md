@@ -152,10 +152,14 @@ Format for each entry:
 ### Leaving the game
 
 - **What**: "Return to arcade".
-- **Original**: after its confirmation, `XamLoaderLaunchTitle(NULL,
-  0x100)` returns to the dashboard's arcade (`sub_8208F240`).
-- **Port**: the program quits.
-- **Decided**: 2026-10-15.
+- **Original**: the main menu's last item, text 0x07 "Return to arcade";
+  after its confirmation, `XamLoaderLaunchTitle(NULL, 0x100)` returns to
+  the dashboard's arcade (`sub_8208F240`).
+- **Port**: the program quits, and the item is labelled with the game's
+  own word for that action, its key tip text 0x37 "Quit" (Beenden,
+  Quitter, Salir, Abbandona), since there is no arcade to return to.
+  The confirmation is the original's (0x73).
+- **Decided**: 2026-10-15; the label 2026-10-19.
 
 ### Input devices
 
