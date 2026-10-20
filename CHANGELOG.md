@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
 
 - Online scores, optional: with a score server for your group of friends
   ([geow2-scores](https://github.com/techknight/geow2-scores), free to

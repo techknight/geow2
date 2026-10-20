@@ -85,6 +85,13 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.1.0" date="2026-10-20">
+      <description>
+        <p>Optional online scores with a score server for your group of friends: high scores, unlocked modes and
+        achievements shared between your devices, and the group's boards in the game. Setup inside the game,
+        with a gamepad. The mode select menu keeps the mode just played selected.</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-10-17">
       <description>
         <p>The first release: all six modes, the front end, local score boards and achievements, and local

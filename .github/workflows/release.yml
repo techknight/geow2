@@ -250,7 +250,7 @@ jobs:
           awk -v v="## $VERSION" '$0 == v {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
           cat >> notes.md <<'EOF'
 
-          **You need your own copy of the Xbox Live Arcade game**: see "Getting started" in the README to make the data folder with `geow2-extract`.
+          **You need your own copy of the Xbox Live Arcade game**: the first start asks for it and makes the data folder (see "Getting started" in the README).
 
           - **Windows**: x64, code-signed. Unzip and run `geow2.exe`.
           - **macOS**: universal (Apple silicon and Intel), macOS 11 or later, signed and notarized. Unzip and open `geow2.app`.
