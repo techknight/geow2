@@ -85,6 +85,12 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.1.2" date="2026-10-20">
+      <description>
+        <p>Online scores: the Single Player tiles show the group's best six for each mode, and the server's address
+        can be pasted.</p>
+      </description>
+    </release>
     <release version="1.1.1" date="2026-10-20">
       <description>
         <p>Installable from geow2.com with Flatpak, with updates through the software centre.</p>

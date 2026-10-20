@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.2
 
 - Online scores: pasting the server's address (Ctrl+V, or Cmd+V on a
   Mac) replaces what the field holds, and the screen says how to paste.
