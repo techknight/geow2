@@ -48,24 +48,32 @@ std::string server_base(const std::string& typed) {
 }
 
 std::string sync_body(const std::vector<ScoreEvent>& events, const OnlineProgress& progress, int64_t since) {
+  // (Built field by field: GCC 13 warns of uninitialized variants in
+  // nested braced lists of json::Value.)
   json::Array list;
-  for (const ScoreEvent& e : events)
-    list.push_back(json::Object{{"id", e.id},
-                                {"mode", e.mode},
-                                {"score", e.score},
-                                {"multiplier", e.multiplier},
-                                {"time", e.time},
-                                {"device", e.device},
-                                {"name", e.name}});
-  json::Array p;
-  for (int32_t v : progress.progress) p.push_back(int64_t(v));
-  return json::dump(json::Object{
-      {"events", std::move(list)},
-      {"progress", json::Object{{"unlocked", progress.unlocked},
-                                {"millions", progress.millions},
-                                {"progress", std::move(p)},
-                                {"achievements", progress.achievements}}},
-      {"since", since}});
+  for (const ScoreEvent& e : events) {
+    json::Object o;
+    o["id"] = e.id;
+    o["mode"] = e.mode;
+    o["score"] = e.score;
+    o["multiplier"] = e.multiplier;
+    o["time"] = e.time;
+    o["device"] = e.device;
+    o["name"] = e.name;
+    list.emplace_back(std::move(o));
+  }
+  json::Array per_mode;
+  for (int32_t v : progress.progress) per_mode.emplace_back(int64_t(v));
+  json::Object p;
+  p["unlocked"] = progress.unlocked;
+  p["millions"] = progress.millions;
+  p["progress"] = std::move(per_mode);
+  p["achievements"] = progress.achievements;
+  json::Object body;
+  body["events"] = std::move(list);
+  body["progress"] = std::move(p);
+  body["since"] = since;
+  return json::dump(body);
 }
 
 SyncReply parse_sync(int status, const std::string& body) {
