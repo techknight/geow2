@@ -961,7 +961,7 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
 struct PreviewOnline : OnlineMenu {
   std::string state;
   explicit PreviewOnline(std::string s) : state(std::move(s)) {}
-  bool paired() const override { return state == "paired"; }
+  bool paired() const override { return state == "paired" || state.rfind("boards", 0) == 0; }
   std::string server() const override { return "https://geow2-scores.example.workers.dev"; }
   std::string player() const override { return "Ace"; }
   std::string group() const override { return "Friday Night Grid"; }
@@ -983,6 +983,13 @@ struct PreviewOnline : OnlineMenu {
   void cancel_pairing() override {}
   void unpair() override {}
   void sync_now() override {}
+  std::string player_id() const override { return "p-ace"; }
+  std::array<std::vector<GroupRow>, 6> boards() const override {
+    std::array<std::vector<GroupRow>, 6> b;
+    b[0] = {{"p-kim", "Kim", 1840250, 9, 0}, {"p-ace", "Ace", 1392405, 8, 0}, {"p-jo", "Jo", 905110, 6, 0},
+            {"p-rob", "Robbie", 411500, 4, 0}};
+    return b;
+  }
 };
 
 int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std::vector<Press>& presses,
@@ -1140,6 +1147,8 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
     void cancel_pairing() override { o.cancel_pairing(); }
     void unpair() override { o.unpair(); }
     void sync_now() override { sync(); }
+    std::string player_id() const override { return o.state().player_id; }
+    std::array<std::vector<GroupRow>, 6> boards() const override { return o.group_boards(); }
   };
   OnlineAdapter online_menu(online, [&]() { sync_soon = true; });
   hooks.quit = [&]() { running = false; };

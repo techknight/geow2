@@ -75,10 +75,24 @@ Format for each entry:
     modes, the unlock progress and the achievements merge both ways with
     the server: games add up without repeats, bits are combined, progress
     takes the larger value. A device's games, unlocks and achievements
-    therefore reach every other device paired to the same player.
+    therefore reach every other device paired to the same player;
+  - the group's board (each player's best per mode, the player's own row
+    counting this profile's best even before the server has it) stands in
+    for the Live boards:
+    - the leaderboard screens start on Friends (0x29) and X steps
+      Friends, My score (0x2A, opening on the page with the player's row)
+      and Overall (0x2B), as `sub_8208AAB8` does. Friends and My score show
+      the group's board with the player's row boxed (the original boxes the
+      cursor row, which starts on the player's in My score); Overall is
+      the local board. The tips gain X Change Filter (0x31). An empty
+      group board shows 0x7E.
+    - the results screen's Friends Leaderboard column shows the group's
+      board, eight rows from the player's row less four, the player's row
+      highlighted, names and scores without ranks (`sub_82088AE0`).
 
   Nothing is sent before a device is paired, and an unpaired game never
-  connects.
+  connects; unpaired, the screens are as in "Xbox Live leaderboards and
+  achievements".
 - **Decided**: 2026-10-19.
 
 ### Setup

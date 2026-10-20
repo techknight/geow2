@@ -1368,10 +1368,17 @@ void Frontend::results() {
              font.right(c.lines, 308.0f, ry, 8.0f, 8.0f, col.data(), num);
            }
          }
-         // The local board's rows around the last game's.
+         // The friends board (sub_82088AE0): with a score server the group's
+         // board, eight rows from clamp(own - 4, 0, count - 8), the player's
+         // row highlighted, names and scores only; without one the local
+         // board's rows around the last game's.
+         int own = -1;
+         const std::vector<GroupRow> group = group_board(mode, own);
+         const bool friends = online_ && online_->paired();
          const LocalBoard& b = boards_[size_t(mode)];
-         const int count = int(b.rows.size());
-         const int first = std::clamp(last_row_ - 4, 0, std::max(count - 8, 0));
+         const int count = friends ? int(group.size()) : int(b.rows.size());
+         const int mark = friends ? own : last_row_;
+         const int first = std::clamp(mark - 4, 0, std::max(count - 8, 0));
          const float pitch = ((L - 148.0f) + 6.0f) * 0.125f;
          const float off = ((pitch - 6.0f) - 8.0f) * 0.5f;
          float ry = 148.0f;
@@ -1380,10 +1387,12 @@ void Frontend::results() {
            const float yy = off + ry;
            ry = ry + pitch;
            if (r >= count) continue;
-           const Rgba& col = r == last_row_ ? P[kUiHighlight] : P[kUiNormal];
-           const std::string num = format_number(b.rows[size_t(r)].score);
-           font.left_fit(c.lines, 332.0f, yy, 8.0f, 8.0f, fmadds(-font.measure(num), 8.0f, 252.0f), col.data(),
-                         format("%i. %s", r + 1, display_name(b.rows[size_t(r)].name).c_str()));
+           const Rgba& col = r == mark ? P[kUiHighlight] : P[kUiNormal];
+           const int64_t score = friends ? group[size_t(r)].score : b.rows[size_t(r)].score;
+           const std::string num = format_number(score);
+           const std::string label = friends ? display_name(group[size_t(r)].name)
+                                             : format("%i. %s", r + 1, display_name(b.rows[size_t(r)].name).c_str());
+           font.left_fit(c.lines, 332.0f, yy, 8.0f, 8.0f, fmadds(-font.measure(num), 8.0f, 252.0f), col.data(), label);
            font.right(c.lines, 600.0f, yy, 8.0f, 8.0f, col.data(), num);
          }
          // The board's scroll bar (sub_820913B0 at 606, eight rows).
@@ -2092,9 +2101,32 @@ void Frontend::leaderboards(bool reset) {
     });
 }
 
+std::vector<GroupRow> Frontend::group_board(int mode, int& own) const {
+  own = -1;
+  if (!online_ || !online_->paired() || mode < 0 || mode > 5) return {};
+  std::vector<GroupRow> rows = online_->boards()[size_t(mode)];
+  const std::string me = online_->player_id();
+  // This profile's best (its games from every device, and the one just
+  // played) for the player's row, should the server not have it yet.
+  const LocalBoard& local = boards_[size_t(mode)];
+  const int64_t best = local.rows.empty() ? 0 : local.rows.front().score;
+  auto it = std::find_if(rows.begin(), rows.end(), [&](const GroupRow& r) { return r.player == me; });
+  if (best > 0 && (it == rows.end() || it->score < best)) {
+    if (it != rows.end()) rows.erase(it);
+    rows.push_back(GroupRow{me, online_->player(), best, 1, 0});
+    std::stable_sort(rows.begin(), rows.end(), [](const GroupRow& a, const GroupRow& b) { return a.score > b.score; });
+  }
+  for (size_t i = 0; i < rows.size(); ++i)
+    if (rows[i].player == me) own = int(i);
+  return rows;
+}
+
 void Frontend::board_view(int mode, std::function<void(const MenuInput&)> back) {
   board_mode_ = std::clamp(mode, 0, 5);
   board_first_ = 0;
+  // sub_8208AAB8 starts at Friends. Without a score server the port has
+  // only the local board, shown as Overall.
+  board_filter_ = online_ && online_->paired() ? 0 : 2;
   open(0, back,
        [this](UiCanvas& c) {
          const Font& font = g_.font;
@@ -2104,22 +2136,36 @@ void Frontend::board_view(int mode, std::function<void(const MenuInput&)> back) 
          ui_panel(c, 618.0f, 46.0f, 640.0f, cursor_, P[kUiBackground], 4);
          static const int kBoardName[6] = {0x3D, 0x3B, 0x3C, 0x3F, 0x3E, 0x40};  // by board: Deadline, Evolved, ...
          static const int kBoardOfMode[6] = {0, 1, 2, 4, 3, 5};
+         // The filter's name (sub_8208A2C0): 0x29 Friends, 0x2A My score, 0x2B Overall.
          font.centre_fit(c.lines, 320.0f, 24.0f, 15.0f, 10.0f, 540.0f, P[kUiNormal].data(),
-                         format("%s - %s", text_(kBoardName[kBoardOfMode[board_mode_]]).c_str(), text_(0x2B).c_str()));
+                         format("%s - %s", text_(kBoardName[kBoardOfMode[board_mode_]]).c_str(),
+                                text_(0x29 + board_filter_).c_str()));
+         // The rows: the group's board (Friends, My score) or the local one.
+         int own = -1;
+         const std::vector<GroupRow> group = board_filter_ < 2 ? group_board(board_mode_, own) : std::vector<GroupRow>{};
          const LocalBoard& b = boards_[size_t(board_mode_)];
+         const int count = board_filter_ < 2 ? int(group.size()) : int(b.rows.size());
          const float rh = ((cursor_ - 46.0f) + 6.0f) * 0.1f;
          for (int i = 0; i < 10; ++i) {
            const float y = fmadds(float(i), rh, 46.0f);
-           ui_panel(c, 28.0f, y, 606.0f, (y + rh) - 6.0f, P[kUiBackground], 0);
            const int r = board_first_ + i;
-           if (r >= int(b.rows.size())) continue;
-           const Rgba& col = P[kUiNormal];
+           // The player's own row is boxed, as the cursor row is (in My score
+           // the cursor starts on it, sub_8208B178).
+           const bool mine = r == own;
+           ui_panel(c, 28.0f, y, 606.0f, (y + rh) - 6.0f, mine ? P[kUiSelection] : P[kUiBackground], 0);
+           if (r >= count) continue;
+           const Rgba& col = mine ? P[kUiHighlight] : P[kUiNormal];
+           const std::string& name = board_filter_ < 2 ? group[size_t(r)].name : b.rows[size_t(r)].name;
+           const int64_t score = board_filter_ < 2 ? group[size_t(r)].score : b.rows[size_t(r)].score;
            font.centre(c.lines, 28.0f + 80.0f, y + 2.0f, 8.0f, 8.0f, col.data(), format("%s.", format_number(r + 1).c_str()));
-           font.left_fit(c.lines, 28.0f + 130.0f, y + 2.0f, 10.0f, 10.0f, 300.0f, col.data(), display_name(b.rows[size_t(r)].name));
-           font.right(c.lines, 28.0f + 570.0f, y + 2.0f, 10.0f, 10.0f, col.data(), format_number(b.rows[size_t(r)].score));
+           font.left_fit(c.lines, 28.0f + 130.0f, y + 2.0f, 10.0f, 10.0f, 300.0f, col.data(), display_name(name));
+           font.right(c.lines, 28.0f + 570.0f, y + 2.0f, 10.0f, 10.0f, col.data(), format_number(score));
          }
+         // No entries (0x7E) on an empty group board.
+         if (board_filter_ < 2 && count == 0)
+           font.centre(c.lines, 320.0f, fmadds(rh, 0.5f, 46.0f) - 5.0f, 10.0f, 10.0f, P[kUiNormal].data(), text_(0x7E));
          // The scroll bar (sub_820913B0 at 612, ten rows).
-         ui_scroll_bar(c, 612.0f, 46.0f, cursor_, float(board_first_), float(b.rows.size()), 10.0f,
+         ui_scroll_bar(c, 612.0f, 46.0f, cursor_, float(board_first_), float(count), 10.0f,
                        scaled(P[kUiScrollBar], 0.5f), scaled(P[kUiBackground], 0.5f), scaled(P[kUiBackground], 0.25f));
        },
        false,
@@ -2128,7 +2174,21 @@ void Frontend::board_view(int mode, std::function<void(const MenuInput&)> back) 
            if (const auto b = screen_.back) b(in);
            return;
          }
-         const int count = int(boards_[size_t(board_mode_)].rows.size());
+         // X steps the filter (sub_82089D58, sound 0x18); My score opens on
+         // the page holding the player's row (sub_8208B178).
+         if ((in.pressed & kX) && online_ && online_->paired()) {
+           board_filter_ = (board_filter_ + 1) % 3;
+           board_first_ = 0;
+           if (board_filter_ == 1) {
+             int own = -1;
+             group_board(board_mode_, own);
+             if (own >= 0) board_first_ = (own / 10) * 10;
+           }
+           sound(audio::Event::kUiConfirm);
+         }
+         int own_unused = -1;
+         const int count = board_filter_ < 2 ? int(group_board(board_mode_, own_unused).size())
+                                             : int(boards_[size_t(board_mode_)].rows.size());
          const int max_first = std::max(count - 10, 0);
          if (in.pressed & kUp) board_first_ = std::clamp(board_first_ - 1, 0, max_first);
          if (in.pressed & kDown) board_first_ = std::clamp(board_first_ + 1, 0, max_first);
@@ -2167,6 +2227,11 @@ void Frontend::board_view(int mode, std::function<void(const MenuInput&)> back) 
        },
        0);
   screen_.tips = [this](TextLayout& l) {
+    // sub_82089BF0's X Change Filter (0x31), with a score server.
+    if (online_ && online_->paired()) {
+      l.add(palette_[kUiHighlight], " X ");
+      l.add(palette_[kUiNormal], text_(0x31));
+    }
     l.add(palette_[kUiHighlight], " \x1D\x1E ")->scale = 0.75f;
     l.add(palette_[kUiNormal], text_(0x2C));
     l.add(palette_[kUiHighlight], " B ");
@@ -2186,6 +2251,10 @@ void Frontend::preview_online(const std::string& state) {
     edit_ = "geow2-scores.example.workers.dev";
   } else if (state == "waiting" || state == "failed") {
     pairing_screen();
+  } else if (state == "boards" || state == "boards-mine") {
+    // Deadline's board, Friends or My score ("paired" data).
+    board_view(0, [this](const MenuInput&) { leaderboards(false); });
+    if (state == "boards-mine") board_filter_ = 1;
   }
 }
 

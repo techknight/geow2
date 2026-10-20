@@ -11,6 +11,7 @@
 #include "game/profile.h"
 #include "game/ui.h"
 #include "game/ui_text.h"
+#include "net/scores.h"
 
 namespace geow2 {
 
@@ -83,6 +84,9 @@ class OnlineMenu {
   virtual void cancel_pairing() = 0;
   virtual void unpair() = 0;
   virtual void sync_now() = 0;
+  virtual std::string player_id() const = 0;
+  // The group's boards from the last sync: per mode, each player's best.
+  virtual std::array<std::vector<GroupRow>, 6> boards() const = 0;
 };
 
 // The front end: the menu screens (screen record sub_8208FFF0, items
@@ -210,6 +214,11 @@ class Frontend {
   void online_screen(bool reset);          // the port's online scores (no original)
   void pairing_screen();
   void finish_editing(bool keep);
+  // The group's board for a mode as the friends board shows it (each
+  // player's best, best first), with this profile's best counted for the
+  // player even before the server has it; `own` is the player's row, -1
+  // without one. Empty when not paired.
+  std::vector<GroupRow> group_board(int mode, int& own) const;
 
   // The multiplayer setup (menu 6, sub_820863B0) and its parts.
   void lobby(bool reset);
@@ -275,6 +284,7 @@ class Frontend {
   int last_row_ = -1;     // the last game's row on its local board
   int board_mode_ = 0;
   int board_first_ = 0;
+  int board_filter_ = 2;  // dat_821EB5AC: 0 Friends, 1 My score, 2 Overall (the local board)
   float board_scroll_ = 0.0f;  // dat_821EA114
   int board_hold_ = 0;         // dat_821EA118
   int achievement_first_ = 0;
