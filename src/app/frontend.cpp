@@ -2365,9 +2365,12 @@ void Frontend::online_screen(bool reset) {
                const std::string s = online_->server();
                l.add(palette_[kUiNormal], s.empty() ? "Enter the server's address" : "Server: " + s);
              });
-    add_item(0, [this](const MenuInput&, int, int) { pairing_screen(); },
-             [this](TextLayout& l) { l.add(palette_[kUiNormal], "Pair this device"); },
-             [this](int, int) { return !online_->server().empty(); });
+    // Only once there is an address: a greyed item in a two-item menu would
+    // take the selection for a frame (sub_82090180 moves to the other of
+    // two items without checking it).
+    if (!online_->server().empty())
+      add_item(0, [this](const MenuInput&, int, int) { pairing_screen(); },
+               [this](TextLayout& l) { l.add(palette_[kUiNormal], "Pair this device"); });
   } else {
     add_item(0, [this](const MenuInput&, int, int) {
       online_->sync_now();
