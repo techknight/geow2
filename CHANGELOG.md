@@ -16,6 +16,8 @@
   profile folder>` adds its games, unlocks and achievements.
 - The main menu's last item reads "Quit" (the game's own word for it, in
   every language) in place of "Return to arcade".
+- After a game, the mode select menu keeps the mode just played selected,
+  as the original does, rather than going back to Deadline.
 - Setup inside the game: when there is no data folder, geow2 asks for
   your copy of the game (the package file or an extracted folder) and
   makes the data folder itself, with a progress bar. It works with a
