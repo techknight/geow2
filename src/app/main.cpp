@@ -12,7 +12,7 @@
 //         [--trace <csv>] [--positions <file>] [--dump <step> <file>] [--perf]
 //         [--record <raw-file> <first-step>]
 //   geow2 --data <data-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
-//         [--online-preview unpaired|editing|waiting|failed|paired|boards|modes]
+//         [--online-preview unpaired|editing|waiting|failed|paired|boards|modes|results]
 //   geow2 [--data <data-dir>] --setup-preview <out.png> | --setup-from <package>
 //
 // The first form opens the window at the front end; the profile, the
@@ -956,12 +956,15 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
 
 // --online-preview: the online scores in a fixed state, for captures of
 // their screens (no server): "unpaired", "editing" (typing the address),
-// "waiting" (a pairing code), "failed", "paired", "boards" or "modes" (the
-// mode select's tiles with the group's boards, every mode unlocked).
+// "waiting" (a pairing code), "failed", "paired", "boards", "modes" (the
+// mode select's tiles with the group's boards, every mode unlocked) or
+// "results" (the game over screen after a game of Deadline).
 struct PreviewOnline : OnlineMenu {
   std::string state;
   explicit PreviewOnline(std::string s) : state(std::move(s)) {}
-  bool paired() const override { return state == "paired" || state == "modes" || state.rfind("boards", 0) == 0; }
+  bool paired() const override {
+    return state == "paired" || state == "modes" || state == "results" || state.rfind("boards", 0) == 0;
+  }
   std::string server() const override { return "https://geow2-scores.example.workers.dev"; }
   std::string player() const override { return "Ace"; }
   std::string group() const override { return "Friday Night Grid"; }
@@ -1005,6 +1008,11 @@ int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, 
   if (online_preview == "modes") {
     profile.unlocked = 0x3F;
     profile.progress.fill(1);
+  }
+  if (online_preview == "results") {
+    // A finished game of Deadline by the preview's player.
+    g.rules.mode = 0;
+    g.tables[0].insert(1276745, 8, "Ace");
   }
   std::array<LocalBoard, 6> boards;
   Frontend fe(g, g.text, profile, boards, {});
@@ -1606,7 +1614,7 @@ int main(int argc, char** argv) {
                      "        [--trace <csv>] [--positions <file>] [--dump <step> <file>] [--perf]\n"
                      "        [--record <raw-file> <first-step>]\n"
                      "  geow2 --frames <n> --screenshot <png> --frontend [--press <frame> <button>]...\n"
-                     "        [--online-preview unpaired|editing|waiting|failed|paired|boards|modes]\n"
+                     "        [--online-preview unpaired|editing|waiting|failed|paired|boards|modes|results]\n"
                      "  geow2 [--data <dir>] --setup-preview <png> | --setup-from <package>\n");
       return help || dev ? 0 : 2;
     }

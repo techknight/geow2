@@ -2347,6 +2347,8 @@ void Frontend::preview_online(const std::string& state) {
     pairing_screen();
   } else if (state == "modes") {
     mode_select(true);
+  } else if (state == "results") {
+    results();
   } else if (state == "boards" || state == "boards-mine") {
     // Deadline's board, Friends or My score ("paired" data).
     board_view(0, [this](const MenuInput&) { leaderboards(false); });
