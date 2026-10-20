@@ -104,6 +104,7 @@ add_library(geow2_game STATIC
   src/game/profile.cpp
   src/game/repulsar.cpp
   src/game/rotation.cpp
+  src/game/score_log.cpp
   src/game/sequence.cpp
   src/game/shockwave.cpp
   src/game/shots.cpp

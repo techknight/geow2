@@ -20,6 +20,7 @@
 #include "game/player_motion.h"
 #include "game/profile.h"
 #include "game/rotation.h"
+#include "game/score_log.h"
 #include "game/sequence.h"
 #include "game/shots.h"
 #include "game/spawn.h"
@@ -90,6 +91,45 @@ static GameMath test_math() {
 }
 
 static const GameMath kMath = test_math();
+
+static void test_score_log() {
+  // scores.txt rows import with ids made from their contents: the same
+  // file twice adds nothing, and a repeated row is a second game.
+  const std::string board = "0\t500\tPlayer 1\n0\t500\tPlayer 1\n3\t70\tPlayer 1\n9\t1\tbad mode\n";
+  const auto first = ScoreLog::import_board_file(board, "pc");
+  expect(first.size() == 3, "scores.txt: three valid rows");
+  expect(first[0].id != first[1].id, "scores.txt: a repeated row is a second game");
+  ScoreLog log;
+  expect(log.merge(first) == 3, "scores.txt: imported");
+  expect(log.merge(ScoreLog::import_board_file(board, "deck")) == 0, "scores.txt: imported again adds nothing");
+
+  // Events from another device add up; known ids are skipped.
+  ScoreEvent e{new_event_id(), 0, 900, 4, 1760000000, "deck", "Name\twith tab"};
+  expect(log.add(e), "event: new");
+  expect(!log.add(e), "event: known");
+  expect(e.id.size() == 32 && e.id != new_event_id(), "event ids: 32 hex digits, random");
+  const auto best = log.best(0, 2);
+  expect(best.size() == 2 && best[0]->score == 900 && best[1]->score == 500, "best: by score, at most the rows asked");
+
+  // The log's own file round-trips (the tab in the name became a space).
+  const ScoreLog back = ScoreLog::parse(log.serialize());
+  expect(back.events().size() == log.events().size(), "scores.log: every event read back");
+  expect(back.best(0, 1)[0]->name == "Name with tab" && back.best(0, 1)[0]->multiplier == 4, "scores.log: fields");
+  expect(ScoreLog::parse("not an event\n0123\t0\t5\t1\t0\tpc\tx\n").events().empty(), "scores.log: bad lines skipped");
+
+  // Progress: unlocks and million bits add up, progress takes the larger.
+  Profile mine, theirs;
+  mine.progress = {400, 10, 0, 0, 0, 0};
+  theirs.unlocked = 2 | 1;
+  theirs.progress = {120, 300, 5, 0, 0, 0};
+  theirs.millions = 4;
+  theirs.sound_volume = 0.0f;
+  expect(merge_progress(mine, theirs), "progress: changed");
+  expect(mine.unlocked == 3 && mine.millions == 4, "progress: unlocks and millions added");
+  expect(mine.progress[0] == 400 && mine.progress[1] == 300 && mine.progress[2] == 5, "progress: the larger");
+  expect(mine.sound_volume == 1.0f, "progress: settings untouched");
+  expect(!merge_progress(mine, theirs), "progress: merging again changes nothing");
+}
 
 static void test_game_math() {
   double worst = 0.0;
@@ -713,6 +753,7 @@ void test_profile() {
 
 int main() {
   test_profile();
+  test_score_log();
   test_sequence_parser();
   test_gravity_well();
   test_gate();

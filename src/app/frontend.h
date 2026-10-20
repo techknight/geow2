@@ -71,6 +71,9 @@ class Frontend {
   struct Hooks {
     std::function<void()> save_profile;  // the profile block changed
     std::function<void()> save_boards;   // the local boards changed
+    // Every finished single-player game, placed on the board or not (the
+    // score log behind the boards and the online scores).
+    std::function<void(int mode, int64_t score, int multiplier, const std::string& name)> scored;
     std::function<void()> quit;          // "Return to arcade"
   };
   Frontend(Game& g, const UiText& text, Profile& profile, std::array<LocalBoard, 6>& boards, Hooks hooks);

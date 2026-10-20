@@ -353,6 +353,7 @@ void Frontend::finish() {
       // The local board in place of the Live score write (sub_8207E490).
       last_row_ = boards_[size_t(mode)].add(rec.score, name);
       if (last_row_ >= 0 && hooks_.save_boards) hooks_.save_boards();
+      if (rec.score > 0 && hooks_.scored) hooks_.scored(mode, rec.score, rec.multiplier, name);
     }
     if (profile_.game_ended(mode, g_.world->records[0].kills, g_.world->records[0].score) && hooks_.save_profile)
       hooks_.save_profile();

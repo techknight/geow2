@@ -2,6 +2,7 @@
 //
 //   geow2 [--data <data-dir>] [--profile <dir>] [--fullscreen | --windowed] [--720p | --native]
 //         [--vsync | --no-vsync] [--language en|de|fr|es|it]
+//   geow2 [--profile <dir>] --merge-profile <another device's profile folder>
 //   geow2 --data <data-dir> --frames <n> --screenshot <out.png> | --audio-out <out.wav> [--size <w> <h>]
 //         [--mode <n>] [--level <n>]
 //         [--stick <x> <y>] [--fire <x> <y>] [--bomb <step>] [--trigger <0-255>] [--spawn <type> <x> <y>]...
@@ -15,7 +16,9 @@
 // The first form opens the window at the front end; the profile, the
 // local score boards and the display settings (display.txt: fullscreen,
 // exact 720p render, vsync; F11 toggles fullscreen) are kept in --profile
-// (default: the user's preferences folder).
+// (default: the user's preferences folder). --merge-profile adds another
+// device's profile folder (its games, unlocks and achievements) to it and
+// quits.
 //
 // The second runs n simulation steps of a game of --mode (0 Deadline,
 // 1 Evolved, 2 Sequence, 3 Waves, 4 Pacifism, 5 King) without a window,
@@ -66,10 +69,12 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -93,6 +98,7 @@
 #include "data/png_read.h"
 #include "extract/bytes.h"
 #include "game/gravity_well.h"
+#include "game/score_log.h"
 #include "game/spawn.h"
 #include "version.h"
 
@@ -150,30 +156,93 @@ void save_profile(const fs::path& dir, const Profile& p) {
   if (!replace_file(dir / "profile.bin", b)) SDL_Log("cannot save %s", (dir / "profile.bin").string().c_str());
 }
 
-// One row per line: mode, score, name (tab-separated).
-void load_boards(const fs::path& dir, std::array<LocalBoard, 6>& boards) {
-  std::ifstream f(dir / "scores.txt");
-  std::string line;
-  while (std::getline(f, line)) {
-    if (!line.empty() && line.back() == '\r') line.pop_back();  // a file brought from Windows
-    std::istringstream s(line);
-    std::string mode, score, name;
-    if (!std::getline(s, mode, '\t') || !std::getline(s, score, '\t')) continue;
-    std::getline(s, name);
-    const int m = std::atoi(mode.c_str());
-    if (m < 0 || m > 5) continue;
-    auto& rows = boards[size_t(m)].rows;
-    if (rows.size() < LocalBoard::kRows) rows.push_back({std::atoll(score.c_str()), name});
-  }
-  for (auto& b : boards)
-    std::stable_sort(b.rows.begin(), b.rows.end(), [](const auto& a, const auto& c) { return a.score > c.score; });
+std::string read_text(const fs::path& path) {
+  std::ifstream f(path, std::ios::binary);
+  std::ostringstream s;
+  s << f.rdbuf();
+  return s.str();
 }
 
+// This device's id in the score log: random, made once.
+std::string device_id(const fs::path& dir) {
+  std::istringstream s(read_text(dir / "device.txt"));
+  std::string id;
+  if (s >> id && id.size() == 32) return id;
+  id = new_event_id();
+  save_text(dir / "device.txt", id + "\n");
+  return id;
+}
+
+// scores.log: every finished single-player game (game/score_log.h). An
+// earlier version's scores.txt is imported when there is no log yet.
+ScoreLog load_score_log(const fs::path& dir, const std::string& device) {
+  if (fs::exists(dir / "scores.log")) return ScoreLog::parse(read_text(dir / "scores.log"));
+  ScoreLog log;
+  log.merge(ScoreLog::import_board_file(read_text(dir / "scores.txt"), device));
+  return log;
+}
+
+void save_score_log(const fs::path& dir, const ScoreLog& log) { save_text(dir / "scores.log", log.serialize()); }
+
+// The boards: each mode's best games in the log.
+void boards_from(const ScoreLog& log, std::array<LocalBoard, 6>& boards) {
+  for (int m = 0; m < 6; ++m) {
+    auto& rows = boards[size_t(m)].rows;
+    rows.clear();
+    for (const ScoreEvent* e : log.best(m, LocalBoard::kRows)) rows.push_back({e->score, e->name});
+  }
+}
+
+// The unlocked achievements (bits of Game::achieved), kept beside the profile.
+uint32_t load_achievements(const fs::path& dir) {
+  std::istringstream s(read_text(dir / "achievements.txt"));
+  unsigned long bits = 0;
+  s >> std::hex >> bits;
+  return uint32_t(bits);
+}
+
+void save_achievements(const fs::path& dir, uint32_t bits) {
+  char line[16];
+  std::snprintf(line, sizeof(line), "%x\n", unsigned(bits));
+  save_text(dir / "achievements.txt", line);
+}
+
+// One row per line: mode, score, name (tab-separated). Kept beside
+// scores.log for earlier versions of the game.
 void save_boards(const fs::path& dir, const std::array<LocalBoard, 6>& boards) {
   std::ostringstream f;
   for (int m = 0; m < 6; ++m)
     for (const auto& r : boards[size_t(m)].rows) f << m << '\t' << r.score << '\t' << r.name << '\n';
   save_text(dir / "scores.txt", f.str());
+}
+
+// --merge-profile: another device's profile folder added to this one: its
+// games join the score log, its unlocks and achievements add to these.
+// Settings stay. Merging the same folder again changes nothing.
+int merge_profile(const fs::path& dir, const fs::path& other) {
+  if (!fs::is_directory(other)) {
+    std::fprintf(stderr, "no profile folder at %s\n", other.string().c_str());
+    return 1;
+  }
+  fs::create_directories(dir);
+  ScoreLog log = load_score_log(dir, device_id(dir));
+  std::istringstream other_device(read_text(other / "device.txt"));
+  std::string their_device = "imported";
+  other_device >> their_device;
+  const size_t games = log.merge(load_score_log(other, their_device).events());
+  Profile mine = load_profile(dir);
+  const bool progress = merge_progress(mine, load_profile(other));
+  const uint32_t had = load_achievements(dir), achieved = had | load_achievements(other);
+  save_score_log(dir, log);
+  std::array<LocalBoard, 6> boards;
+  boards_from(log, boards);
+  save_boards(dir, boards);
+  if (progress) save_profile(dir, mine);
+  if (achieved != had) save_achievements(dir, achieved);
+  std::printf("merged %s into %s: %zu new game(s), %s, %d new achievement(s)\n", other.string().c_str(),
+              dir.string().c_str(), games, progress ? "unlocks or progress added" : "no new unlocks or progress",
+              std::popcount(achieved & ~had));
+  return 0;
 }
 
 // The game's sticks from the player's pad, as the player update reads them
@@ -866,12 +935,19 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
   // The exact 720p render target, scaled into the window.
   SDL_GPUTexture* frame720 = nullptr;
   Profile profile = load_profile(profile_dir);
+  const std::string device = device_id(profile_dir);
+  ScoreLog score_log = load_score_log(profile_dir, device);
+  if (!fs::exists(profile_dir / "scores.log")) save_score_log(profile_dir, score_log);
   std::array<LocalBoard, 6> boards;
-  load_boards(profile_dir, boards);
+  boards_from(score_log, boards);
   bool running = true;
   Frontend::Hooks hooks;
   hooks.save_profile = [&]() { save_profile(profile_dir, profile); };
   hooks.save_boards = [&]() { save_boards(profile_dir, boards); };
+  hooks.scored = [&](int mode, int64_t score, int multiplier, const std::string& name) {
+    score_log.add({new_event_id(), mode, score, multiplier, int64_t(std::time(nullptr)), device, name});
+    save_score_log(profile_dir, score_log);
+  };
   hooks.quit = [&]() { running = false; };
   // The sound: the AOBJ graphs over the extracted waves, mixed in 5.1.
   audio::AudioEngine sound;
@@ -888,17 +964,8 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
     attach_sound(g, glue, []() { return uint32_t(SDL_GetTicks()); });
   }
   Frontend fe(g, g.text, profile, boards, hooks);
-  // The unlocked achievements, kept beside the profile.
-  {
-    std::ifstream f(profile_dir / "achievements.txt");
-    unsigned long bits = 0;
-    if (f >> std::hex >> bits) g.achieved = uint32_t(bits);
-  }
-  g.unlocked = [&](uint32_t) {
-    char line[16];
-    std::snprintf(line, sizeof(line), "%x\n", unsigned(g.achieved));
-    save_text(profile_dir / "achievements.txt", line);
-  };
+  g.achieved = load_achievements(profile_dir);
+  g.unlocked = [&](uint32_t) { save_achievements(profile_dir, g.achieved); };
   fe.boot();
   const SDL_GPUTextureFormat format = SDL_GetGPUSwapchainTextureFormat(dev, window);
   std::array<SDL_Gamepad*, 4> pads{};
@@ -1130,6 +1197,7 @@ int main(int argc, char** argv) {
   fs::path trace_path, rng_path, dump_path, inputs_path, positions_path, audio_path, record_path;
   int record_from = 1;
   SetupDev setup_dev;
+  fs::path merge_from;
   int rng_step = -1, dump_step = -1;
   uint32_t shot_w = 1280, shot_h = 720;
   int64_t seed = -1;
@@ -1161,6 +1229,7 @@ int main(int argc, char** argv) {
     else if (a == "--crt-state" && i + 1 < argc) crt_state = int64_t(std::strtoul(argv[++i], nullptr, 16));
     else if (a == "--positions" && i + 1 < argc) positions_path = argv[++i];
     else if (a == "--audio-out" && i + 1 < argc) audio_path = argv[++i];
+    else if (a == "--merge-profile" && i + 1 < argc) merge_from = argv[++i];
     else if (a == "--setup-preview" && i + 1 < argc) setup_dev.preview = argv[++i];
     else if (a == "--setup-from" && i + 1 < argc) setup_dev.source = argv[++i];
     else if (a == "--record" && i + 2 < argc) {
@@ -1236,7 +1305,8 @@ int main(int argc, char** argv) {
                    "geow2 %s\n"
                    "usage: geow2 [--data <data-dir>] [--profile <dir>] [--fullscreen | --windowed]\n"
                    "             [--720p | --native] [--vsync | --no-vsync] [--language en|de|fr|es|it]\n"
-                   "             [--version] [--help-dev]\n",
+                   "             [--version] [--help-dev]\n"
+                   "       geow2 [--profile <dir>] --merge-profile <another device's profile folder>\n",
                    GEOW2_VERSION);
       if (dev)
         std::fprintf(out,
@@ -1267,6 +1337,11 @@ int main(int argc, char** argv) {
     char* pref = SDL_GetPrefPath("geow2", "geow2");
     profile_dir = pref ? fs::path(pref) : fs::path("profile");
     SDL_free(pref);
+  }
+  if (!merge_from.empty()) {
+    const int rc = merge_profile(profile_dir, merge_from);
+    SDL_Quit();
+    return rc;
   }
   Game game;
   // The language: --language, else the system's first preferred one the
