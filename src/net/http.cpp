@@ -18,6 +18,9 @@ namespace geow2 {
 
 namespace {
 const std::string kUserAgent = std::string("geow2/") + GEOW2_VERSION;
+// The largest answer read: a sync's reply is well under a megabyte.
+constexpr size_t kMaxBody = 8u << 20;
+const char* const kTooLarge = "the server's answer was too large";
 }
 
 #ifdef _WIN32
@@ -78,6 +81,10 @@ HttpResponse http_request(const std::string& url, const std::string& body, const
     r.error = last_error("WinHttpOpenRequest");
     return r;
   }
+  // No redirects (WinHTTP follows them by default): the token goes only to
+  // the address given.
+  DWORD never = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+  WinHttpSetOption(request.h, WINHTTP_OPTION_REDIRECT_POLICY, &never, sizeof(never));
   std::wstring headers = L"Accept: application/json\r\n";
   if (!body.empty()) headers += L"Content-Type: application/json\r\n";
   if (!bearer.empty()) headers += L"Authorization: Bearer " + wide(bearer) + L"\r\n";
@@ -98,6 +105,11 @@ HttpResponse http_request(const std::string& url, const std::string& body, const
   for (;;) {
     DWORD available = 0;
     if (!WinHttpQueryDataAvailable(request.h, &available) || available == 0) break;
+    if (r.body.size() + available > kMaxBody) {
+      r.body.clear();
+      r.error = kTooLarge;
+      return r;
+    }
     std::vector<char> chunk(available);
     DWORD read = 0;
     if (!WinHttpReadData(request.h, chunk.data(), available, &read) || read == 0) break;
@@ -174,8 +186,20 @@ const Lib& curl() {
   return lib;
 }
 
+// The answer, up to kMaxBody; past it the transfer stops (returning less
+// than given makes libcurl fail the request).
+struct Body {
+  std::string text;
+  bool too_large = false;
+};
+
 size_t collect(char* data, size_t size, size_t n, void* out) {
-  static_cast<std::string*>(out)->append(data, size * n);
+  Body& b = *static_cast<Body*>(out);
+  if (b.text.size() + size * n > kMaxBody) {
+    b.too_large = true;
+    return 0;
+  }
+  b.text.append(data, size * n);
   return size * n;
 }
 
@@ -205,8 +229,10 @@ HttpResponse http_request(const std::string& url, const std::string& body, const
   c.setopt(h, kOptNoSignal, 1L);
   c.setopt(h, kOptTimeout, long(timeout_seconds));
   c.setopt(h, kOptConnectTimeout, long(timeout_seconds));
+  // (Redirects are not followed: libcurl's default.)
+  Body received;
   c.setopt(h, kOptWriteFunction, &collect);
-  c.setopt(h, kOptWriteData, &r.body);
+  c.setopt(h, kOptWriteData, &received);
   if (!body.empty()) {
     c.setopt(h, kOptPostFieldSize, long(body.size()));
     c.setopt(h, kOptPostFields, body.c_str());
@@ -216,8 +242,9 @@ HttpResponse http_request(const std::string& url, const std::string& body, const
     long status = 0;
     c.getinfo(h, kInfoResponseCode, &status);
     r.status = int(status);
+    r.body = std::move(received.text);
   } else {
-    r.error = c.strerror(rc);
+    r.error = received.too_large ? kTooLarge : c.strerror(rc);
   }
   c.free_list(headers);
   c.cleanup(h);

@@ -54,8 +54,9 @@ class ScoreLog {
 // A new event id: 128 random bits.
 std::string new_event_id();
 
-// Tabs and line breaks in a name become spaces (they separate the log's
-// fields).
+// Control characters in a name become spaces: tabs and line breaks
+// separate the log's fields, and bytes 0x01-0x1E are icons and text-size
+// switches in the game's font.
 std::string clean_name(std::string name);
 
 // Another copy's progress into this one: modes unlocked there are

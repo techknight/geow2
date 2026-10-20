@@ -216,9 +216,19 @@ void save_achievements(const fs::path& dir, uint32_t bits) {
 
 // A QR code of `text` as a texture: black modules on white, eight pixels a
 // module (so the texture's filtering keeps the edges sharp), with the
-// standard four-module quiet zone.
+// standard four-module quiet zone. A text no QR code holds gives a blank
+// square (the pairing screen still shows the code to type).
 Image qr_image(const std::string& text) {
-  const qrcodegen::QrCode q = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
+  std::optional<qrcodegen::QrCode> made;
+  try {
+    made = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
+  } catch (const std::exception&) {
+    Image blank;
+    blank.width = blank.height = 8;
+    blank.rgba.assign(8 * 8 * 4, 255);
+    return blank;
+  }
+  const qrcodegen::QrCode& q = *made;
   const int n = q.getSize() + 8, px = 8;
   Image img;
   img.width = img.height = uint32_t(n * px);

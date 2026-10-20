@@ -53,6 +53,7 @@ struct SyncReply {
   std::string error;        // empty on success
   std::string group;
   std::string player_id, player_name;
+  int64_t taken = -1;              // how many of the games sent the server dealt with (-1: a server that doesn't say)
   std::vector<ScoreEvent> events;  // the player's games from the server since the cursor sent
   int64_t cursor = 0;
   bool more = false;               // more events wait: sync again with the new cursor
@@ -63,7 +64,8 @@ struct SyncReply {
 // The request and reply bodies (separate from the transport for tests).
 std::string sync_body(const std::vector<ScoreEvent>& events, const OnlineProgress& progress, int64_t since);
 SyncReply parse_sync(int status, const std::string& body);
-PairStart parse_pair_start(int status, const std::string& body);
+// `base`: the server asked; the link must be on it (else its /pair/ page).
+PairStart parse_pair_start(int status, const std::string& body, const std::string& base);
 PairPoll parse_pair_poll(int status, const std::string& body);
 
 PairStart pair_start(const std::string& base, const std::string& device_name);

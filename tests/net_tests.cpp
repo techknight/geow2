@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <string>
 
+#include "game/score_log.h"
 #include "net/json.h"
 #include "net/scores.h"
 
@@ -39,6 +40,9 @@ static void test_server_base() {
   expect(server_base(" https://scores.example.com/pair/ABCD?x=1 ") == "https://scores.example.com", "server: path dropped");
   expect(server_base("http://localhost:8787/") == "http://localhost:8787", "server: http for this machine");
   expect(server_base("http://scores.example.com").empty(), "server: no plain http elsewhere");
+  expect(server_base("http://localhost.example.com").empty() && server_base("http://127.0.0.1.example.com:80").empty(),
+         "server: no plain http to names that only start like this machine");
+  expect(server_base("http://127.0.0.1:8787") == "http://127.0.0.1:8787", "server: 127.0.0.1 with a port");
   expect(server_base("ftp://x").empty() && server_base("").empty() && server_base("a b").empty(), "server: not addresses");
 }
 
@@ -67,21 +71,66 @@ static void test_messages() {
   expect(r.progress.progress[2] == 400, "sync reply: progress clamped to the unlock threshold");
   expect(r.boards[0].size() == 1 && r.boards[0][0].name == "Ace", "sync reply: boards");
 
+  expect(r.taken == -1, "sync reply: a server that doesn't say what it took");
+
+  // A hostile or broken server: control bytes (icons and size switches in
+  // the game's font) cleaned from everything drawn, numbers out of range,
+  // ids that aren't 32 hex digits.
+  const SyncReply odd = parse_sync(200, R"({
+    "group": "G\u0004roup", "taken": 3, "player": {"id": "p1", "name": "A\u0007ce\u0001"},
+    "events": [{"id": "0123456789ABCDEF0123456789ABCDEF", "mode": 0, "score": 5},
+               {"id": "0123456789abcdef0123456789abcdef", "mode": 0, "score": 1e300, "device": "d\tx", "name": "n\u001e"},
+               {"id": "fedcba9876543210fedcba9876543210", "mode": 1, "score": 7, "multiplier": -5, "name": "B\nob"}],
+    "boards": [[{"player": "p1", "name": "Z\u0002", "score": 2, "multiplier": 1e30}], [], [], [], [], []]})");
+  expect(odd.error.empty() && odd.group == "G roup" && odd.player_name == "A ce " && odd.taken == 3,
+         "sync reply: group and player names cleaned; taken");
+  expect(odd.events.size() == 1 && odd.events[0].name == "B ob" && odd.events[0].multiplier == 0,
+         "sync reply: upper-case ids, huge scores refused; names cleaned; multiplier clamped");
+  expect(odd.boards[0].size() == 1 && odd.boards[0][0].name == "Z " && odd.boards[0][0].multiplier == 1,
+         "sync reply: board names cleaned; a huge multiplier falls back");
+
   const SyncReply denied = parse_sync(401, R"({"error": "This device is not paired"})");
   expect(denied.status == 401 && denied.error == "This device is not paired", "sync reply: the server's error");
 
-  const PairStart s = parse_pair_start(200, R"({"code": "ABCD-EFGH", "url": "https://x/pair/ABCDEFGH", "poll": "secret"})");
-  expect(s.error.empty() && s.code == "ABCD-EFGH" && s.poll == "secret", "pair start");
+  const PairStart s =
+      parse_pair_start(200, R"({"code": "ABCD-EFGH", "url": "https://x/pair/ABCDEFGH", "poll": "secret"})", "https://x");
+  expect(s.error.empty() && s.code == "ABCD-EFGH" && s.poll == "secret" && s.url == "https://x/pair/ABCDEFGH",
+         "pair start");
+  // A link elsewhere, or too long for a QR code, becomes the server's own
+  // page; a code that isn't one is refused.
+  const PairStart elsewhere =
+      parse_pair_start(200, R"({"code": "ABCD-EFGH", "url": "https://evil.example/x", "poll": "p"})", "https://x");
+  expect(elsewhere.error.empty() && elsewhere.url == "https://x/pair/ABCDEFGH", "pair start: link on the server only");
+  const PairStart longer = parse_pair_start(
+      200, "{\"code\": \"ABCD-EFGH\", \"url\": \"https://x/" + std::string(5000, 'a') + "\", \"poll\": \"p\"}", "https://x");
+  expect(longer.url == "https://x/pair/ABCDEFGH", "pair start: a link too long for a QR code");
+  expect(!parse_pair_start(200, R"({"code": "AB\u0001CD", "url": "", "poll": "p"})", "https://x").error.empty(),
+         "pair start: odd code refused");
   expect(parse_pair_poll(200, R"({"status": "waiting"})").status == PairPoll::kWaiting, "pair poll: waiting");
   const PairPoll paired = parse_pair_poll(200, R"({"status": "paired", "token": "t", "player": {"id": "p", "name": "Ace"}})");
   expect(paired.status == PairPoll::kPaired && paired.token == "t" && paired.player_name == "Ace", "pair poll: paired");
   expect(parse_pair_poll(500, "oops").status == PairPoll::kFailed, "pair poll: failure");
 }
 
+static void test_score_log() {
+  // Numbers that don't parse or overflow, and names with control bytes.
+  const ScoreLog log = ScoreLog::parse(
+      "0123456789abcdef0123456789abcdef\t0\t99999999999999999999\t1\t5\td\tx\n"
+      "fedcba9876543210fedcba9876543210\t1\t12x\t1\t5\td\tx\n"
+      "00000000000000000000000000000001\t2\t300\t4\t5\tdev\tA\x04" "ce\n");
+  expect(log.events().size() == 1 && log.events()[0].score == 300, "score log: bad numbers skip the row");
+  expect(log.events()[0].name == "A ce", "score log: control bytes in names become spaces");
+  ScoreLog merged;
+  merged.add(ScoreEvent{"00000000000000000000000000000002", 0, 9, 1, 0, "d\te\nv", "n"});
+  expect(merged.serialize() == "00000000000000000000000000000002\t0\t9\t1\t0\td e v\tn\n",
+         "score log: a device with tabs keeps the log's fields apart");
+}
+
 int main() {
   test_json();
   test_server_base();
   test_messages();
+  test_score_log();
   if (failures) std::printf("%d failure(s)\n", failures);
   else std::printf("net tests passed\n");
   return failures ? 1 : 0;

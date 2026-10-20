@@ -32,7 +32,9 @@ Bytes read_file(const std::filesystem::path& path);
 void write_file(const std::filesystem::path& path, std::span<const uint8_t> data);
 // Writes `data` beside `path` and then renames it over `path`, so a failed
 // or interrupted write leaves the old file whole. Creates the folder;
-// returns false (and keeps the old file) on any failure.
-bool replace_file(const std::filesystem::path& path, std::span<const uint8_t> data);
+// returns false (and keeps the old file) on any failure. `owner_only`:
+// readable and writable by the owner alone (a file holding a secret; on
+// Windows the user's profile folder is already private).
+bool replace_file(const std::filesystem::path& path, std::span<const uint8_t> data, bool owner_only = false);
 
 }  // namespace geow2

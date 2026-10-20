@@ -18,13 +18,19 @@ void write_file(const std::filesystem::path& path, std::span<const uint8_t> data
   f.write(reinterpret_cast<const char*>(data.data()), std::streamsize(data.size()));
 }
 
-bool replace_file(const std::filesystem::path& path, std::span<const uint8_t> data) {
+bool replace_file(const std::filesystem::path& path, std::span<const uint8_t> data, [[maybe_unused]] bool owner_only) {
   std::error_code ec;
   if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), ec);
   std::filesystem::path tmp = path;
   tmp += ".tmp";
   {
     std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+#ifndef _WIN32
+    // Before anything is written into it.
+    if (owner_only && f)
+      std::filesystem::permissions(tmp, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+                                   std::filesystem::perm_options::replace, ec);
+#endif
     f.write(reinterpret_cast<const char*>(data.data()), std::streamsize(data.size()));
     f.flush();
     if (!f) {

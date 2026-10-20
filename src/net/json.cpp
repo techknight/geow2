@@ -248,7 +248,8 @@ const Value& Value::operator[](size_t i) const {
 
 int64_t Value::integer(int64_t fallback) const {
   if (const int64_t* n = std::get_if<int64_t>(&v)) return *n;
-  if (const double* d = std::get_if<double>(&v)) return std::isfinite(*d) ? int64_t(*d) : fallback;
+  // (Converting a double outside int64's range is undefined behaviour.)
+  if (const double* d = std::get_if<double>(&v)) return std::fabs(*d) < 9.2e18 ? int64_t(*d) : fallback;
   return fallback;
 }
 

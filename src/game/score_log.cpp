@@ -1,6 +1,7 @@
 #include "game/score_log.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -30,9 +31,20 @@ bool hex_id(const std::string& s) {
 
 std::string clean_name(std::string name) {
   for (char& c : name)
-    if (c == '\t' || c == '\n' || c == '\r') c = ' ';
+    if (uint8_t(c) < 0x20 || c == 0x7F) c = ' ';
   return name;
 }
+
+namespace {
+
+// A whole number field of the log, or `fallback` when it isn't one.
+int64_t number(const std::string& s, int64_t fallback = 0) {
+  int64_t n = 0;
+  const auto r = std::from_chars(s.data(), s.data() + s.size(), n);
+  return r.ec == std::errc() && r.ptr == s.data() + s.size() ? n : fallback;
+}
+
+}  // namespace
 
 ScoreLog ScoreLog::parse(const std::string& text) {
   ScoreLog log;
@@ -43,10 +55,10 @@ ScoreLog ScoreLog::parse(const std::string& text) {
     if (f.size() < 6 || !hex_id(f[0])) continue;
     ScoreEvent e;
     e.id = f[0];
-    e.mode = std::atoi(f[1].c_str());
-    e.score = std::atoll(f[2].c_str());
-    e.multiplier = std::atoi(f[3].c_str());
-    e.time = std::atoll(f[4].c_str());
+    e.mode = int(number(f[1], -1));
+    e.score = number(f[2]);
+    e.multiplier = int(std::clamp<int64_t>(number(f[3], 1), 0, 1000000));
+    e.time = number(f[4]);
     e.device = f[5];
     e.name = f.size() > 6 ? f[6] : "";
     if (e.mode < 0 || e.mode > 5 || e.score <= 0) continue;
@@ -74,8 +86,8 @@ std::vector<ScoreEvent> ScoreLog::import_board_file(const std::string& text, con
     const std::vector<std::string> f = fields(line);
     if (f.size() < 2) continue;
     ScoreEvent e;
-    e.mode = std::atoi(f[0].c_str());
-    e.score = std::atoll(f[1].c_str());
+    e.mode = int(number(f[0], -1));
+    e.score = number(f[1]);
     e.name = f.size() > 2 ? f[2] : "";
     if (e.mode < 0 || e.mode > 5 || e.score <= 0) continue;
     const int n = seen[{e.mode, e.score, e.name}]++;
@@ -93,7 +105,9 @@ std::vector<ScoreEvent> ScoreLog::import_board_file(const std::string& text, con
 
 bool ScoreLog::add(ScoreEvent e) {
   if (!ids_.insert(e.id).second) return false;
+  // (Both are fields of scores.log, and the name is drawn.)
   e.name = clean_name(std::move(e.name));
+  e.device = clean_name(std::move(e.device));
   events_.push_back(std::move(e));
   return true;
 }

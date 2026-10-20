@@ -33,7 +33,7 @@ struct Online::Core {
   std::deque<std::function<void(Core&)>> jobs;
   bool stop = false;
   bool syncing = false;
-  size_t snapshot = 0;             // the log's size when the running sync was sent
+  size_t sent_from = 0, sent_count = 0;  // the log's games the running sync sent
   std::optional<SyncReply> reply;  // a finished sync, for update()
   std::string error;  // why the last sync failed, "" when it succeeded
   std::array<std::vector<GroupRow>, 6> boards;
@@ -100,19 +100,31 @@ void Online::save() const {
     << "\nplayer_name " << state_.player_name << "\ngroup " << state_.group << "\ncursor " << state_.cursor << "\nsent "
     << state_.sent << "\nlast_sync " << state_.last_sync << "\n";
   const std::string text = s.str();
-  replace_file(dir_ / "online.txt", {reinterpret_cast<const uint8_t*>(text.data()), text.size()});
+  // (It holds the device's token.)
+  replace_file(dir_ / "online.txt", {reinterpret_cast<const uint8_t*>(text.data()), text.size()}, true);
 }
+
+namespace {
+// Games sent a sync (a long history goes up over several), and the most
+// syncs that follow one another at once (while the server has more, or
+// games are left to send).
+constexpr size_t kBatch = 200;
+constexpr int kMaxFollowUps = 100;
+}  // namespace
 
 void Online::sync(const ScoreLog& log, const OnlineProgress& progress) {
   if (!paired()) return;
+  const auto& all = log.events();
+  const size_t from = std::min(state_.sent, all.size());
+  const size_t count = std::min(all.size() - from, kBatch);
   {
     std::lock_guard lock(core_->m);
     if (core_->syncing) return;
     core_->syncing = true;
-    core_->snapshot = log.events().size();
+    core_->sent_from = from;
+    core_->sent_count = count;
   }
-  const auto& all = log.events();
-  std::vector<ScoreEvent> unsent(all.begin() + std::ptrdiff_t(std::min(state_.sent, all.size())), all.end());
+  std::vector<ScoreEvent> unsent(all.begin() + std::ptrdiff_t(from), all.begin() + std::ptrdiff_t(from + count));
   core_->post([server = state_.server, token = state_.token, unsent = std::move(unsent), progress,
                since = state_.cursor](Core& c) {
     SyncReply r = geow2::sync(server, token, unsent, progress, since);
@@ -130,13 +142,14 @@ std::optional<Online::Applied> Online::update(ScoreLog& log, OnlineProgress& pro
   std::optional<SyncReply> reply;
   std::optional<PairPoll> paired;
   std::string server;
-  size_t snapshot;
+  size_t from, count;
   {
     std::lock_guard lock(core_->m);
     reply.swap(core_->reply);
     paired.swap(core_->paired);
     server = core_->pairing_server;
-    snapshot = core_->snapshot;
+    from = core_->sent_from;
+    count = core_->sent_count;
     if (reply) {
       core_->syncing = false;
       if (reply->error.empty()) core_->boards = reply->boards;
@@ -162,7 +175,15 @@ std::optional<Online::Applied> Online::update(ScoreLog& log, OnlineProgress& pro
     return std::nullopt;
   }
   Applied a;
+  // The games the server dealt with (all those sent, from a server that
+  // doesn't say); the rest go next time.
+  const size_t taken = reply->taken < 0 ? count : size_t(std::min<int64_t>(reply->taken, int64_t(count)));
+  const size_t before_merge = log.events().size();
   a.new_games = log.merge(reply->events);
+  state_.sent = from + taken;
+  // With every game of this log on the server, the ones just merged came
+  // from it: they aren't sent back.
+  if (state_.sent == before_merge) state_.sent = log.events().size();
   const OnlineProgress before = progress;
   progress.unlocked |= reply->progress.unlocked;
   progress.millions |= reply->progress.millions;
@@ -172,12 +193,18 @@ std::optional<Online::Applied> Online::update(ScoreLog& log, OnlineProgress& pro
   a.new_achievements = reply->progress.achievements & ~achievements;
   achievements |= reply->progress.achievements;
   state_.cursor = reply->cursor;
-  state_.sent = snapshot;
   state_.last_sync = int64_t(std::time(nullptr));
   if (!reply->group.empty()) state_.group = reply->group;
   if (!reply->player_name.empty()) state_.player_name = reply->player_name;
   save();
-  if (reply->more) sync(log, progress);
+  // At once again while the server has more for us or games are left to
+  // send (a bounded number of times, should a server always say "more").
+  if ((reply->more || state_.sent < log.events().size()) && follow_ups_ < kMaxFollowUps) {
+    ++follow_ups_;
+    sync(log, progress);
+  } else {
+    follow_ups_ = 0;
+  }
   return a;
 }
 

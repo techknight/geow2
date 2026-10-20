@@ -88,6 +88,7 @@ class Online {
   std::filesystem::path dir_;
   State state_;
   std::shared_ptr<Core> core_;
+  int follow_ups_ = 0;  // syncs started at once after the one before
 };
 
 }  // namespace geow2
