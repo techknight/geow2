@@ -52,6 +52,47 @@ Format for each entry:
   game's own cue).
 - **Decided**: 2026-10-15.
 
+### Online scores
+
+- **What**: sharing scores, unlocked modes and achievements between
+  devices and with friends.
+- **Original**: Xbox Live keeps the gamer profile (its settings block,
+  profile setting 0x63E83FFF, `sub_82081848`) and the achievements with
+  the gamertag on every console, and writes each game's score to the
+  per-mode Live leaderboards (`sub_8207E490`), which the game shows with
+  Friends / My score / Overall filters (`sub_8208AAB8`) and as the friends
+  board on the mode-select tiles and the results screen (`sub_82088AE0`).
+- **Port**: optional and off until set up, through a self-hosted score
+  server (geow2-scores, one per group of friends). Help and options gains
+  an Online scores item, out of a game only, with a screen of its own:
+  the server's address, typed once, and "Pair this device", which shows a
+  code and a QR code to confirm on a phone signed in to the server. Its
+  text is English, as the original has none for it. Once paired:
+  - the player's name is the one chosen on the server (in place of
+    "Player 1");
+  - when the game starts, after each single-player game and every five
+    minutes in the menus, the finished games (`scores.log`), the unlocked
+    modes, the unlock progress and the achievements merge both ways with
+    the server: games add up without repeats, bits are combined, progress
+    takes the larger value. A device's games, unlocks and achievements
+    therefore reach every other device paired to the same player.
+
+  Nothing is sent before a device is paired, and an unpaired game never
+  connects.
+- **Decided**: 2026-10-19.
+
+### Setup
+
+- **What**: making the data folder.
+- **Original**: none (the game runs from its own package).
+- **Port**: when no data folder is found, the game opens a setup window
+  of its own (not the game's UI: SDL's 2D renderer and debug font, since
+  the game's font is in the data it is about to make). The player chooses
+  the package or an extracted folder with the system's file chooser, and
+  the extractor's code makes the data folder in the user folder, with a
+  progress bar. `geow2-extract` does the same from a terminal.
+- **Decided**: 2026-10-19.
+
 ### Profiles, sign-in and player names
 
 - **What**: who is playing and where their settings are kept.
@@ -61,10 +102,14 @@ Format for each entry:
   sign-in when a pad has none (`XamShowSigninUI`); a profile change in
   game ends it (`sub_8207DD78`).
 - **Port**: one local profile, the same 48-byte block saved as
-  `profile.bin` in the user's preferences folder (or `--profile`); the
-  local score boards beside it as `scores.txt`. Every pad counts as
+  `profile.bin` in the user's preferences folder (or `--profile`); beside
+  it every finished single-player game in `scores.log`, whose best games
+  per mode are the local score boards (also written as `scores.txt`, the
+  boards' file before 1.1). `--merge-profile` adds another device's
+  profile folder to this one. Every pad counts as
   signed in; the player's name is the original's default for a player
-  without a gamertag, text 0x82 with the pad number ("Player 1"). In
+  without a gamertag, text 0x82 with the pad number ("Player 1"), or the
+  name chosen on a score server once paired ("Online scores"). In
   multiplayer every pad shows its "Player N" name (as the original does
   for pads without a profile), and all pads use the one profile's stick
   and bomb settings where the original reads each pad's own profile
@@ -313,9 +358,10 @@ Format for each entry:
 - **Original**: the sound banks hold XMA1 audio, decoded by the Xbox
   360's audio hardware at play time (`XMACreateContext`).
 - **Port**: `geow2-extract` decodes every wave once, with FFmpeg's `xma1`
-  decoder, to 16-bit PCM in the data folder; the game plays the PCM. FFmpeg is
-  needed only at extraction. The samples can differ from the console's
-  decoder in rounding.
+  decoder, to 16-bit PCM in the data folder (as does the setup window,
+  with the same code); the game plays the PCM. FFmpeg is needed only at
+  extraction. The samples can differ from the console's decoder in
+  rounding, and between FFmpeg builds by at most one step in a few waves.
 - **Decided**: 2026-10-15.
 
 ### Particle pool limit

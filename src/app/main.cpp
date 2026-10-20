@@ -12,6 +12,7 @@
 //         [--trace <csv>] [--positions <file>] [--dump <step> <file>] [--perf]
 //         [--record <raw-file> <first-step>]
 //   geow2 --data <data-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
+//         [--online-preview unpaired|editing|waiting|failed|paired]
 //   geow2 [--data <data-dir>] --setup-preview <out.png> | --setup-from <package>
 //
 // The first form opens the window at the front end; the profile, the
@@ -58,7 +59,8 @@
 //
 // The third runs the front end instead, pressing a button (a, b, x, y,
 // start, back, up, down, left, right; pad 0, or another with :<pad>) on
-// the given frames; it never saves.
+// the given frames; it never saves. --online-preview shows the Online
+// scores item and screens in a fixed state, with no server.
 //
 // The fourth shows the setup window (src/app/setup.h), which otherwise
 // appears only when no data folder is found: --setup-preview saves its
@@ -104,6 +106,7 @@
 #include "game/gravity_well.h"
 #include "game/score_log.h"
 #include "game/spawn.h"
+#include "third_party/qrcodegen/qrcodegen.hpp"
 #include "version.h"
 
 namespace fs = std::filesystem;
@@ -209,6 +212,27 @@ void save_achievements(const fs::path& dir, uint32_t bits) {
   char line[16];
   std::snprintf(line, sizeof(line), "%x\n", unsigned(bits));
   save_text(dir / "achievements.txt", line);
+}
+
+// A QR code of `text` as a texture: black modules on white, eight pixels a
+// module (so the texture's filtering keeps the edges sharp), with the
+// standard four-module quiet zone.
+Image qr_image(const std::string& text) {
+  const qrcodegen::QrCode q = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
+  const int n = q.getSize() + 8, px = 8;
+  Image img;
+  img.width = img.height = uint32_t(n * px);
+  img.rgba.assign(size_t(img.width) * img.height * 4, 255);
+  for (int y = 0; y < q.getSize(); ++y)
+    for (int x = 0; x < q.getSize(); ++x) {
+      if (!q.getModule(x, y)) continue;
+      for (int dy = 0; dy < px; ++dy)
+        for (int dx = 0; dx < px; ++dx) {
+          const size_t at = (size_t((y + 4) * px + dy) * img.width + size_t((x + 4) * px + dx)) * 4;
+          img.rgba[at] = img.rgba[at + 1] = img.rgba[at + 2] = 0;
+        }
+    }
+  return img;
 }
 
 // The progress a score server merges, from and back into the profile block.
@@ -931,11 +955,43 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
   return 0;
 }
 
+// --online-preview: the online scores in a fixed state, for captures of
+// their screens (no server): "unpaired", "editing" (typing the address),
+// "waiting" (a pairing code), "failed" or "paired".
+struct PreviewOnline : OnlineMenu {
+  std::string state;
+  explicit PreviewOnline(std::string s) : state(std::move(s)) {}
+  bool paired() const override { return state == "paired"; }
+  std::string server() const override { return "https://geow2-scores.example.workers.dev"; }
+  std::string player() const override { return "Ace"; }
+  std::string group() const override { return "Friday Night Grid"; }
+  std::string status() const override { return "Synced."; }
+  std::string set_server(const std::string&) override { return ""; }
+  void start_pairing() override {}
+  Pairing pairing() const override {
+    Pairing p;
+    if (state == "failed") {
+      p.state = Pairing::kFailed;
+      p.error = "server not found";
+    } else {
+      p.state = Pairing::kWaiting;
+      p.code = "KQ7M-3XPH";
+      p.url = "https://geow2-scores.example.workers.dev/pair/KQ7M3XPH";
+    }
+    return p;
+  }
+  void cancel_pairing() override {}
+  void unpair() override {}
+  void sync_now() override {}
+};
+
 int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std::vector<Press>& presses,
-                          const fs::path& out, uint32_t w, uint32_t h) {
+                          const fs::path& out, uint32_t w, uint32_t h, const std::string& online_preview) {
   Profile profile;
   std::array<LocalBoard, 6> boards;
   Frontend fe(g, g.text, profile, boards, {});
+  PreviewOnline preview(online_preview);
+  if (!online_preview.empty()) fe.set_online(&preview);
   fe.boot();
   for (int i = 0; i < frames; ++i) {
     // Pad 0 and every pad a press names are connected throughout.
@@ -954,12 +1010,15 @@ int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, 
       }
     }
     fe.frame(pads);
+    // The Online scores screens once the intro is over.
+    if (!online_preview.empty() && i == frames / 2) fe.preview_online(online_preview);
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     tick(g, {}, r, cmd);
     submit_headless(dev, cmd, i);
   }
   UiCanvas ui;
   fe.draw(ui);
+  if (!fe.qr_text().empty()) r.set_ui_texture(kTexQr, qr_image(fe.qr_text()));
   r.tuning.bloom_level = g.bloom_level;
   if (capture(dev, r, g, ui, out, w, h)) return 1;
   SDL_Log("wrote %s after %d frames: flow state %d, %zu UI quads", out.string().c_str(), frames, g.flow,
@@ -1041,10 +1100,48 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
   Frontend::Hooks hooks;
   hooks.save_profile = [&]() { save_profile(profile_dir, profile); };
   hooks.save_boards = [&]() { save_boards(profile_dir, boards); };
+  // The online scores: a sync after each game (once the game's unlock
+  // progress is in the profile, later in the same frame), when the game
+  // starts, and every five minutes in the menus.
+  Online online(profile_dir);
+  bool sync_soon = online.paired();
+  uint64_t last_sync = 0;
   hooks.scored = [&](int mode, int64_t score, int multiplier, const std::string& name) {
     score_log.add({new_event_id(), mode, score, multiplier, int64_t(std::time(nullptr)), device, name});
     save_score_log(profile_dir, score_log);
+    sync_soon = true;
   };
+  struct OnlineAdapter : OnlineMenu {
+    Online& o;
+    std::function<void()> sync;
+    OnlineAdapter(Online& on, std::function<void()> s) : o(on), sync(std::move(s)) {}
+    bool paired() const override { return o.paired(); }
+    std::string server() const override { return o.state().server; }
+    std::string player() const override { return o.state().player_name; }
+    std::string group() const override { return o.state().group; }
+    std::string status() const override { return o.status(); }
+    std::string set_server(const std::string& typed) override {
+      if (typed.empty()) return "";
+      const std::string base = server_base(typed);
+      if (base.empty()) return "That isn't a web address. It looks like geow2-scores.example.workers.dev.";
+      o.set_server(base);
+      return "";
+    }
+    void start_pairing() override { o.start_pairing(o.state().server, Online::device_name()); }
+    Pairing pairing() const override {
+      const Online::PairingView v = o.pairing();
+      Pairing p;
+      p.state = Pairing::State(int(v.state));
+      p.code = v.code;
+      p.url = v.url;
+      p.error = v.error;
+      return p;
+    }
+    void cancel_pairing() override { o.cancel_pairing(); }
+    void unpair() override { o.unpair(); }
+    void sync_now() override { sync(); }
+  };
+  OnlineAdapter online_menu(online, [&]() { sync_soon = true; });
   hooks.quit = [&]() { running = false; };
   // The sound: the AOBJ graphs over the extracted waves, mixed in 5.1.
   audio::AudioEngine sound;
@@ -1061,8 +1158,32 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
     attach_sound(g, glue, []() { return uint32_t(SDL_GetTicks()); });
   }
   Frontend fe(g, g.text, profile, boards, hooks);
+  fe.set_online(&online_menu);
   g.achieved = load_achievements(profile_dir);
   g.unlocked = [&](uint32_t) { save_achievements(profile_dir, g.achieved); };
+  // A finished sync: the player's games from other devices, and their
+  // unlocks and achievements, into this profile.
+  auto apply_online = [&]() {
+    OnlineProgress progress = online_progress(profile, g.achieved);
+    uint32_t achieved = g.achieved;
+    const auto a = online.update(score_log, progress, achieved);
+    if (!a) return;
+    if (a->new_games) {
+      save_score_log(profile_dir, score_log);
+      boards_from(score_log, boards);
+      save_boards(profile_dir, boards);
+    }
+    if (a->progress) {
+      apply_online_progress(profile, progress);
+      save_profile(profile_dir, profile);
+    }
+    if (achieved != g.achieved) {
+      g.achieved = achieved;
+      save_achievements(profile_dir, g.achieved);
+    }
+  };
+  bool text_input = false, keyboard_quiet = false;
+  std::string qr_shown;  // the pairing QR code in texture kTexQr
   fe.boot();
   const SDL_GPUTextureFormat format = SDL_GetGPUSwapchainTextureFormat(dev, window);
   std::array<SDL_Gamepad*, 4> pads{};
@@ -1149,6 +1270,21 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
         save_display(profile_dir, display);
         read_refresh();
       }
+      // Typing into a text field (the Online scores screen's address).
+      if (fe.text_entry()) {
+        if (e.type == SDL_EVENT_TEXT_INPUT) fe.type(e.text.text);
+        if (e.type == SDL_EVENT_KEY_DOWN) {
+          if (e.key.key == SDLK_BACKSPACE) fe.text_key(Frontend::TextKey::kBackspace);
+          if (e.key.key == SDLK_RETURN || e.key.key == SDLK_KP_ENTER) fe.text_key(Frontend::TextKey::kEnter);
+          if (e.key.key == SDLK_ESCAPE) fe.text_key(Frontend::TextKey::kEscape);
+          if (e.key.key == SDLK_V && (e.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI))) {
+            if (char* clip = SDL_GetClipboardText()) {
+              fe.type(clip);
+              SDL_free(clip);
+            }
+          }
+        }
+      }
       if (e.type == SDL_EVENT_GAMEPAD_ADDED) open_pads();
       if (e.type == SDL_EVENT_GAMEPAD_REMOVED) {
         for (size_t i = 0; i < pads.size(); ++i)
@@ -1200,7 +1336,16 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
       PROFILE("step+audio");
       std::array<PadState, 4> state{};
       for (size_t i = 0; i < 4; ++i) state[i] = pad_state(pads[i]);
-      keyboard_pad(state[0], g.flow == 2);
+      // The keyboard is a pad except while it types, and until the keys
+      // that ended the typing are let go (else Enter or Escape would act
+      // on the menu too).
+      if (fe.text_entry()) keyboard_quiet = true;
+      if (keyboard_quiet) {
+        const bool* k = SDL_GetKeyboardState(nullptr);
+        keyboard_quiet = fe.text_entry() || k[SDL_SCANCODE_RETURN] || k[SDL_SCANCODE_KP_ENTER] || k[SDL_SCANCODE_ESCAPE];
+      }
+      if (!keyboard_quiet) keyboard_pad(state[0], g.flow == 2);
+      else state[0].connected = true;
       for (size_t i = 0; i < 4; ++i)
         if (pulled[i]) {
           state[i].connected = false;
@@ -1215,9 +1360,26 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
       tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
       if (has_sound) sound_step(g, glue, sound, profile.sound_volume, profile.music_volume);
     }
+    // The online scores, between frames.
+    if (fe.text_entry() != text_input) {
+      text_input = fe.text_entry();
+      if (text_input) SDL_StartTextInput(window);
+      else SDL_StopTextInput(window);
+    }
+    apply_online();
+    if (online.paired() && g.flow != 2 && SDL_GetTicks() - last_sync > 5 * 60 * 1000) sync_soon = true;
+    if (sync_soon && online.paired() && !online.syncing()) {
+      online.sync(score_log, online_progress(profile, g.achieved));
+      sync_soon = false;
+      last_sync = SDL_GetTicks();
+    }
     PROFILE("ui+draw+present");
     ui.clear();
     fe.draw(ui);
+    if (fe.qr_text() != qr_shown) {
+      qr_shown = fe.qr_text();
+      if (!qr_shown.empty()) r.set_ui_texture(kTexQr, qr_image(qr_shown));
+    }
     r.tuning.bloom_level = g.bloom_level;
     SDL_GPUTexture* swap = nullptr;
     uint32_t w = 0, h = 0;
@@ -1296,6 +1458,7 @@ int main(int argc, char** argv) {
   SetupDev setup_dev;
   fs::path merge_from;
   std::string online_pair;
+  std::string online_preview;
   bool online_sync = false;
   int rng_step = -1, dump_step = -1;
   uint32_t shot_w = 1280, shot_h = 720;
@@ -1331,6 +1494,7 @@ int main(int argc, char** argv) {
     else if (a == "--merge-profile" && i + 1 < argc) merge_from = argv[++i];
     else if (a == "--online-pair" && i + 1 < argc) online_pair = argv[++i];
     else if (a == "--online-sync") online_sync = true;
+    else if (a == "--online-preview" && i + 1 < argc) online_preview = argv[++i];
     else if (a == "--setup-preview" && i + 1 < argc) setup_dev.preview = argv[++i];
     else if (a == "--setup-from" && i + 1 < argc) setup_dev.source = argv[++i];
     else if (a == "--record" && i + 2 < argc) {
@@ -1421,6 +1585,7 @@ int main(int argc, char** argv) {
                      "        [--trace <csv>] [--positions <file>] [--dump <step> <file>] [--perf]\n"
                      "        [--record <raw-file> <first-step>]\n"
                      "  geow2 --frames <n> --screenshot <png> --frontend [--press <frame> <button>]...\n"
+                     "        [--online-preview unpaired|editing|waiting|failed|paired]\n"
                      "  geow2 [--data <dir>] --setup-preview <png> | --setup-from <package>\n");
       return help || dev ? 0 : 2;
     }
@@ -1527,7 +1692,7 @@ int main(int argc, char** argv) {
     renderer.set_ui_texture(kTexAchievement0 + int(i), game.achievements[i].icon);
   int rc;
   if (headless && frontend) {
-    rc = run_frontend_headless(dev, renderer, game, frames, presses, screenshot, shot_w, shot_h);
+    rc = run_frontend_headless(dev, renderer, game, frames, presses, screenshot, shot_w, shot_h, online_preview);
   } else if (headless) {
     std::array<Sticks, 4> per_pad{};
     for (size_t p = 0; p < 4; ++p) per_pad[p] = pad_sticks[p] ? *pad_sticks[p] : sticks;

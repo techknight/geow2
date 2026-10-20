@@ -70,7 +70,8 @@ enum UiTexture : int {
   kTexRetroAtvi,     // retroatvi.tga, dat_821A1D58
   kTexRetroBizarre,  // retrobizarre.tga, dat_821A1D5C
   kTexAchievement0,  // the achievement icons (the SPA's images), in its order
-  kUiTextureCount = kTexAchievement0 + 12
+  kTexQr = kTexAchievement0 + 12,  // the port's: the Online scores pairing QR code
+  kUiTextureCount
 };
 
 // A sprite queue entry (0x28 bytes at 0x821AAA08): a textured rectangle in

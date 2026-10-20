@@ -25,4 +25,12 @@ class UiText {
   std::vector<std::string> text_, names_;
 };
 
+// UTF-8 to the font's single bytes (Latin-1; anything past U+00FF '?').
+std::string latin1_from_utf8(const std::string& utf8);
+
+// A player's name for the font: Latin-1, with control bytes (which the
+// font draws as button and ship icons, or uses to change the text size)
+// as spaces.
+std::string display_name(const std::string& utf8);
+
 }  // namespace geow2

@@ -64,6 +64,9 @@ class Online {
   PairingView pairing() const;
   // Forgets the server and the token (the server keeps the games).
   void unpair();
+  // The server to pair with (a base from server_base()), kept until it is
+  // changed.
+  void set_server(const std::string& base);
 
   // The last sync's outcome, for the Online scores screen.
   std::string status() const;

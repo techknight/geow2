@@ -127,6 +127,7 @@ add_library(geow2_net STATIC
   src/net/http.cpp
   src/net/json.cpp
   src/net/scores.cpp
+  src/third_party/qrcodegen/qrcodegen.cpp
 )
 target_link_libraries(geow2_net PUBLIC geow2_game)
 if(WIN32)

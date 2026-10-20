@@ -62,6 +62,29 @@ struct LocalBoard {
   static constexpr size_t kRows = 100;
 };
 
+// The online scores (app/online.h) as the menus see them. A port addition
+// with no counterpart in the original (DIFFERENCES.md "Online scores").
+class OnlineMenu {
+ public:
+  struct Pairing {
+    enum State { kIdle, kStarting, kWaiting, kPaired, kFailed } state = kIdle;
+    std::string code, url, error;
+  };
+  virtual ~OnlineMenu() = default;
+  virtual bool paired() const = 0;
+  virtual std::string server() const = 0;  // the address as set, "" when none
+  virtual std::string player() const = 0;  // the player's name on the server (UTF-8)
+  virtual std::string group() const = 0;
+  virtual std::string status() const = 0;  // the last sync's outcome
+  // Returns why the address can't be used, or "" when it was taken.
+  virtual std::string set_server(const std::string& typed) = 0;
+  virtual void start_pairing() = 0;
+  virtual Pairing pairing() const = 0;
+  virtual void cancel_pairing() = 0;
+  virtual void unpair() = 0;
+  virtual void sync_now() = 0;
+};
+
 // The front end: the menu screens (screen record sub_8208FFF0, items
 // sub_820900A8, the generic handler sub_82090180 and the UI layer draw
 // sub_820924A0) and the game's flow (sub_82033E18's dispatch: the
@@ -94,8 +117,25 @@ class Frontend {
   void set_system_ui(bool shown) { system_ui_ = shown; }
   // The UI layer (sub_820924A0) into `c`.
   void draw(UiCanvas& c) const;
-  // The player's name (gamertags stand-in: text 0x82 "Player" and 1).
+  // The player's name (gamertags stand-in: the name on the score server
+  // when paired, else text 0x82 "Player" and 1). UTF-8.
   std::string player_name() const;
+
+  // The online scores, when the game has them (null: no Online scores
+  // item).
+  void set_online(OnlineMenu* online) { online_ = online; }
+  // Text entry (the Online scores screen's server address): while it is
+  // on, the keyboard types instead of acting as a pad.
+  enum class TextKey { kBackspace, kEnter, kEscape };
+  bool text_entry() const { return editing_; }
+  void type(const std::string& utf8);
+  void text_key(TextKey key);
+  // For captures (--online-preview): the Online scores screen at once,
+  // typing an address ("editing") or pairing ("waiting", "failed").
+  void preview_online(const std::string& state);
+  // The text the pairing screen shows as a QR code (texture kTexQr, which
+  // the caller makes from it: qr_image()); empty when none is shown.
+  const std::string& qr_text() const { return qr_text_; }
 
  private:
   using Action = std::function<void(const MenuInput&, int index, int text)>;
@@ -167,6 +207,9 @@ class Frontend {
   void board_view(int mode, std::function<void(const MenuInput&)> back);
   void after_game();                       // sub_8208EF90
   void achievements_screen();              // stands in for XamShowAchievementsUI
+  void online_screen(bool reset);          // the port's online scores (no original)
+  void pairing_screen();
+  void finish_editing(bool keep);
 
   // The multiplayer setup (menu 6, sub_820863B0) and its parts.
   void lobby(bool reset);
@@ -235,6 +278,13 @@ class Frontend {
   float board_scroll_ = 0.0f;  // dat_821EA114
   int board_hold_ = 0;         // dat_821EA118
   int achievement_first_ = 0;
+  // The online scores.
+  OnlineMenu* online_ = nullptr;
+  bool editing_ = false;
+  std::string edit_;            // the address being typed (UTF-8)
+  std::string online_message_;  // why the last address was refused
+  bool online_paired_ = false;  // as the Online scores screen was built
+  mutable std::string qr_text_; // the QR code being shown (qr_text())
   // The title art's pulse phases (BA24 logo, BA20 star), advanced once per
   // frame the title block is drawn.
   float logo_phase_ = 0.0f, star_phase_ = 0.0f;

@@ -16,6 +16,8 @@ finish-args:
   - --socket=wayland
   - --socket=fallback-x11
   - --socket=pulseaudio
+  # Online scores: the group's score server, once the player pairs.
+  - --share=network
   # The GPU and gamepads (including Steam Input's virtual pads).
   - --device=all
 modules:

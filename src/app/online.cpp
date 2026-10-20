@@ -244,12 +244,20 @@ Online::PairingView Online::pairing() const {
 
 void Online::unpair() {
   cancel_pairing();
-  state_ = State{};
+  state_ = State{state_.server, {}, {}, {}, {}, 0, 0};  // the address stays, for pairing again
   {
     std::lock_guard lock(core_->m);
     core_->boards = {};
     core_->status.clear();
   }
+  save();
+}
+
+void Online::set_server(const std::string& base) {
+  if (base == state_.server) return;
+  // A different server: any pairing with the old one is forgotten.
+  state_ = State{};
+  state_.server = base;
   save();
 }
 

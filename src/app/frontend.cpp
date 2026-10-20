@@ -58,7 +58,13 @@ Frontend::Frontend(Game& g, const UiText& text, Profile& profile, std::array<Loc
 
 void Frontend::sound(audio::Event e) const { g_.world->play(e); }
 
-std::string Frontend::player_name() const { return pad_name(game_pad_); }
+std::string Frontend::player_name() const {
+  if (online_ && online_->paired()) {
+    const std::string name = online_->player();
+    if (!name.empty()) return name;
+  }
+  return pad_name(game_pad_);
+}
 
 std::string Frontend::pad_name(int pad) const {
   // Gamertags stand in as "%s %i" with text 0x82 and the pad (0x820049D0).
@@ -605,7 +611,7 @@ void Frontend::draw(UiCanvas& c) const {
   // The player strip: the name and the controller ring with the player's
   // quadrant green.
   if (menu_pad_ >= 0 && menu_pad_ <= 3 && (g_.flow == 0 || g_.flow == 3) && !screen_.hide_strip) {
-    const std::string name = player_name();
+    const std::string name = display_name(player_name());
     const Rgba white = scaled(Rgba{1, 1, 1, 1}, 1.0f);
     const Rgba nc{F[0] * white[0], F[1] * white[1], F[2] * white[2], F[3] * white[3]};
     font.centre(c.lines, 320.0f, 346.0f, 6.0f, 6.0f, nc.data(), name);
@@ -1125,6 +1131,10 @@ void Frontend::help(bool reset) {
   add_item(0x11, [this](const MenuInput&, int, int) { controls(); });
   add_item(0x12, [this](const MenuInput&, int, int) { settings(); });
   if (!in) add_item(0x13, [this](const MenuInput&, int, int) { credits(); });
+  // The port's online scores (no original: DIFFERENCES.md), out of a game.
+  if (!in && online_)
+    add_item(0, [this](const MenuInput&, int, int) { online_screen(true); },
+             [this](TextLayout& l) { l.add(palette_[kUiNormal], "Online scores"); });
 }
 
 void Frontend::controls() {
@@ -1354,7 +1364,7 @@ void Frontend::results() {
              font.right(c.lines, 308.0f, ry, 8.0f, 8.0f, P[kUiDisabled].data(), "-");
            } else {
              const std::string num = format_number(e.score);
-             font.left_fit(c.lines, 34.0f, ry, 8.0f, 8.0f, fmadds(-font.measure(num), 8.0f, 258.0f), col.data(), e.name);
+             font.left_fit(c.lines, 34.0f, ry, 8.0f, 8.0f, fmadds(-font.measure(num), 8.0f, 258.0f), col.data(), display_name(e.name));
              font.right(c.lines, 308.0f, ry, 8.0f, 8.0f, col.data(), num);
            }
          }
@@ -1373,7 +1383,7 @@ void Frontend::results() {
            const Rgba& col = r == last_row_ ? P[kUiHighlight] : P[kUiNormal];
            const std::string num = format_number(b.rows[size_t(r)].score);
            font.left_fit(c.lines, 332.0f, yy, 8.0f, 8.0f, fmadds(-font.measure(num), 8.0f, 252.0f), col.data(),
-                         format("%i. %s", r + 1, b.rows[size_t(r)].name.c_str()));
+                         format("%i. %s", r + 1, display_name(b.rows[size_t(r)].name).c_str()));
            font.right(c.lines, 600.0f, yy, 8.0f, 8.0f, col.data(), num);
          }
          // The board's scroll bar (sub_820913B0 at 606, eight rows).
@@ -1931,7 +1941,7 @@ void Frontend::results_coop(UiCanvas& c) const {
     } else {
       const std::string num = format_number(e.score);
       const float max_w = std::max(572.0f - fmadds(font.measure(num), 8.0f, 20.0f), 1.0f);
-      font.left_fit(c.lines, 34.0f, ry, 8.0f, 8.0f, max_w, col.data(), e.name);
+      font.left_fit(c.lines, 34.0f, ry, 8.0f, 8.0f, max_w, col.data(), display_name(e.name));
       font.right(c.lines, 606.0f, ry, 8.0f, 8.0f, col.data(), num);
     }
   }
@@ -2105,7 +2115,7 @@ void Frontend::board_view(int mode, std::function<void(const MenuInput&)> back) 
            if (r >= int(b.rows.size())) continue;
            const Rgba& col = P[kUiNormal];
            font.centre(c.lines, 28.0f + 80.0f, y + 2.0f, 8.0f, 8.0f, col.data(), format("%s.", format_number(r + 1).c_str()));
-           font.left_fit(c.lines, 28.0f + 130.0f, y + 2.0f, 10.0f, 10.0f, 300.0f, col.data(), b.rows[size_t(r)].name);
+           font.left_fit(c.lines, 28.0f + 130.0f, y + 2.0f, 10.0f, 10.0f, 300.0f, col.data(), display_name(b.rows[size_t(r)].name));
            font.right(c.lines, 28.0f + 570.0f, y + 2.0f, 10.0f, 10.0f, col.data(), format_number(b.rows[size_t(r)].score));
          }
          // The scroll bar (sub_820913B0 at 612, ten rows).
@@ -2159,6 +2169,219 @@ void Frontend::board_view(int mode, std::function<void(const MenuInput&)> back) 
   screen_.tips = [this](TextLayout& l) {
     l.add(palette_[kUiHighlight], " \x1D\x1E ")->scale = 0.75f;
     l.add(palette_[kUiNormal], text_(0x2C));
+    l.add(palette_[kUiHighlight], " B ");
+    l.add(palette_[kUiNormal], text_(0x2E));
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Online scores (the port's own: a group's score server in place of Xbox
+// LIVE; DIFFERENCES.md "Online scores"). The screens follow the menus'
+// look; their text is English, as the original has none for them.
+
+void Frontend::preview_online(const std::string& state) {
+  online_screen(true);
+  if (state == "editing") {
+    editing_ = true;
+    edit_ = "geow2-scores.example.workers.dev";
+  } else if (state == "waiting" || state == "failed") {
+    pairing_screen();
+  }
+}
+
+void Frontend::type(const std::string& utf8) {
+  if (!editing_) return;
+  // An address: printable ASCII only.
+  for (const char ch : utf8)
+    if (ch > 0x20 && ch < 0x7F && edit_.size() < 200) edit_.push_back(ch);
+}
+
+void Frontend::text_key(TextKey key) {
+  if (!editing_) return;
+  if (key == TextKey::kBackspace && !edit_.empty()) edit_.pop_back();
+  if (key == TextKey::kEnter) finish_editing(true);
+  if (key == TextKey::kEscape) finish_editing(false);
+}
+
+void Frontend::finish_editing(bool keep) {
+  if (!editing_) return;
+  editing_ = false;
+  if (keep && online_) {
+    online_message_ = online_->set_server(edit_);
+    sound(online_message_.empty() ? audio::Event::kUiConfirm : audio::Event::kUiDelete);
+  } else {
+    sound(audio::Event::kUiDelete);
+  }
+  online_screen(false);
+}
+
+void Frontend::online_screen(bool reset) {
+  if (!online_) return;
+  online_paired_ = online_->paired();
+  if (reset) online_message_.clear();
+  open(9,
+       [this](const MenuInput&) {
+         editing_ = false;
+         help(false);
+       },
+       [this](UiCanvas& c) {
+         const Font& font = g_.font;
+         const UiPalette& P = palette_;
+         ui_bar(c, P, 18.0f, 40.0f);
+         font.centre_fit(c.lines, 320.0f, 24.0f, 15.0f, 10.0f, 540.0f, P[kUiNormal].data(), "Online scores");
+         ui_panel(c, 28.0f, 46.0f, 612.0f, cursor_, P[kUiBackground], 0);
+         float y = 54.0f;
+         auto line = [&](const std::string& s, const Rgba& col, float size = 8.0f) {
+           font.left_fit(c.lines, 40.0f, y, size, size, 560.0f, col.data(), s);
+           y += size + 6.0f;
+         };
+         if (online_->paired()) {
+           const std::string group = online_->group();
+           line(display_name(online_->player()), P[kUiHighlight], 12.0f);
+           line(group.empty() ? online_->server() : group + "  (" + online_->server() + ")", P[kUiNormal]);
+           y += 4.0f;
+           y += text_box(font, c.lines, P, 40.0f, y, 7.0f, 7.0f, 3.0f, 560.0f, 0, 0, P[kUiNormal],
+                         "This device's games, unlocked modes and achievements are shared with your other paired "
+                         "devices, and the leaderboards show the group's best scores. It syncs when the game starts "
+                         "and after each game.") +
+                6.0f;
+           const std::string status = online_->status();
+           if (!status.empty()) line(status, P[kUiNormal], 7.0f);
+           return;
+         }
+         y += text_box(font, c.lines, P, 40.0f, y, 7.0f, 7.0f, 3.0f, 560.0f, 0, 0, P[kUiNormal],
+                       "Share your high scores, unlocked modes and achievements between your devices and with your "
+                       "friends, through your group's score server. Someone in the group sets one up (see "
+                       "geow2.com) and sends invite links: open yours on your phone, then enter the server's "
+                       "address here and pair this device.") +
+              8.0f;
+         if (editing_) {
+           line("Server address:", P[kUiNormal], 7.0f);
+           const bool blink = std::fmod(clock_, 1.0f) < 0.5f;
+           line(edit_ + (blink ? "_" : " "), P[kUiHighlight], 10.0f);
+           line("Enter or A: done.  Escape or B: cancel.  On a Steam Deck, STEAM + X shows the keyboard.",
+                P[kUiNormal], 6.0f);
+         } else if (!online_message_.empty()) {
+           line(online_message_, P[kUiHighlight], 7.0f);
+         }
+       },
+       reset,
+       [this](const MenuInput& in) {
+         if (editing_) {
+           // A pad finishes or cancels; the keyboard types (text_key).
+           if (in.pressed & kA) finish_editing(true);
+           else if (in.pressed & kBack) finish_editing(false);
+           return;
+         }
+         if (online_->paired() != online_paired_) {
+           online_screen(false);
+           return;
+         }
+         default_handler(in);
+       },
+       0);
+  screen_.width = 300.0f;
+  screen_.tips = [this](TextLayout& l) {
+    if (!editing_) tips_back(l);
+  };
+  if (!online_paired_) {
+    add_item(0,
+             [this](const MenuInput&, int, int) {
+               editing_ = true;
+               edit_ = online_->server();
+               online_message_.clear();
+               sound(audio::Event::kUiConfirm);
+             },
+             [this](TextLayout& l) {
+               const std::string s = online_->server();
+               l.add(palette_[kUiNormal], s.empty() ? "Enter the server's address" : "Server: " + s);
+             });
+    add_item(0, [this](const MenuInput&, int, int) { pairing_screen(); },
+             [this](TextLayout& l) { l.add(palette_[kUiNormal], "Pair this device"); },
+             [this](int, int) { return !online_->server().empty(); });
+  } else {
+    add_item(0, [this](const MenuInput&, int, int) {
+      online_->sync_now();
+      sound(audio::Event::kUiConfirm);
+    }, [this](TextLayout& l) { l.add(palette_[kUiNormal], "Sync now"); });
+    add_item(0, [this](const MenuInput&, int, int) {
+      online_->unpair();
+      sound(audio::Event::kUiDelete);
+      online_screen(false);
+    }, [this](TextLayout& l) { l.add(palette_[kUiNormal], "Unpair this device"); });
+  }
+}
+
+void Frontend::pairing_screen() {
+  online_->start_pairing();
+  open(0,
+       [this](const MenuInput&) {
+         online_->cancel_pairing();
+         online_screen(false);
+       },
+       [this](UiCanvas& c) {
+         const Font& font = g_.font;
+         const UiPalette& P = palette_;
+         ui_bar(c, P, 18.0f, 40.0f);
+         font.centre_fit(c.lines, 320.0f, 24.0f, 15.0f, 10.0f, 540.0f, P[kUiNormal].data(), "Pair this device");
+         ui_panel(c, 28.0f, 46.0f, 612.0f, cursor_, P[kUiBackground], 0);
+         const OnlineMenu::Pairing p = online_->pairing();
+         const float top = 54.0f, side = std::min(cursor_ - 8.0f - top, 190.0f);
+         float x = 40.0f;
+         // The confirming page's address as a QR code (texture kTexQr, made
+         // by the caller from qr_text()), flat so the camera sees squares.
+         qr_text_ = p.state == OnlineMenu::Pairing::kWaiting ? p.url : std::string();
+         if (!qr_text_.empty()) {
+           // (A sprite's colour is stored times 8; past full brightness, so
+           // the white stays white under the UI's dimming.)
+           const float k = 0.25f;
+           c.sprite(x, top, side, side, {k, k, k, 1.0f}, kTexQr, true);
+           x += side + 20.0f;
+         }
+         float y = top;
+         const float w = 600.0f - x;
+         auto line = [&](const std::string& s, const Rgba& col, float size) {
+           font.left_fit(c.lines, x, y, size, size, w, col.data(), s);
+           y += size + 6.0f;
+         };
+         switch (p.state) {
+           case OnlineMenu::Pairing::kIdle:
+           case OnlineMenu::Pairing::kStarting:
+             line("Asking the server for a code...", P[kUiNormal], 8.0f);
+             break;
+           case OnlineMenu::Pairing::kWaiting:
+             y += text_box(font, c.lines, P, x, y, 7.0f, 7.0f, 3.0f, w, 0, 0, P[kUiNormal],
+                           "On the phone you joined the group with, scan the code, or open your page on the server "
+                           "and type this code:") +
+                  8.0f;
+             line(p.code, P[kUiHighlight], 20.0f);
+             y += 4.0f;
+             text_box(font, c.lines, P, x, y, 7.0f, 7.0f, 3.0f, w, 0, 0, P[kUiNormal],
+                      "Then confirm on the phone. This screen closes by itself once it's done. Codes last ten "
+                      "minutes.");
+             break;
+           case OnlineMenu::Pairing::kPaired:
+             line("Paired.", P[kUiHighlight], 10.0f);
+             break;
+           case OnlineMenu::Pairing::kFailed:
+             line("Pairing failed:", P[kUiNormal], 8.0f);
+             text_box(font, c.lines, P, x, y, 7.0f, 7.0f, 3.0f, w, 0, 0, P[kUiHighlight], p.error);
+             break;
+         }
+       },
+       false,
+       [this](const MenuInput& in) {
+         if (online_->paired()) {
+           sound(audio::Event::kUiConfirm);
+           online_screen(false);
+           return;
+         }
+         if (in.pressed & kBack) {
+           if (const auto b = screen_.back) b(in);
+         }
+       },
+       0);
+  screen_.tips = [this](TextLayout& l) {
     l.add(palette_[kUiHighlight], " B ");
     l.add(palette_[kUiNormal], text_(0x2E));
   };

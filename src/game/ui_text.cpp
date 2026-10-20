@@ -46,4 +46,31 @@ const std::string& UiText::name(int id) const {
   return names_[size_t(id)];
 }
 
+std::string latin1_from_utf8(const std::string& u) {
+  std::string out;
+  for (size_t i = 0; i < u.size();) {
+    const unsigned char c = static_cast<unsigned char>(u[i]);
+    if (c < 0x80) {
+      out.push_back(char(c));
+      ++i;
+    } else if ((c & 0xE0) == 0xC0 && i + 1 < u.size()) {
+      const unsigned v = (c & 0x1Fu) << 6 | (static_cast<unsigned char>(u[i + 1]) & 0x3Fu);
+      out.push_back(v <= 0xFF ? char(v) : '?');
+      i += 2;
+    } else {
+      out.push_back('?');
+      ++i;
+      while (i < u.size() && (static_cast<unsigned char>(u[i]) & 0xC0) == 0x80) ++i;
+    }
+  }
+  return out;
+}
+
+std::string display_name(const std::string& utf8) {
+  std::string s = latin1_from_utf8(utf8);
+  for (char& c : s)
+    if (static_cast<unsigned char>(c) < 0x20 || c == 0x7F) c = ' ';
+  return s;
+}
+
 }  // namespace geow2
