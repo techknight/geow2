@@ -2273,6 +2273,12 @@ void Frontend::type(const std::string& utf8) {
     if (ch > 0x20 && ch < 0x7F && edit_.size() < 200) edit_.push_back(ch);
 }
 
+void Frontend::paste(const std::string& utf8) {
+  if (!editing_) return;
+  edit_.clear();
+  type(utf8);
+}
+
 void Frontend::text_key(TextKey key) {
   if (!editing_) return;
   if (key == TextKey::kBackspace && !edit_.empty()) edit_.pop_back();
@@ -2337,8 +2343,13 @@ void Frontend::online_screen(bool reset) {
            line("Server address:", P[kUiNormal], 7.0f);
            const bool blink = std::fmod(clock_, 1.0f) < 0.5f;
            line(edit_ + (blink ? "_" : " "), P[kUiHighlight], 10.0f);
-           line("Enter or A: done.  Escape or B: cancel.  On a Steam Deck, STEAM + X shows the keyboard.",
-                P[kUiNormal], 6.0f);
+#ifdef __APPLE__
+           const char* paste = "Cmd+V: paste.";
+#else
+           const char* paste = "Ctrl+V: paste.";
+#endif
+           line(std::string("Enter or A: done.  Escape or B: cancel.  ") + paste, P[kUiNormal], 6.0f);
+           line("On a Steam Deck, STEAM + X shows the keyboard.", P[kUiNormal], 6.0f);
          } else if (!online_message_.empty()) {
            line(online_message_, P[kUiHighlight], 7.0f);
          }

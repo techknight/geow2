@@ -1285,9 +1285,10 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
           if (e.key.key == SDLK_BACKSPACE) fe.text_key(Frontend::TextKey::kBackspace);
           if (e.key.key == SDLK_RETURN || e.key.key == SDLK_KP_ENTER) fe.text_key(Frontend::TextKey::kEnter);
           if (e.key.key == SDLK_ESCAPE) fe.text_key(Frontend::TextKey::kEscape);
+          // Ctrl+V, or Cmd+V on a Mac.
           if (e.key.key == SDLK_V && (e.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI))) {
             if (char* clip = SDL_GetClipboardText()) {
-              fe.type(clip);
+              fe.paste(clip);
               SDL_free(clip);
             }
           }

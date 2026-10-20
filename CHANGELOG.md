@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Online scores: pasting the server's address (Ctrl+V, or Cmd+V on a
+  Mac) replaces what the field holds, and the screen says how to paste.
+
 ## 1.1.1
 
 - Install on the Steam Deck and Linux with Flatpak, from

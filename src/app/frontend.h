@@ -133,6 +133,9 @@ class Frontend {
   enum class TextKey { kBackspace, kEnter, kEscape };
   bool text_entry() const { return editing_; }
   void type(const std::string& utf8);
+  // The clipboard's text in place of what the field holds (an address is
+  // pasted whole).
+  void paste(const std::string& utf8);
   void text_key(TextKey key);
   // For captures (--online-preview): the Online scores screen at once,
   // typing an address ("editing") or pairing ("waiting", "failed").
