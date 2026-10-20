@@ -117,12 +117,16 @@ as on the console. One person in the group sets up a server, free on
 Cloudflare: see [geow2-scores](https://github.com/techknight/geow2-scores)
 and [geow2.com/scores](https://geow2.com/scores/).
 
-1. Open the invite link you were sent on your phone and choose your name.
+1. Open the invite link you were sent on your phone, and choose your
+   name. The browser you join in is the one that pairs your devices, so a
+   phone is best: each pairing is then one scan. (Joined on a computer?
+   Your page on the server shows a code that signs your phone in too.)
 2. In the game, Help and options, then Online scores: enter the server's
    address (on a Steam Deck, STEAM + X shows the keyboard), then choose
    Pair this device.
-3. Scan the QR code the game shows with your phone, or type its code on
-   your page, and confirm.
+3. Scan the QR code the game shows with your phone and confirm. Or, in
+   the browser you joined in, open your page on the server and type the
+   code.
 
 Do the same on each device you play on. The game syncs when it starts,
 after each game and every few minutes in the menus. From a terminal:

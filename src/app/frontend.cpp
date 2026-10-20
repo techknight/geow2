@@ -2330,8 +2330,8 @@ void Frontend::online_screen(bool reset) {
          y += text_box(font, c.lines, P, 40.0f, y, 7.0f, 7.0f, 3.0f, 560.0f, 0, 0, P[kUiNormal],
                        "Share your high scores, unlocked modes and achievements between your devices and with your "
                        "friends, through your group's score server. Someone in the group sets one up (see "
-                       "geow2.com) and sends invite links: open yours on your phone, then enter the server's "
-                       "address here and pair this device.") +
+                       "geow2.com) and sends invite links: open yours on your phone, which then pairs each device "
+                       "with one scan. Then enter the server's address here and pair this device.") +
               8.0f;
          if (editing_) {
            line("Server address:", P[kUiNormal], 7.0f);
@@ -2432,14 +2432,13 @@ void Frontend::pairing_screen() {
              break;
            case OnlineMenu::Pairing::kWaiting:
              y += text_box(font, c.lines, P, x, y, 7.0f, 7.0f, 3.0f, w, 0, 0, P[kUiNormal],
-                           "On the phone you joined the group with, scan the code, or open your page on the server "
-                           "and type this code:") +
+                           "Scan the code with the phone you joined the group with. Or, if you joined on a computer, "
+                           "open your page on the server there and type this code:") +
                   8.0f;
              line(p.code, P[kUiHighlight], 20.0f);
              y += 4.0f;
              text_box(font, c.lines, P, x, y, 7.0f, 7.0f, 3.0f, w, 0, 0, P[kUiNormal],
-                      "Then confirm on the phone. This screen closes by itself once it's done. Codes last ten "
-                      "minutes.");
+                      "Then confirm. This screen closes by itself once it's done. Codes last ten minutes.");
              break;
            case OnlineMenu::Pairing::kPaired:
              line("Paired.", P[kUiHighlight], 10.0f);
