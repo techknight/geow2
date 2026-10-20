@@ -258,6 +258,10 @@ jobs:
             SIGN="--gpg-sign=$KEY_ID"
             gpg --export "$KEY_ID" > geow2.gpg
           fi
+          # Without the debug symbols extension (most of the size; no use to players).
+          for ref in $(ostree refs --repo=repo | grep '\.Debug/'); do ostree refs --repo=repo --delete "$ref"; done
+          ostree prune --repo=repo --refs-only
+          ostree refs --repo=repo
           flatpak build-update-repo $SIGN --generate-static-deltas --title=geow2 --default-branch=stable repo
           flatpak build-bundle $SIGN --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
             --repo-url=https://geow2.com/flatpak/repo/ ${KEY_ID:+--gpg-keys=geow2.gpg} \

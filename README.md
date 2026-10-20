@@ -35,6 +35,8 @@ with the original icons, and local multiplayer for up to four players
 
 1. Download the archive for your system from
    [Releases](https://github.com/techknight/geow2/releases) and unpack it.
+   (On the Steam Deck and Linux, the Flatpak is simpler: see
+   [Steam Deck](#steam-deck). It brings its own FFmpeg.)
 2. Install [FFmpeg](https://ffmpeg.org/download.html), which decodes the
    game's sound: on your PATH, or `ffmpeg.exe` next to `geow2.exe` on
    Windows, or `brew install ffmpeg` on a Mac, or your distribution's
@@ -138,9 +140,25 @@ achievements.
 
 ## Steam Deck
 
-Either build runs on the Deck: the Windows build under Proton, or the
-Linux build natively. Make the data folder on a PC first; the Deck then
-needs neither FFmpeg nor your package.
+The easiest way is the Flatpak from [geow2.com/flatpak](https://geow2.com/flatpak/),
+which also works on other Linux systems:
+
+1. In Desktop Mode, open geow2.com/flatpak in the browser and choose
+   Install (or, in Konsole,
+   `flatpak install --user https://geow2.com/flatpak/geow2.flatpakref`).
+2. Start geow2 from the application menu and choose your copy of the game
+   on a USB stick or microSD card. It makes its data folder once.
+3. Right-click geow2 in the application menu and choose "Add to Steam".
+4. On the OLED Deck, set the refresh rate to 60 Hz in the performance
+   menu (the "..." button).
+
+Updates then come through Discover (or `flatpak update`). A data folder
+made on a PC can instead go to
+`~/.var/app/com.geow2.geow2/data/geow2/geow2/data`.
+
+Without Flatpak, either archive runs on the Deck too: the Windows build
+under Proton, or the Linux build natively. Make the data folder on a PC
+first; the Deck then needs neither FFmpeg nor your package.
 
 1. Copy the unpacked release folder, with its `data` folder, to a USB
    stick or microSD card.
