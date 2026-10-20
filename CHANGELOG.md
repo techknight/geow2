@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Online scores, optional: with a score server for your group of friends
+  ([geow2-scores](https://github.com/techknight/geow2-scores), free to
+  run on Cloudflare), your high scores, unlocked modes and achievements
+  follow you between your devices, the leaderboards show the group's
+  boards (the original's Friends and My score views, X to switch), and
+  your name is the one you chose. Help and options, Online scores: enter
+  the server's address and pair the device by scanning a QR code with
+  your phone. `--online-pair` and `--online-sync` do the same from a
+  terminal.
+- Every finished game is kept in `scores.log`, so progress from two
+  devices can be combined: `geow2 --merge-profile <the other device's
+  profile folder>` adds its games, unlocks and achievements.
 - Setup inside the game: when there is no data folder, geow2 asks for
   your copy of the game (the package file or an extracted folder) and
   makes the data folder itself, with a progress bar. It works with a

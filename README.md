@@ -107,6 +107,31 @@ your user folder (`%APPDATA%\geow2\geow2` on Windows,
 `~/Library/Application Support/geow2/geow2` on macOS), or in the folder
 given with `--profile`.
 
+## Online scores
+
+Optional. With a score server for your group of friends, your high
+scores, unlocked modes and achievements follow you between your devices
+(a PC and a Steam Deck, say), and the leaderboards show the group's
+boards: X switches between Friends, My score and your own Overall board,
+as on the console. One person in the group sets up a server, free on
+Cloudflare: see [geow2-scores](https://github.com/techknight/geow2-scores)
+and [geow2.com/scores](https://geow2.com/scores/).
+
+1. Open the invite link you were sent on your phone and choose your name.
+2. In the game, Help and options, then Online scores: enter the server's
+   address (on a Steam Deck, STEAM + X shows the keyboard), then choose
+   Pair this device.
+3. Scan the QR code the game shows with your phone, or type its code on
+   your page, and confirm.
+
+Do the same on each device you play on. The game syncs when it starts,
+after each game and every few minutes in the menus. From a terminal:
+`geow2 --online-pair <server>` and `geow2 --online-sync`.
+
+Without a server, `geow2 --merge-profile <folder>` adds another device's
+profile folder (copied over) to this one: its games, unlocks and
+achievements.
+
 ## Steam Deck
 
 Either build runs on the Deck: the Windows build under Proton, or the
