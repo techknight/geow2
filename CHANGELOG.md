@@ -4,6 +4,9 @@
 
 - Online scores: pasting the server's address (Ctrl+V, or Cmd+V on a
   Mac) replaces what the field holds, and the screen says how to paste.
+- Online scores: the Single Player tiles show the group's best six for
+  each mode around your own row, as the original showed your friends'
+  (the right stick and the shoulder buttons scroll them).
 
 ## 1.1.1
 

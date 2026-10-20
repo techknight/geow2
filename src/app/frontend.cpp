@@ -799,10 +799,16 @@ void Frontend::quit_confirm() {
 
 void Frontend::mode_select(bool refresh_boards) {
   // sub_8208ED00 opens menu 3 without a reset: the selection is the one
-  // remembered (after a game, the mode just played). Its argument only asks
-  // for a Live board refresh (sub_8208BA90), which the local boards don't
-  // need.
-  (void)refresh_boards;
+  // remembered (after a game, the mode just played). Its argument asks for
+  // a board refresh (sub_8208BA90), after which sub_8208BD60 puts each
+  // board's first row shown at clamp(own - 3, 0, count - 6); without it the
+  // tiles keep their scroll.
+  if (refresh_boards)
+    for (int mode = 0; mode < 6; ++mode) {
+      int own = -1;
+      const int count = int(tile_board(mode, own).size());
+      tile_first_[size_t(mode)] = own - 3 < 0 ? 0 : std::min(own - 3, std::max(count - 6, 0));
+    }
   open(3, [this](const MenuInput&) { main_menu(false); },
        [this](UiCanvas& c) {
          draw_header(c, 0x41);
@@ -883,9 +889,60 @@ void Frontend::mode_select_update(const MenuInput& in) {
     board_view(mode_of_text(kModeItems[selection_value()]), [this](const MenuInput&) { mode_select(false); });
     return;
   }
+  // The selected tile's group board scrolls (sub_8208D918, as the results'
+  // board does): signed RY² times 0.333 a frame into an accumulator, LB/LT
+  // and RB/RT a page of 6; at most one row each way a frame, sound 0x16
+  // when that moves it; the remainder settles 4 frames after the last such
+  // input.
+  if (online_ && online_->paired()) {
+    const int mode = mode_of_text(kModeItems[selection_value()]);
+    int own = -1;
+    const int max_first = std::max(int(tile_board(mode, own).size()) - 6, 0);
+    int& first = tile_first_[size_t(mode)];
+    const float ry = in.analog[1];
+    if (std::fabs(ry) > 0.1f) {  // dat_82000714
+      tile_hold_ = 4;
+      const float sq = ry * ry;
+      tile_scroll_ = fmadds(ry >= 0.0f ? sq : -sq, 0.333f, tile_scroll_);  // fsel; dat_82005E44
+    }
+    if (in.pressed & (kLb | kLt)) {
+      tile_scroll_ = tile_scroll_ - 6.0f;  // dat_82001414
+      tile_hold_ = 4;
+    }
+    if (in.pressed & (kRb | kRt)) {
+      tile_scroll_ = tile_scroll_ + 6.0f;
+      tile_hold_ = 4;
+    }
+    auto step = [&](int d) {
+      const int row = std::clamp(first + d, 0, max_first);
+      if (row != first && tile_hold_ == 4) sound(audio::Event::kUiChange);
+      first = row;
+    };
+    if (tile_scroll_ <= -1.0f) {
+      tile_scroll_ = tile_scroll_ + 1.0f;
+      step(-1);
+    }
+    if (tile_scroll_ >= 1.0f) {
+      tile_scroll_ = tile_scroll_ - 1.0f;
+      step(1);
+    }
+    if ((tile_hold_ < 1 || --tile_hold_ == 0) && std::fabs(tile_scroll_) < 1.0f) tile_scroll_ = 0.0f;
+  }
   MenuInput rest = in;
   rest.pressed &= ~uint32_t(0x3C);
   default_handler(rest);
+}
+
+// The group's board for a mode select tile: the Friends board's stand-in,
+// which on Live always holds the player (a row without a score when they
+// have none).
+std::vector<GroupRow> Frontend::tile_board(int mode, int& own) const {
+  std::vector<GroupRow> rows = group_board(mode, own);
+  if (own < 0 && online_ && online_->paired()) {
+    rows.push_back(GroupRow{online_->player_id(), online_->player(), 0, 0, 0});
+    own = int(rows.size()) - 1;
+  }
+  return rows;
 }
 
 void Frontend::mode_tile(UiCanvas& c, int index, int text, bool selected) const {
@@ -920,6 +977,35 @@ void Frontend::mode_tile(UiCanvas& c, int index, int text, bool selected) const 
   if (fresh) {
     text_box(font, c.lines, palette_, C, fmadds(h - 7.0f, 0.5f, y0), 7.0f, 7.0f, 3.0f, (R - L) - 18.0f, 2, 1, col,
              text_(0x88));
+  } else if (unlocked && online_ && online_->paired()) {
+    // The Live branch with the group's board: six rows from the tile's
+    // first row, 6 high from y0 + 12; the player's row Highlight, a row
+    // without a score dimmed, "--" and "-" past the end; the name fitted
+    // beside the score; a scroll bar at R.
+    const UiPalette& P = palette_;
+    int own = -1;
+    const std::vector<GroupRow> rows = tile_board(mode, own);
+    const int count = int(rows.size());
+    const int first = std::clamp(tile_first_[size_t(mode)], 0, std::max(count - 6, 0));
+    const Rgba& dim = selected ? P[kUiSelectionDisabled] : P[kUiDisabled];
+    const float pitch = (((h - 36.0f) - 24.0f) * 0.2f) + 6.0f;  // dat_820020AC, dat_82000F9C, dat_82000D5C
+    float ry = y0 + 12.0f;                                      // dat_82000D68
+    for (int r = first; r < first + 6; ++r) {
+      if (r < 0 || r >= count) {
+        font.left_fit(c.lines, L, ry, 6.0f, 6.0f, 120.0f, dim.data(), "--");  // dat_82000D50
+        font.right(c.lines, R - 5.0f, ry, 6.0f, 6.0f, dim.data(), "-");
+      } else {
+        const GroupRow& row = rows[size_t(r)];
+        const Rgba& rc = r == own ? P[kUiHighlight] : row.score > 0 ? P[kUiNormal] : dim;
+        const std::string num = row.score > 0 ? format_number(row.score) : "-";
+        font.left_fit(c.lines, L, ry, 6.0f, 6.0f, fmadds(-font.measure(num), 6.0f, (R - L) - 16.0f), rc.data(),
+                      display_name(row.name));
+        font.right(c.lines, R - 5.0f, ry, 6.0f, 6.0f, rc.data(), num);
+      }
+      ry = pitch + ry;
+    }
+    ui_scroll_bar(c, R, y0 + 11.0f, (y0 + h) - 11.0f, float(first), float(count), 6.0f, scaled(P[kUiBright], 0.5f),
+                  scaled(P[kUiNormal], 0.25f), scaled(dim, 0.5f));  // dat_820011F4
   } else if (unlocked) {
     // The local case: the session's best, and in place of the Live mini
     // table the local board's best.
@@ -2259,6 +2345,8 @@ void Frontend::preview_online(const std::string& state) {
     edit_ = "geow2-scores.example.workers.dev";
   } else if (state == "waiting" || state == "failed") {
     pairing_screen();
+  } else if (state == "modes") {
+    mode_select(true);
   } else if (state == "boards" || state == "boards-mine") {
     // Deadline's board, Friends or My score ("paired" data).
     board_view(0, [this](const MenuInput&) { leaderboards(false); });

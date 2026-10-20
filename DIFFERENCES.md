@@ -89,6 +89,11 @@ Format for each entry:
     - the results screen's Friends Leaderboard column shows the group's
       board, eight rows from the player's row less four, the player's row
       highlighted, names and scores without ranks (`sub_82088AE0`).
+    - the mode select tiles show six rows of the group's board as the Live
+      mini table (`sub_8208DD58`), from the player's row less three, the
+      player's row highlighted (with "-" when they have no score in the
+      mode, as a friend without a score shows on Live), scrolled with the
+      right stick and LB/LT, RB/RT (`sub_8208D918`).
 
   Nothing is sent before a device is paired, and an unpaired game never
   connects; unpaired, the screens are as in "Xbox Live leaderboards and

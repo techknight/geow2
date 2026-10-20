@@ -12,7 +12,7 @@
 //         [--trace <csv>] [--positions <file>] [--dump <step> <file>] [--perf]
 //         [--record <raw-file> <first-step>]
 //   geow2 --data <data-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
-//         [--online-preview unpaired|editing|waiting|failed|paired]
+//         [--online-preview unpaired|editing|waiting|failed|paired|boards|modes]
 //   geow2 [--data <data-dir>] --setup-preview <out.png> | --setup-from <package>
 //
 // The first form opens the window at the front end; the profile, the
@@ -956,11 +956,12 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
 
 // --online-preview: the online scores in a fixed state, for captures of
 // their screens (no server): "unpaired", "editing" (typing the address),
-// "waiting" (a pairing code), "failed" or "paired".
+// "waiting" (a pairing code), "failed", "paired", "boards" or "modes" (the
+// mode select's tiles with the group's boards, every mode unlocked).
 struct PreviewOnline : OnlineMenu {
   std::string state;
   explicit PreviewOnline(std::string s) : state(std::move(s)) {}
-  bool paired() const override { return state == "paired" || state.rfind("boards", 0) == 0; }
+  bool paired() const override { return state == "paired" || state == "modes" || state.rfind("boards", 0) == 0; }
   std::string server() const override { return "https://geow2-scores.example.workers.dev"; }
   std::string player() const override { return "Ace"; }
   std::string group() const override { return "Friday Night Grid"; }
@@ -987,6 +988,13 @@ struct PreviewOnline : OnlineMenu {
     std::array<std::vector<GroupRow>, 6> b;
     b[0] = {{"p-kim", "Kim", 1840250, 9, 0}, {"p-ace", "Ace", 1392405, 8, 0}, {"p-jo", "Jo", 905110, 6, 0},
             {"p-rob", "Robbie", 411500, 4, 0}};
+    if (state == "modes") {
+      // A long board (Ace low on it), and one Ace has no score on.
+      b[1] = {{"p-kim", "Kim", 3514865, 9, 0},    {"p-jo", "Jo", 2821060, 8, 0},       {"p-rob", "Robbie", 2795535, 7, 0},
+              {"p-mae", "Maettes", 2003265, 6, 0}, {"p-cj", "EagleOne CJ", 1697605, 5, 0}, {"p-sam", "Sam", 1155000, 4, 0},
+              {"p-ace", "Ace", 880400, 3, 0},      {"p-lee", "Lee", 412000, 2, 0}};
+      b[4] = {{"p-jo", "Jo", 9245275, 9, 0}, {"p-kim", "Kim", 6436725, 7, 0}};
+    }
     return b;
   }
 };
@@ -994,6 +1002,10 @@ struct PreviewOnline : OnlineMenu {
 int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std::vector<Press>& presses,
                           const fs::path& out, uint32_t w, uint32_t h, const std::string& online_preview) {
   Profile profile;
+  if (online_preview == "modes") {
+    profile.unlocked = 0x3F;
+    profile.progress.fill(1);
+  }
   std::array<LocalBoard, 6> boards;
   Frontend fe(g, g.text, profile, boards, {});
   PreviewOnline preview(online_preview);
@@ -1594,7 +1606,7 @@ int main(int argc, char** argv) {
                      "        [--trace <csv>] [--positions <file>] [--dump <step> <file>] [--perf]\n"
                      "        [--record <raw-file> <first-step>]\n"
                      "  geow2 --frames <n> --screenshot <png> --frontend [--press <frame> <button>]...\n"
-                     "        [--online-preview unpaired|editing|waiting|failed|paired]\n"
+                     "        [--online-preview unpaired|editing|waiting|failed|paired|boards|modes]\n"
                      "  geow2 [--data <dir>] --setup-preview <png> | --setup-from <package>\n");
       return help || dev ? 0 : 2;
     }

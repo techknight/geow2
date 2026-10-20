@@ -222,6 +222,7 @@ class Frontend {
   // player even before the server has it; `own` is the player's row, -1
   // without one. Empty when not paired.
   std::vector<GroupRow> group_board(int mode, int& own) const;
+  std::vector<GroupRow> tile_board(int mode, int& own) const;
 
   // The multiplayer setup (menu 6, sub_820863B0) and its parts.
   void lobby(bool reset);
@@ -290,6 +291,11 @@ class Frontend {
   int board_filter_ = 2;  // dat_821EB5AC: 0 Friends, 1 My score, 2 Overall (the local board)
   float board_scroll_ = 0.0f;  // dat_821EA114
   int board_hold_ = 0;         // dat_821EA118
+  // The mode select tiles' group boards: each mode's first row shown (the
+  // board block's +0xC) and the right stick's accumulator and settle timer.
+  std::array<int, 6> tile_first_{};
+  float tile_scroll_ = 0.0f;  // dat_821EB6CC
+  int tile_hold_ = 0;         // dat_821EB6D0
   int achievement_first_ = 0;
   // The online scores.
   OnlineMenu* online_ = nullptr;
