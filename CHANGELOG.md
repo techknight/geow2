@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Online scores: a long history of games goes to the server in parts, so
+  none is lost, and games that came from the server aren't sent back.
+- Online scores: sturdier against a broken or hostile score server (names
+  cleaned of control characters, answers limited in size, no redirects, a
+  pairing link that can't be shown as a QR code no longer crashes the
+  game), and the file holding the device's token is private on Linux and
+  macOS.
+
 ## 1.1.2
 
 - Online scores: pasting the server's address (Ctrl+V, or Cmd+V on a
