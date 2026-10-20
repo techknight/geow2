@@ -85,6 +85,11 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.1.1" date="2026-10-20">
+      <description>
+        <p>Installable from geow2.com with Flatpak, with updates through the software centre.</p>
+      </description>
+    </release>
     <release version="1.1.0" date="2026-10-20">
       <description>
         <p>Optional online scores with a score server for your group of friends: high scores, unlocked modes and

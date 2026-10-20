@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1
+
+- Install on the Steam Deck and Linux with Flatpak, from
+  [geow2.com/flatpak](https://geow2.com/flatpak/): one install, updates
+  through Discover or `flatpak update`, and the setup inside the game
+  makes the data folder from your copy of the game. Each release also
+  carries the Flatpak as a single file.
+
 ## 1.1.0
 
 - Online scores, optional: with a score server for your group of friends
