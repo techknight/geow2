@@ -280,6 +280,14 @@ add_executable(audio_tests tests/audio_tests.cpp)
 target_link_libraries(audio_tests PRIVATE geow2_audio)
 add_test(NAME audio_tests COMMAND audio_tests)
 
+# The parsers' mutation fuzzer (tests/fuzz.cpp), for a sanitizer build:
+#   cmake -DGEOW2_FUZZ=ON -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined"
+option(GEOW2_FUZZ "Build the parsers' fuzzer" OFF)
+if(GEOW2_FUZZ)
+  add_executable(fuzz tests/fuzz.cpp)
+  target_link_libraries(fuzz PRIVATE geow2_audio geow2_data geow2_net)
+endif()
+
 # On Linux, like the static C runtime on Windows: the C++ runtime linked
 # in, so the programs need only the system's C library.
 if(UNIX AND NOT APPLE)
