@@ -140,6 +140,18 @@ static void test_reader() {
     threw = true;
   }
   expect(threw, "aobj: truncated file rejected");
+
+  // A damaged record count (found by the fuzzer: it sized a 90 GB
+  // reservation) is refused before anything is allocated for it.
+  Bytes huge = file;
+  huge[0x10] = 0x7F, huge[0x11] = 0xFF, huge[0x12] = 0xFF, huge[0x13] = 0xFF;
+  threw = false;
+  try {
+    parse_aobj(huge);
+  } catch (const FormatError&) {
+    threw = true;
+  }
+  expect(threw, "aobj: a record count beyond the file rejected");
 }
 
 static void test_script() {

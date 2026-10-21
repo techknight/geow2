@@ -126,6 +126,9 @@ Aobj parse_aobj(std::span<const uint8_t> file) {
   for (size_t i = 0; i < words.size(); ++i) words[i] = be32(file.data() + 0x14 + 4 * i);
 
   size_t at = 0;
+  // Each record takes at least its type word: a count beyond that is a
+  // damaged file (and must not size the reservation).
+  if (count > words.size()) throw FormatError("aobj: more component records than words");
   a.records.reserve(count);
   for (uint32_t k = 0; k < count; ++k) {
     if (at >= words.size()) throw FormatError("aobj: component records run past the string table");

@@ -71,8 +71,16 @@ const std::map<std::string, Target>& targets() {
       {"xdbf", [](const Bytes& b) { (void)Xdbf::parse(b); }},
       {"xtlo",
        [](const Bytes& b) {
-         TextTable t(b, "en");
-         for (const std::string& id : t.ids()) (void)t.find(id);
+         // Each language file holds its own language.
+         for (const char* language : {"en", "de", "fr", "es", "it"}) {
+           try {
+             TextTable t(b, language);
+             for (const std::string& id : t.ids()) (void)t.find(id);
+             return;
+           } catch (const FormatError&) {
+           }
+         }
+         throw FormatError("xtlo: no language");
        }},
       {"aobj", [](const Bytes& b) { (void)audio::parse_aobj(b); }},
       {"wav", [](const Bytes& b) { (void)audio::parse_wav(b); }},
@@ -158,13 +166,13 @@ int main(int argc, char** argv) {
   }
   Mutator m(seed);
   size_t refused = 0;
-  // The seeds unchanged first: they must parse.
+  // The seeds unchanged first: a real file that is refused is worth knowing
+  // (raw seeds, such as the LZX target's, may be).
   for (const Bytes& s : seeds) {
     try {
       target(s);
     } catch (const std::exception& e) {
-      std::fprintf(stderr, "a seed is refused: %s\n", e.what());
-      return 1;
+      std::printf("note: a seed is refused: %s\n", e.what());
     }
   }
   for (long it = 0; it < iterations; ++it) {
