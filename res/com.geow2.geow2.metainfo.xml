@@ -85,7 +85,7 @@
     </screenshot>
   </screenshots>
   <releases>
-    <release version="1.1.3" date="2026-10-21">
+    <release version="1.1.3" date="2026-10-20">
       <description>
         <p>Leaderboards with the original's cursor and paging; Next Friend and Personal Best at the top right with
         a score server; online scores sturdier and a long history synced in parts.</p>
