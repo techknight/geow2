@@ -74,8 +74,8 @@ const std::map<std::string, Target>& targets() {
          TextTable t(b, "en");
          for (const std::string& id : t.ids()) (void)t.find(id);
        }},
-      {"aobj", [](const Bytes& b) { (void)parse_aobj(b); }},
-      {"wav", [](const Bytes& b) { (void)parse_wav(b); }},
+      {"aobj", [](const Bytes& b) { (void)audio::parse_aobj(b); }},
+      {"wav", [](const Bytes& b) { (void)audio::parse_wav(b); }},
       {"bank", [](const Bytes& b) { (void)parse_bank(b); }},
       {"json", [](const Bytes& b) { (void)json::parse(text(b)); }},
       {"sync", [](const Bytes& b) { (void)parse_sync(200, text(b)); }},
