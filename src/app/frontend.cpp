@@ -1955,6 +1955,8 @@ void Frontend::lobby_frame(UiCanvas& c) const {
   const int sel = selection_value();
   const int group = lobby_group(sel);
   const Rgba& bg = palette_[kUiBackground];
+  // The group bars: palette slot 10 (r31 + 0xA0) times 2.0 (dat_820006FC)
+  // for the lit group, else 0.5 (dat_82000724), all four channels.
   const Rgba& bar = palette_[10];
   auto bar_tint = [&](bool on) { return scaled(bar, on ? 2.0f : 0.5f); };
   ui_panel(c, 0.0f, 150.0f, 22.0f, 266.0f, bg, 2);

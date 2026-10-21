@@ -33,8 +33,9 @@ struct Bullet {
 // 1 red, 2 blue, 3 yellow, 4 green; any other the type colour.
 void bullet_colour(int colour, float out[4]);
 
-// The line shape player bullets draw with (+0x40 / +0x3C when +0x7C != 1):
-// six points (three segments) read from the user's image at 0x82181D4C.
+// The line shape player bullets draw with (+0x40 / +0x3C when +0x7C != 1,
+// set by sub_82052DB8: count 6, points dat_82181D4C): six points (three
+// segments) read from the user's image.
 struct BulletShape {
   std::vector<Vec2> points;
   static BulletShape from_image(std::span<const uint8_t> image);

@@ -176,6 +176,21 @@ Format for each entry:
   The confirmation is the original's (0x73).
 - **Decided**: 2026-10-15; the label 2026-10-19.
 
+### Trial mode
+
+- **What**: the Xbox Live Arcade trial.
+- **Original**: at start the license mask decides the trial flag
+  (`sub_8207E008`, `dat_8218E150`). In the trial only Deadline can be
+  played (`sub_82093640`; the other tiles say 0x89 "Game mode not
+  available in trial"), no achievements are written (`sub_8207E538`), the
+  results and "Return to arcade" lead to upsell screens (`sub_8208CE50`,
+  `sub_8208D160`), and buying the game from them turns the trial off
+  (`sub_8207FA40`).
+- **Port**: always the full game. It needs the player's own copy of the
+  full game's package, so it never runs as the trial, and the upsell
+  screens (which open the Marketplace) are not ported.
+- **Decided**: 2026-10-20 (QA pass; behaviour unchanged since 1.0).
+
 ### Input devices
 
 - **What**: keyboard control and non-Xbox pads.
@@ -257,7 +272,10 @@ Format for each entry:
   snake segments' follow (`sub_82056CD8`) and the gate beams' bounce
   (`sub_82051B18`) use
   `frsqrte` and `fres`, the PowerPC hardware estimates, whose exact
-  results on the Xbox 360 CPU are not documented.
+  results on the Xbox 360 CPU are not documented; the camera's view
+  matrix inverse (`sub_82069FB8`) divides by the determinant with
+  `vrefp`, the vector estimate (whether a refining step follows is not
+  traced).
 - **Port**: computes the exact values. Lines, the grid and particles can
   differ from the original by the estimates' error (small; visual only).
   The geom pull is gameplay: a geom being pulled in moves by the pull
