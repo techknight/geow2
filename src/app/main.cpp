@@ -29,7 +29,9 @@
 // with a fixed raw stick value (XInput convention), --bomb pulling the
 // trigger on one step and --spawn adding enemies (type 16: a power-up
 // item) at the start, and saves the final frame; --audio-out also (or
-// instead) saves its sound, 5.1 float, with the options at full.
+// instead) saves its sound, 5.1 float, with the options at full, and
+// --audio-rng starts the audio's own generator (its Random and Selector
+// draws, which run through the menus) from a recorded game's value.
 // --player joins a pad to a multiplayer game (team 0-3, role 0 alone,
 // 1 pilot, 2 copilot;
 // --versus for teams against each other), every pad holding the --stick
@@ -714,7 +716,7 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
                  const StepInputs& inputs, int bomb_step, const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h,
                  bool exact_720p, const fs::path& trace_path, const fs::path& rng_path, int rng_step,
                  const fs::path& dump_path, int dump_step, const fs::path& positions_path, const fs::path& data_dir,
-                 const fs::path& audio_path, const fs::path& record_path, int record_from) {
+                 const fs::path& audio_path, const fs::path& record_path, int record_from, int64_t audio_rng) {
   // --trace: after each step, the clock and slot 0's object (x, y, vx,
   // vy) at full precision, as memory reads of the original in an emulator give them.
   std::ofstream trace;
@@ -742,6 +744,8 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
     std::string error;
     if (sound.init(data_dir, &error)) {
       glue.start();
+      // --audio-rng: the audio generator as a recorded game began.
+      if (audio_rng >= 0) sound.set_random(uint32_t(audio_rng));
       attach_sound(g, glue, [&step_now]() { return uint32_t(uint64_t(step_now) * 50 / 3); });
       glue.select_music(true, g.rules.mode, frozen(g));  // the game's start, before the hooks existed
     } else {
@@ -1523,6 +1527,7 @@ int main(int argc, char** argv) {
   uint32_t shot_w = 1280, shot_h = 720;
   int64_t seed = -1;
   int64_t crt_state = -1;  // --crt-state: the C runtime rand()'s state at the start, in hex
+  int64_t audio_rng = -1;  // --audio-rng: the audio generator's state as the game starts, in hex
   int bomb_step = -1;
   int mode = 0;
   int start_level = -1;
@@ -1550,6 +1555,7 @@ int main(int argc, char** argv) {
     else if (a == "--crt-state" && i + 1 < argc) crt_state = int64_t(std::strtoul(argv[++i], nullptr, 16));
     else if (a == "--positions" && i + 1 < argc) positions_path = argv[++i];
     else if (a == "--audio-out" && i + 1 < argc) audio_path = argv[++i];
+    else if (a == "--audio-rng" && i + 1 < argc) audio_rng = int64_t(std::strtoul(argv[++i], nullptr, 16));
     else if (a == "--merge-profile" && i + 1 < argc) merge_from = argv[++i];
     else if (a == "--online-pair" && i + 1 < argc) online_pair = argv[++i];
     else if (a == "--online-sync") online_sync = true;
@@ -1760,7 +1766,7 @@ int main(int argc, char** argv) {
     if (crt_state >= 0) game.world->crt.set_state(uint32_t(crt_state));
     rc = run_headless(dev, renderer, game, frames, per_pad, inputs, bomb_step, spawns, screenshot, shot_w, shot_h,
                       exact_720p == 1, trace_path, rng_path, rng_step, dump_path, dump_step, positions_path, data_dir,
-                      audio_path, record_path, record_from);
+                      audio_path, record_path, record_from, audio_rng);
     SDL_Log("crt state %08x", game.world->crt.state());
   } else {
     Display d = load_display(profile_dir);

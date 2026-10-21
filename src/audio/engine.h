@@ -100,6 +100,11 @@ class AudioEngine : public AudioSink {
   bool loaded() const { return !objects_.empty(); }
   // The audio frame counter.
   uint32_t frame() const { return shared_.frame; }
+  // The Random / Selector generator (manager +0xFADC). It runs from the
+  // engine's creation, so a game's draws depend on the time spent in the
+  // menus before it; replays of recorded games start from the recorded
+  // value. Call before rendering.
+  void set_random(uint32_t state) { shared_.rng = state; }
 
  private:
   struct Message {
