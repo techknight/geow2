@@ -85,6 +85,13 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.2.0" date="2026-10-21">
+      <description>
+        <p>Smooth motion on displays faster than 60 Hz (the Steam Deck OLED at 90 Hz, 120 and 144 Hz monitors):
+        the frames between the game's 60 steps a second are drawn in between. The game itself is unchanged; Settings
+        turns it off.</p>
+      </description>
+    </release>
     <release version="1.1.4" date="2026-10-21">
       <description>
         <p>The original's hidden debug camera (BACK + RB); a destroyed ship's shots still in flight no longer

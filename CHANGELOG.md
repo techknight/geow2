@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.0
+
+- Smooth motion on displays faster than 60 Hz: on a 90 Hz OLED Steam
+  Deck or a 120 or 144 Hz monitor, the frames between the game's 60
+  steps a second are drawn in between (the camera, the ships, enemies
+  and shots, the grid, particles and debris) instead of showing each
+  step twice or unevenly. The game itself still runs at the original's
+  60 steps a second and is unchanged; the picture is a few milliseconds
+  behind. At 60 Hz nothing changes. It is on by default: Help and
+  options, Settings, Smooth motion turns it off (or `--no-smooth`), for
+  the original's 60 pictures a second. The OLED Deck no longer needs its
+  refresh rate set to 60 Hz.
+
 ## 1.1.4
 
 - The original's hidden debug camera: BACK + RB on the first controller
