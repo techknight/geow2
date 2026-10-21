@@ -72,7 +72,7 @@ const std::map<std::string, Target>& targets() {
       {"xtlo",
        [](const Bytes& b) {
          // Each language file holds its own language.
-         for (const char* language : {"en", "de", "fr", "es", "it"}) {
+         for (const char* language : {"english", "german", "french", "spanish", "italian"}) {
            try {
              TextTable t(b, language);
              for (const std::string& id : t.ids()) (void)t.find(id);
