@@ -85,6 +85,12 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.2.2" date="2026-10-21">
+      <description>
+        <p>Help and options, Controls: "In Pacifism, move using" puts Pacifism's movement on the left or right stick.
+        The Settings item is now called "Smooth motion above 60 Hz".</p>
+      </description>
+    </release>
     <release version="1.2.1" date="2026-10-21">
       <description>
         <p>Setup accepts a data folder made on another computer: it checks the files again and copies the sound, so

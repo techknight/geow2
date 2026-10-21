@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.2
 
 - Help and options, Controls: "In Pacifism, move using: Left stick /
   Right stick". With the right stick, Pacifism's ship moves with the
