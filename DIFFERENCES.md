@@ -224,8 +224,28 @@ Format for each entry:
 - **Port**: a window that is minimised, hidden, covered or loses the
   focus stands in for the system UI and pauses the game the same way
   (the Steam overlay counts when it takes the focus). The game stays
-  paused when the window comes back, as after the guide.
-- **Decided**: 2026-10-16.
+  paused when the window comes back, as after the guide. In a Steam
+  Deck's Game Mode the Steam menu cannot pause it: gamescope runs Steam
+  on one X server and games on another (`STEAM_GAME_DISPLAY_0`), moves
+  the focus only on Steam's, and tells the game's nothing, so a game
+  that is not built on Steam's own library never learns that the menu
+  opened. START pauses as usual.
+- **Decided**: 2026-10-16; the Steam Deck 2026-10-21.
+
+### Pacifism's movement stick
+
+- **What**: which stick moves the ship in Pacifism.
+- **Original**: the profile's Movement and Firing choices (bits 0 and 1
+  of the controls word, read by `sub_8204FF00`) in every mode, so
+  Pacifism, which has no firing, moves with the Movement stick.
+- **Port**: Help and options, Controls has a port-only item "In
+  Pacifism, move using: Left stick / Right stick" (left by default, kept
+  in `controls.txt` in the profile folder, not in the original's
+  profile block). In Pacifism it replaces the Movement and Firing
+  choices: the ship moves with that stick and the other is the firing
+  stick, which Pacifism ignores. Pacifism's rules screen shows the
+  movement on that stick.
+- **Decided**: 2026-10-21.
 
 ### Resolution
 

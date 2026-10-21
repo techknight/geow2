@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Help and options, Controls: "In Pacifism, move using: Left stick /
+  Right stick". With the right stick, Pacifism's ship moves with the
+  right stick (the game has no firing there); the other modes keep the
+  Movement and Firing choices.
+- The Settings item is now called "Smooth motion above 60 Hz".
+
 ## 1.2.1
 
 - Setup accepts a data folder made on another computer (or the folder

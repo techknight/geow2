@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -106,6 +107,10 @@ class Frontend {
     // when set.
     std::function<bool()> smooth;
     std::function<void(bool)> set_smooth;
+    // The port's movement stick in Pacifism (controls.txt): true for the
+    // right stick. Shown in Controls when set.
+    std::function<bool()> pacifism_right;
+    std::function<void(bool)> set_pacifism_right;
   };
   Frontend(Game& g, const UiText& text, Profile& profile, std::array<LocalBoard, 6>& boards, Hooks hooks);
 
@@ -256,7 +261,10 @@ class Frontend {
   // Drawing helpers.
   void draw_title_block(UiCanvas& c) const;  // sub_8208F718 / sub_8208F9B8
   // sub_82091630: the pad picture with the mode's controls labelled.
-  void controller_diagram(UiCanvas& c, float x, float y, float size, bool move, bool fire, bool bomb) const;
+  // `move_right`, when given, places the movement instead of the profile's
+  // bit 0 (the port's Pacifism stick).
+  void controller_diagram(UiCanvas& c, float x, float y, float size, bool move, bool fire, bool bomb,
+                          std::optional<bool> move_right = {}) const;
   // sub_82061FC0: a model part flat in UI units at (x, y), scaled.
   void flat_icon(UiCanvas& c, float x, float y, float sx, float sy, const ModelGeometry& m, const Rgba& colour) const;
   // sub_8207A798: a rules-screen icon, drawn with the icon camera.

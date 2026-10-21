@@ -386,10 +386,13 @@ int online_command(const fs::path& dir, const std::string& pair_server) {
 // The game's sticks from the player's pad, as the player update reads them
 // (sub_8204FF00): movement on axes (bit 0 << 1) and +1, firing on bit 1
 // and +1, the bomb on the triggers or (bit 2) the bumpers; XInput
-// convention (y up positive).
-Sticks sticks_from(const PadState& p, const Profile& profile) {
-  const size_t mv = (profile.controls & 1) << 1, fr = profile.controls & 2;
-  const size_t bomb = (profile.controls & 4) ? 10 : 8;
+// convention (y up positive). `move_right` (the port's Pacifism stick)
+// replaces bits 0 and 1: movement on that stick, firing on the other.
+Sticks sticks_from(const PadState& p, const Profile& profile, std::optional<bool> move_right = {}) {
+  uint32_t controls = profile.controls;
+  if (move_right) controls = (controls & ~3u) | (*move_right ? 1u : 2u);
+  const size_t mv = (controls & 1) << 1, fr = controls & 2;
+  const size_t bomb = (controls & 4) ? 10 : 8;
   auto raw = [](float v) { return clamp16(int(v * 32767.0f)); };
   Sticks s;
   s.move_x = raw(p.axis[mv]);
@@ -1107,11 +1110,14 @@ int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, 
     g.tables[0].insert(1276745, 8, "Ace");
   }
   std::array<LocalBoard, 6> boards;
-  // Smooth motion's Settings item, on and never saved.
-  bool smooth = true;
+  // Smooth motion's Settings item, on, and the Pacifism stick's Controls
+  // item, left; never saved.
+  bool smooth = true, pacifism_right = false;
   Frontend::Hooks hooks;
   hooks.smooth = [&]() { return smooth; };
   hooks.set_smooth = [&](bool on) { smooth = on; };
+  hooks.pacifism_right = [&]() { return pacifism_right; };
+  hooks.set_pacifism_right = [&](bool right) { pacifism_right = right; };
   Frontend fe(g, g.text, profile, boards, hooks);
   PreviewOnline preview(online_preview);
   if (!online_preview.empty()) fe.set_online(&preview);
@@ -1180,6 +1186,27 @@ void save_display(const fs::path& dir, const Display& d) {
   save_text(dir / "display.txt", f.str());
 }
 
+// The port's control settings beside the profile's own (controls.txt in
+// the profile folder): one "name value" per line.
+struct PortControls {
+  bool pacifism_right = false;  // Pacifism moves with the right stick
+};
+
+PortControls load_port_controls(const fs::path& dir) {
+  PortControls c;
+  std::ifstream f(dir / "controls.txt");
+  std::string name;
+  int value = 0;
+  while (f >> name >> value) {
+    if (name == "pacifismright") c.pacifism_right = value != 0;
+  }
+  return c;
+}
+
+void save_port_controls(const fs::path& dir, const PortControls& c) {
+  save_text(dir / "controls.txt", "pacifismright " + std::to_string(int(c.pacifism_right)) + "\n");
+}
+
 // A Retina display's full resolution on macOS (elsewhere as before: the
 // window's own pixel size).
 #ifdef __APPLE__
@@ -1231,6 +1258,12 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
   hooks.set_smooth = [&](bool on) {
     display.smooth = on;
     save_display(profile_dir, display);
+  };
+  PortControls port_controls = load_port_controls(profile_dir);
+  hooks.pacifism_right = [&]() { return port_controls.pacifism_right; };
+  hooks.set_pacifism_right = [&](bool right) {
+    port_controls.pacifism_right = right;
+    save_port_controls(profile_dir, port_controls);
   };
   // The online scores: a sync after each game (once the game's unlock
   // progress is in the profile, later in the same frame), when the game
@@ -1507,11 +1540,14 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
       // (0x82037E3C).
       debug_camera_frame(g, state[0].axis.data());
       fe.frame(state);
-      // Each joined index's pad (one profile's stick settings for all).
+      // Each joined index's pad (one profile's stick settings for all; in
+      // Pacifism, mode 4, the port's Pacifism stick).
       std::array<Sticks, 4> s{};
+      const std::optional<bool> move_right =
+          g.rules.mode == 4 ? std::optional<bool>(port_controls.pacifism_right) : std::nullopt;
       if (g.flow == 2)
         for (int j = 0; j < g.joined_count && j < 4; ++j)
-          s[size_t(j)] = sticks_from(state[size_t(g.joined_pad[size_t(j)] & 3)], profile);
+          s[size_t(j)] = sticks_from(state[size_t(g.joined_pad[size_t(j)] & 3)], profile, move_right);
       tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
       if (smoothing) smooth.after_step(g);
       if (has_sound) sound_step(g, glue, sound, profile.sound_volume, profile.music_volume);

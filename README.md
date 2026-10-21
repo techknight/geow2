@@ -79,9 +79,11 @@ and Metal on macOS.
 
 Controls: a gamepad (left stick moves, right stick fires, either trigger
 sets off a bomb, START pauses; the sticks and the bomb buttons can be
-swapped in Help and options), or the keyboard: WASD moves, the arrow keys
-fire (and move through menus), Space bombs, Enter selects, Escape goes
-back in menus and pauses a game. "Quit" in the main menu quits.
+swapped in Help and options, Controls, where "In Pacifism, move using"
+can also put Pacifism's movement on the right stick), or the keyboard:
+WASD moves, the arrow keys fire (and move through menus), Space bombs,
+Enter selects, Escape goes back in menus and pauses a game. "Quit" in
+the main menu quits.
 
 Multiplayer takes up to four pads (the keyboard counts as the first):
 choose Multiplayer in the main menu, and the others join with A or START.
@@ -101,12 +103,13 @@ The game always runs at the original's 60 steps a second. With vsync on a
 On faster displays (90, 120, 144 Hz and up) smooth motion draws the
 frames in between, so motion is as fluid as the display allows; the game
 itself is untouched, and the picture runs a few milliseconds behind. To
-see only the original's 60 pictures a second, turn Smooth motion off in
-Help and options, Settings (or start once with `--no-smooth`; `--smooth`
-turns it back on).
+see only the original's 60 pictures a second, turn "Smooth motion above
+60 Hz" off in Help and options, Settings (or start once with
+`--no-smooth`; `--smooth` turns it back on).
 
 A game pauses when its window is minimised or loses the focus, as the
-original does when the console's guide opens.
+original does when the console's guide opens. (In a Steam Deck's Game
+Mode the Steam button's menu does not reach the game: press START.)
 
 Your settings, unlocked modes, local scores and achievements are kept in
 your user folder (`%APPDATA%\geow2\geow2` on Windows,

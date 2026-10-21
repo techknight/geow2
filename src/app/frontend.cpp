@@ -486,7 +486,8 @@ void Frontend::rules_icon(UiCanvas& c, float x, float y, float rot, float scale,
   draw_model_part(c.icons, m, 0, mul(r, basis), colour.data());
 }
 
-void Frontend::controller_diagram(UiCanvas& c, float x, float y, float size, bool move, bool fire, bool bomb) const {
+void Frontend::controller_diagram(UiCanvas& c, float x, float y, float size, bool move, bool fire, bool bomb,
+                                  std::optional<bool> move_right_override) const {
   const Font& font = g_.font;
   const float hw = size * 0.5f, hh = (size * 0.64f) * 0.5f;
   c.sprite(x - hw, y - hh, size, size * 0.64f, palette_[kUiHighlight], kTexController, false);
@@ -499,7 +500,8 @@ void Frontend::controller_diagram(UiCanvas& c, float x, float y, float size, boo
   const Rgba line_on = scaled(palette_[kUiSelection], 4.0f), &off = palette_[kUiDisabled];
   // Which stick moves and which fires (profile bits 0 and 1).
   std::vector<int> left, right;
-  const bool move_right = profile_.controls & 1, fire_right = profile_.controls & 2;
+  const bool move_right = move_right_override.value_or((profile_.controls & 1) != 0),
+             fire_right = profile_.controls & 2;
   if (move) (move_right ? right : left).push_back(0x0C);
   if (fire) (fire_right ? right : left).push_back(0x0D);
   {
@@ -1139,7 +1141,10 @@ void Frontend::rules(int index, std::function<void(const MenuInput&)> back, int 
          font.left(c.lines, 52.0f, y, 8.0f, 8.0f, palette_[kUiHighlight].data(), text_(0x63));
          y = y + 24.0f;
          for (int t : kRules[x].tips) line(nullptr, t);
-         controller_diagram(c, 500.0f, 180.0f, 200.0f, kRules[x].move, kRules[x].fire, kRules[x].bomb);
+         // Pacifism's movement on the port's Pacifism stick.
+         std::optional<bool> move_right;
+         if (x == 2 && hooks_.pacifism_right) move_right = hooks_.pacifism_right();
+         controller_diagram(c, 500.0f, 180.0f, 200.0f, kRules[x].move, kRules[x].fire, kRules[x].bomb, move_right);
        },
        false,
        [this](const MenuInput& in) {
@@ -1299,6 +1304,25 @@ void Frontend::controls() {
   bit_item(0x0C, 1, 0x23, 0x22);
   bit_item(0x0D, 2, 0x23, 0x22);
   bit_item(0x0E, 4, 0x25, 0x24);
+  // The port's movement stick in Pacifism, where firing is off (no
+  // original: DIFFERENCES.md, Controls), in English like the Online scores
+  // item; the sticks' names are the Movement item's.
+  if (hooks_.pacifism_right && hooks_.set_pacifism_right)
+    add_item(
+        0,
+        [this](const MenuInput& in, int, int) {
+          const bool right = hooks_.pacifism_right();
+          if (((in.pressed & kLeft) && right) || ((in.pressed & kRight) && !right)) {
+            hooks_.set_pacifism_right(!right);
+            reset_pulse();
+            sound(audio::Event::kUiConfirm);
+          }
+        },
+        [this](TextLayout& l) {
+          const bool right = hooks_.pacifism_right();
+          adjust_label(l, std::string("In Pacifism, move using"), text_(right ? 0x23 : 0x22), right, !right);
+        },
+        {}, true);
 }
 
 void Frontend::settings() {
@@ -1382,7 +1406,7 @@ void Frontend::settings() {
         },
         [this](TextLayout& l) {
           const bool on = hooks_.smooth();
-          adjust_label(l, std::string("Smooth motion"), on ? "On" : "Off", on, !on);
+          adjust_label(l, std::string("Smooth motion above 60 Hz"), on ? "On" : "Off", on, !on);
         },
         {}, true);
 }
