@@ -85,6 +85,12 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.1.4" date="2026-10-21">
+      <description>
+        <p>The original's hidden debug camera (BACK + RB); a destroyed ship's shots still in flight no longer
+        score; the pause menu's background holds still; the version on the Online scores screen.</p>
+      </description>
+    </release>
     <release version="1.1.3" date="2026-10-20">
       <description>
         <p>Leaderboards with the original's cursor and paging; Next Friend and Personal Best at the top right with

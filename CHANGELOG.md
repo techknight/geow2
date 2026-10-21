@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.4
+
+- The original's hidden debug camera: BACK + RB on the first controller
+  (View + R1 on a Steam Deck) freezes the game and lets the sticks fly
+  the view around the playfield (the left stick turns, the right stick
+  and the triggers move, RB faster, LB slower); press them again to go
+  back to the game.
+- Shots and bomb blasts still under way when their ship is destroyed no
+  longer score, and geoms on their way to it look for another ship, as
+  in the original.
+- Pausing no longer leaves the background's lighting changing under the
+  pause menu.
+- Geoms choose between equally near ships, and the debris and the
+  numbers left by kills update, in the original's order.
+- The Online scores screen shows the game's version at the bottom right.
+- For comparing with recordings of the original: `--audio-rng` and
+  `--audio-steps` start a headless run's sound from a recorded game's
+  values, and `--press` takes the shoulders, the triggers and the
+  sticks.
+
 ## 1.1.3
 
 - Online scores: a long history of games goes to the server in parts, so
