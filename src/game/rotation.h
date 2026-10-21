@@ -20,8 +20,9 @@ Mat4 placement_style_none(const GameMath& gm, float x, float y, float heading);
 // it, row 0 = their cross product, row 3 = position.
 Mat4 look_at_basis(Vec4 position, Vec4 forward, Vec4 up);
 
-// General 4x4 inverse (the original: sub_8206A1C8 / sub_82069FB8, which uses
-// a hardware reciprocal estimate: results can differ in the last bits).
+// General 4x4 inverse (the original: sub_8206A1C8 / sub_82069FB8, in single-
+// precision vector arithmetic with a hardware reciprocal estimate and two
+// Newton-Raphson steps: results can differ in the last bits).
 Mat4 inverse(const Mat4& m);
 
 // sub_8206A300: left-handed perspective projection (row-vector convention).

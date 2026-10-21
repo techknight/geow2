@@ -19,7 +19,9 @@ layout(set = 1, binding = 0) uniform Transform {
 void main() {
   const float pi = 3.14159265;
   const vec3 r = vec3(in_position.x - 320.0, in_position.y - 180.0, in_position.z + 320.0);
-  const vec2 theta = fract(r.xy * (1.0 / (1500.0 * pi)) + 0.5) * (2.0 * pi) - pi;
+  // 1/(1500 pi) as the original's literal (0x8206AF28): folding the
+  // expression gives 0x395E83C6, one ulp more.
+  const vec2 theta = fract(r.xy * uintBitsToFloat(0x395E83C5u) + 0.5) * (2.0 * pi) - pi;
   const vec4 bent = vec4(750.0 * sin(theta.x) + 320.0, 750.0 * sin(theta.y) + 180.0, r.z - 750.0 * cos(theta.x), 1.0);
   gl_Position = ui_transform * bent;
   v_colour = in_colour;

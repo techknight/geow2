@@ -357,8 +357,10 @@ void AudioEngine::run_frame() {
   // The wet voice (Audio.DisableReverb is 0 by default, sub_82176970): the
   // feeder effect, then the reverb, whose pending parameters it applies
   // first (sub_821440E8). Its output channel 0 is added after the dry
-  // voice; the original's order of the voices into the mastering buffer
-  // is not traced and only changes the rounding (DIFFERENCES.md).
+  // voice, as XAudio's worker does (sub_8214FA20): source voices in start
+  // order (appended at the tail, sub_82163D20), each added into the
+  // mastering buffer at once (sub_82163AE8); the dry voice starts first
+  // (0x820ECCAC), wet voice 0 after (0x820ECE6C).
   wet_voice(wet_);
   {
     std::lock_guard<std::mutex> g(reverb_lock_);

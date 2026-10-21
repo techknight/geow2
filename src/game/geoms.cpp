@@ -238,11 +238,15 @@ void drop_geoms(World& w, const Entity& victim, const Killer& k) {
 }
 
 void collect_geoms(World& w) {
-  // Up to four players in the game (none in King's zones).
+  // Up to four players in the game (none in King's zones), from the player
+  // list in creation order (0x821813A8, 0x8204D424..0x8204D498): the first
+  // of equally near players wins (0x8204D5A0).
   std::vector<size_t> players;
-  for (size_t i = 0; i < w.players.size() && players.size() < 4; ++i)
+  for (const size_t i : w.player_order) {
+    if (players.size() >= 4) break;
     if (!w.players[i].removed && !in_hill(w, w.players[i].radius, w.players[i].x, w.players[i].y))
       players.push_back(i);
+  }
   for (size_t gi = 0; gi < w.entities.size(); ++gi) {
     Entity& e = *w.entities[gi];
     if (e.type != 0x22 || (e.flags & kEntityRemoved)) continue;

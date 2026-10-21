@@ -36,9 +36,14 @@ struct Killer {
   int blast_kind = -1;                 // a blast killer's kind (+0x68)
   int shot_bounces = 0;                // the shot's +0xA0
   // The player credited (the shot's or blast's owner, +0x48): an index
-  // into World::players.
+  // into World::players, or kNoPlayer.
   size_t player = 0;
 };
+
+// An owner (+0x48) whose player object was deleted: the unit destructor
+// (sub_82046B08, 0x82046B40..0x82046B88) zeroes +0x48 in every object
+// that points at a deleted player (flag 0x4000).
+inline constexpr size_t kNoPlayer = SIZE_MAX;
 
 // Entity flags (+0x24), named by what the code does with them.
 enum EntityFlag : uint32_t {

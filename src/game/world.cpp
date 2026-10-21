@@ -197,7 +197,9 @@ void World::purge() {
 }
 
 void World::award(const Entity& victim, const Killer& k) {
-  // sub_820408D0. Points by the victim's type code (+0x44).
+  // sub_820408D0. Points by the victim's type code (+0x44). Nothing when
+  // the shot's or blast's player was deleted (0x82040904).
+  if (k.player == kNoPlayer) return;
   if (k.kind == 0 || k.kind == 2 || k.kind == 4) return;
   // The credited player's record (the shooter, +0x48, or the blast's).
   const size_t pi = k.player < players.size() ? k.player : 0;

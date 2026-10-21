@@ -19,6 +19,12 @@ inline float fmadds(float a, float b, float c) {
   return std::fmaf(a, b, c);
 }
 
+// -(a * b - c): fmadds(-a, b, c) but for the sign of an exact zero.
+inline float fnmsubs(float a, float b, float c) {
+  if (emulator_rounding) return -float(std::fma(double(a), double(b), -double(c)));
+  return -std::fmaf(a, b, -c);
+}
+
 // Xenia's frsqrte (its x64 backend's helper): for a positive normal x, an
 // 8-bit fraction from a 16-entry table indexed by the exponent's parity
 // and the top three fraction bits, exponent 1022 - (e - 1023) / 2. The

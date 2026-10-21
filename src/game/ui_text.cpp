@@ -8,6 +8,7 @@ namespace {
 constexpr uint32_t kBase = 0x82000000;
 constexpr uint32_t kIdTable = 0x8218E1F0;
 constexpr int kSlots = 0xB1;
+constexpr size_t kSlotChars = 0x1FF;  // a slot is char[0x200] (0x821D3D28, stride 0x201)
 
 uint32_t be32(std::span<const uint8_t> b, size_t o) {
   return uint32_t(b[o]) << 24 | uint32_t(b[o + 1]) << 16 | uint32_t(b[o + 2]) << 8 | uint32_t(b[o + 3]);
@@ -28,8 +29,23 @@ UiText UiText::load(std::span<const uint8_t> image, const TextTable& table) {
     std::string n;
     for (size_t p = name - kBase; p < image.size() && image[p]; ++p) n.push_back(char(image[p]));
     t.names_[id] = n;
-    if (const auto s = table.find(n))
-      for (char16_t c : *s) t.text_[id].push_back(c <= 0xFF ? char(c) : '?');
+    // sub_82082720: the slot holds the ID name, replaced by the localized
+    // string when it is found and not empty (0x820828E0). Both go through
+    // _snprintf_s(slot, 0x200, _TRUNCATE): at most 0x1FF chars; "%S" turns
+    // each unit into a byte (wctomb_s, Latin-1) and a unit above 0xFF fails
+    // the whole conversion, leaving the slot empty (0x82137C48, 0x82130DE8).
+    std::string& slot = t.text_[id];
+    slot = n.substr(0, kSlotChars);
+    if (const auto s = table.find(n); s && !s->empty()) {
+      slot.clear();
+      for (char16_t c : *s) {
+        if (c > 0xFF) {
+          slot.clear();
+          break;
+        }
+        if (slot.size() < kSlotChars) slot.push_back(char(c));
+      }
+    }
   }
   return t;
 }

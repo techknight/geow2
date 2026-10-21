@@ -1399,8 +1399,26 @@ void step(Game& g, std::span<const Sticks> pads) {
     PROFILE("purge");
     w.purge();
   }
-  for (int k = 0; k < g.ship_count; ++k)
-    if (g.ships[size_t(k)].life.removed) g.ships[size_t(k)].life.present = false;
+  for (int k = 0; k < g.ship_count; ++k) {
+    PlayerLife& life = g.ships[size_t(k)].life;
+    if (!life.removed || !life.present) continue;
+    life.present = false;
+    // The player's destructor (sub_82051A50 → sub_82046B08) zeroes +0x48
+    // wherever it points at the player (0x82046B40..0x82046B88): geoms
+    // being pulled in look for a player again, and its shots and blasts
+    // credit nobody (sub_820408D0 returns at 0x82040904).
+    for (Bullet& b : g.bullets)
+      if (b.owner == size_t(k)) b.owner = kNoPlayer;
+    for (const auto& e : w.entities) {
+      if (e->type == 0x22) {
+        Geom& geom = static_cast<Geom&>(*e);
+        if (geom.collector == k) geom.collector = -1;
+      } else if (e->type == 0xF) {
+        Shockwave& s = static_cast<Shockwave&>(*e);
+        if (s.player == size_t(k)) s.player = kNoPlayer;
+      }
+    }
+  }
   std::erase_if(g.player_list, [&g](size_t k) { return !g.ships[k].life.present; });
   w.player_order = g.player_list;
 
@@ -1646,18 +1664,21 @@ void step(Game& g, std::span<const Sticks> pads) {
                      g.lights);
   }
 
-  // The line debris: drawn by the render set-up (sub_82074600), then
-  // stepped on the render worker (sub_82074B28) with the stars.
+  // The line debris: stepped on render worker 0 (sub_82074F48 at
+  // 0x82063C94), which the frame step waits for (sub_82067390 at
+  // 0x82037B04), then drawn by the render that follows (0x82037E60 →
+  // sub_82074600).
   g.debris_lines.clear();
   {
     PROFILE("debris");
-    w.debris.draw(g.debris_lines, g.lights);
     w.debris.step(w.smash, kStep, w.half_x, w.half_y);
+    w.debris.draw(g.debris_lines, g.lights);
   }
-  // The lingering numbers likewise (sub_8205A8F0, then sub_8205A7F0).
+  // The lingering numbers likewise (sub_8205A7F0 at 0x82063C98, then
+  // sub_8205A8F0).
   g.linger_lines.clear();
-  w.popups.draw(g.font, g.linger_lines);
   w.popups.step(kStep);
+  w.popups.draw(g.font, g.linger_lines);
 
   // The stars' step (sub_82075548, on the render worker each frame).
   {

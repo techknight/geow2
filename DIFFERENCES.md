@@ -274,10 +274,12 @@ Format for each entry:
   `frsqrte` and `fres`, the PowerPC hardware estimates, whose exact
   results on the Xbox 360 CPU are not documented; the camera's view
   matrix inverse (`sub_82069FB8`) divides by the determinant with
-  `vrefp`, the vector estimate (whether a refining step follows is not
-  traced).
-- **Port**: computes the exact values. Lines, the grid and particles can
-  differ from the original by the estimates' error (small; visual only).
+  `vrefp`, the vector estimate, refined by two Newton-Raphson steps (a
+  NaN keeps the estimate; 0x8206A174..0x8206A1A0), in single-precision
+  vector arithmetic throughout.
+- **Port**: computes the exact values (the view matrix's inverse in
+  double precision). Lines, the grid, particles and the view can differ
+  from the original by the estimates' error (small; visual only).
   The geom pull is gameplay: a geom being pulled in moves by the pull
   direction, whose length the estimate leaves within about 1/4096 of 1,
   so a geom can reach the player a step earlier or later than on the
@@ -339,10 +341,6 @@ Format for each entry:
   built by `sub_820EC910`).
 - **Port**: the same chain (`src/audio/reverb.cpp`), with these
   differences:
-  - The order in which XAudio adds the dry voice, the wet voice and the
-    submix into the mastering buffer (and its clearing) is not traced:
-    the port starts from the dry voice and adds the wet voice after. Only
-    the float rounding of the sum depends on it.
   - The set-up's `pow`, `log`, `cos` and the single-precision square root
     of a double are the host's, not the console runtime's; a coefficient
     can differ in its last bit.
@@ -352,17 +350,13 @@ Format for each entry:
     port's game thread reads the values the audio thread published after
     its last control update. The parameters take effect at the start of
     the next audio frame in both.
-  - Only the first wet voice is built, the one System's wet output and
-    the parameters reach (ring 0, index 0). The original can create a
-    second and third (as many as manager `+0xFBB8`, whose setter is not
-    traced), each with its own reverb that never gets parameters; what
-    their rings 1 and 2 carry is not traced, so they are left out.
   - `Audio.DisableReverb` (a development variable, 0 by default,
     `sub_82176970`) is not exposed: the reverb is always on.
-  - Not ported because they cannot be traced: what the renderer's 1-, 2-
-    and 5-channel rings carry into the dry voice (nothing in the port
-    writes them), and the stereo voice `+0x22C` with the type-5 effect on
-    its submix `+0x230`.
+  - Left out: the stereo voice `+0x22C` with the type-5 effect on its
+    submix `+0x230`. Only the console's own music player feeds it (its
+    callback, registered through `XMsgStartIORequest(0xFA, 0x7003D)` and
+    gated by manager `+0xFBCC`), so no game sound goes through it, and the
+    PC has no such player.
 - **Decided**: 2026-10-16.
 
 ### Wave playback
@@ -384,6 +378,19 @@ Format for each entry:
 - **Port**: the same 5.1 mix goes to SDL as six float channels and SDL
   folds it down to the device's layout (stereo on most PCs).
 - **Decided**: 2026-10-15 (user).
+
+### Audio latency
+
+- **What**: how far ahead of playback the audio frames are made.
+- **Original**: the renderer thread (`sub_820ED160`, hardware thread 5)
+  makes one 256-sample frame at a time into a ring of 16 and sleeps 1 ms
+  at a time while the ring is full (0x820ED66C), so it runs up to 15
+  frames (80 ms) ahead of XAudio's reader; XAudio's 48 kHz clock sets
+  the pace (187.5 frames a second).
+- **Port**: the same frames are made when SDL's device asks for samples
+  (`AudioDevice::feed`), so the delay from a game event to its sound is
+  the device's buffering instead. The frames' contents are the same.
+- **Decided**: 2026-10-21.
 
 ### Hardware estimates in the audio
 

@@ -1980,8 +1980,9 @@ void Frontend::lobby_frame(UiCanvas& c) const {
 }
 
 void Frontend::lobby_teams(TextLayout& l, int preset, bool copilots, bool joined_only) const {
-  // sub_82084FC0: the pads' ship glyphs in the preset's order (0x8218E798
-  // rows {0, 1, 2, 3}, {0, 1, 2, 3}, {0, 2, 1, 3}, {0, 3, 1, 2}) in team
+  // sub_82084FC0: the pads' ship glyphs in the preset's order (rows {0, 1,
+  // 2, 3}, {0, 1, 2, 3}, {0, 2, 1, 3}, {0, 3, 1, 2}, built on the stack at
+  // 0x82084FEC..0x8208502C) in team
   // colours times 2: four teams for preset 0; else two pairs with a gap,
   // as pilot and copilot glyphs when copilots are on and both are shown.
   static constexpr int kOrder[4][4] = {{0, 1, 2, 3}, {0, 1, 2, 3}, {0, 2, 1, 3}, {0, 3, 1, 2}};
