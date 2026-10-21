@@ -886,7 +886,7 @@ void Frontend::mode_select_update(const MenuInput& in) {
   }
   if (in.pressed & kY) {
     sound(audio::Event::kUiConfirm);
-    board_view(mode_of_text(kModeItems[selection_value()]), [this](const MenuInput&) { mode_select(false); });
+    board_view(mode_of_text(kModeItems[selection_value()]), [this](const MenuInput&) { mode_select(false); }, true);
     return;
   }
   // The selected tile's group board scrolls (sub_8208D918, as the results'
@@ -1491,7 +1491,9 @@ void Frontend::results() {
          const LocalBoard& b = boards_[size_t(mode)];
          const int count = friends ? int(group.size()) : int(b.rows.size());
          const int mark = friends ? own : last_row_;
-         const int first = std::clamp(mark - 4, 0, std::max(count - 8, 0));
+         // The friends board from its scroll position (set on opening,
+         // moved by sub_82089650), within [0, count - 8].
+         const int first = std::clamp(friends ? results_first_ : mark - 4, 0, std::max(count - 8, 0));
          const float pitch = ((L - 148.0f) + 6.0f) * 0.125f;
          const float off = ((pitch - 6.0f) - 8.0f) * 0.5f;
          float ry = 148.0f;
@@ -1514,7 +1516,57 @@ void Frontend::results() {
          heading(B - 56.0f, text_(0x68));
          box(B - 36.0f, 36.0f, T.entry[1].score, 12.0f, 6.0f);
        },
-       false, {}, 0);
+       false,
+       [this](const MenuInput& in) {
+         // sub_82089650, with a friends board: the right stick fills an
+         // accumulator (signed RY² times 0.333 a frame), LB/LT and RB/RT add
+         // a page of 8; at most one row each way a frame, within [0, count -
+         // 8], sound 0x16 when that moves the row; the remainder settles 4
+         // frames after the last such input. Then the menu's own handling.
+         if (online_ && online_->paired() && !g_.multiplayer) {
+           int own = -1;
+           const int max_first = std::max(int(group_board(std::clamp(g_.rules.mode, 0, 5), own).size()) - 8, 0);
+           const float ry = in.analog[1];
+           if (std::fabs(ry) > 0.1f) {  // dat_82000714
+             board_hold_ = 4;
+             const float sq = ry * ry;
+             board_scroll_ = fmadds(ry >= 0.0f ? sq : -sq, 0.333f, board_scroll_);  // fsel; dat_82005E44
+           }
+           if (in.pressed & (kLb | kLt)) {
+             board_scroll_ = board_scroll_ - 8.0f;  // dat_82000D18
+             board_hold_ = 4;
+           }
+           if (in.pressed & (kRb | kRt)) {
+             board_scroll_ = board_scroll_ + 8.0f;
+             board_hold_ = 4;
+           }
+           auto step = [&](int d) {
+             const int row = std::clamp(results_first_ + d, 0, max_first);
+             if (row != results_first_ && board_hold_ == 4) sound(audio::Event::kUiChange);
+             results_first_ = row;
+           };
+           if (board_scroll_ <= -1.0f) {
+             board_scroll_ = board_scroll_ + 1.0f;
+             step(-1);
+           }
+           if (board_scroll_ >= 1.0f) {
+             board_scroll_ = board_scroll_ - 1.0f;
+             step(1);
+           }
+           if ((board_hold_ < 1 || --board_hold_ == 0) && std::fabs(board_scroll_) < 1.0f) board_scroll_ = 0.0f;
+         }
+         default_handler(in);
+       },
+       0);
+  // sub_82089878: the friends board starts at the player's row less four,
+  // within [0, count - 8] (0 without one).
+  {
+    int own = -1;
+    const int count = int(group_board(std::clamp(g_.rules.mode, 0, 5), own).size());
+    results_first_ = own - 4 < 0 ? 0 : std::min(own - 4, std::max(count - 8, 0));
+    board_scroll_ = 0.0f;
+    board_hold_ = 0;
+  }
   screen_.accept = [this](const MenuInput&) { after_game(); };
   screen_.tips = [this](TextLayout& l) { tips_continue(l); };
 }
@@ -2234,9 +2286,10 @@ std::vector<GroupRow> Frontend::group_board(int mode, int& own) const {
   return rows;
 }
 
-void Frontend::board_view(int mode, std::function<void(const MenuInput&)> back) {
+void Frontend::board_view(int mode, std::function<void(const MenuInput&)> back, bool y_closes) {
   board_mode_ = std::clamp(mode, 0, 5);
   board_first_ = 0;
+  board_cursor_ = 0;
   // sub_8208AAB8 starts at Friends. Without a score server the port has
   // only the local board, shown as Overall.
   board_filter_ = online_ && online_->paired() ? 0 : 2;
@@ -2258,85 +2311,118 @@ void Frontend::board_view(int mode, std::function<void(const MenuInput&)> back) 
          const std::vector<GroupRow> group = board_filter_ < 2 ? group_board(board_mode_, own) : std::vector<GroupRow>{};
          const LocalBoard& b = boards_[size_t(board_mode_)];
          const int count = board_filter_ < 2 ? int(group.size()) : int(b.rows.size());
+         // Ten rows (sub_8208A2C0): the page's entries, the cursor's row in
+         // the selection colour with an inner box (style 1), the others in
+         // the background colour, even rows at a quarter; rows past the
+         // entries in slot 8.
          const float rh = ((cursor_ - 46.0f) + 6.0f) * 0.1f;
+         const int rows = std::clamp(count - board_first_, 0, 10);
+         const float pulse = pulse_factor(g_, pulse_);
          for (int i = 0; i < 10; ++i) {
            const float y = fmadds(float(i), rh, 46.0f);
+           if (i >= rows) {
+             ui_panel(c, 28.0f, y, 606.0f, (y + rh) - 6.0f, P[kUiLockedBackground], 0);
+             continue;
+           }
            const int r = board_first_ + i;
-           // The player's own row is boxed, as the cursor row is (in My score
-           // the cursor starts on it, sub_8208B178).
-           const bool mine = r == own;
-           ui_panel(c, 28.0f, y, 606.0f, (y + rh) - 6.0f, mine ? P[kUiSelection] : P[kUiBackground], 0);
-           if (r >= count) continue;
-           const Rgba& col = mine ? P[kUiHighlight] : P[kUiNormal];
+           const bool at_cursor = i == board_cursor_, even = i % 2 == 0, mine = r == own;
+           ui_panel(c, 28.0f, y, 606.0f, (y + rh) - 6.0f,
+                    at_cursor ? P[kUiSelection] : scaled(P[kUiBackground], even ? 0.25f : 1.0f), 0);  // dat_82000720
+           if (at_cursor) ui_panel(c, 31.0f, y + 3.0f, 603.0f, (y + rh) - 9.0f, P[kUiSelection], 1);
+           // The row (sub_82089FE8 at x 0, y + 6): the cursor's pulsing, the
+           // player's own Highlight, even rows at three quarters; rank "%s."
+           // centred at 80 (8 x 8, two lower), name at 130 (10 x 10, at most
+           // 300 wide), score right-aligned at 570.
+           const Rgba col = at_cursor ? scaled(P[kUiNormal], pulse)
+                            : mine    ? P[kUiHighlight]
+                                      : scaled(P[kUiNormal], even ? 0.75f : 1.0f);  // dat_82000718
            const std::string& name = board_filter_ < 2 ? group[size_t(r)].name : b.rows[size_t(r)].name;
            const int64_t score = board_filter_ < 2 ? group[size_t(r)].score : b.rows[size_t(r)].score;
-           font.centre(c.lines, 28.0f + 80.0f, y + 2.0f, 8.0f, 8.0f, col.data(), format("%s.", format_number(r + 1).c_str()));
-           font.left_fit(c.lines, 28.0f + 130.0f, y + 2.0f, 10.0f, 10.0f, 300.0f, col.data(), display_name(name));
-           font.right(c.lines, 28.0f + 570.0f, y + 2.0f, 10.0f, 10.0f, col.data(), format_number(score));
+           const float ty = y + 6.0f;
+           font.centre(c.lines, 80.0f, ty + 2.0f, 8.0f, 8.0f, col.data(), format("%s.", format_number(r + 1).c_str()));
+           font.left_fit(c.lines, 130.0f, ty, 10.0f, 10.0f, 300.0f, col.data(), display_name(name));
+           font.right(c.lines, 570.0f, ty, 10.0f, 10.0f, col.data(), format_number(score));
          }
-         // No entries (0x7E) on an empty group board.
+         // No entries (0x7E) on an empty group board: centred at rh · 4 + 52.
          if (board_filter_ < 2 && count == 0)
-           font.centre(c.lines, 320.0f, fmadds(rh, 0.5f, 46.0f) - 5.0f, 10.0f, 10.0f, P[kUiNormal].data(), text_(0x7E));
+           font.centre_fit(c.lines, 320.0f, fmadds(rh, 4.0f, 52.0f), 10.0f, 10.0f, 540.0f, P[kUiNormal].data(), text_(0x7E));
          // The scroll bar (sub_820913B0 at 612, ten rows).
          ui_scroll_bar(c, 612.0f, 46.0f, cursor_, float(board_first_), float(count), 10.0f,
                        scaled(P[kUiScrollBar], 0.5f), scaled(P[kUiBackground], 0.5f), scaled(P[kUiBackground], 0.25f));
        },
        false,
-       [this](const MenuInput& in) {
-         if (in.pressed & kBack) {
+       [this, y_closes](const MenuInput& in) {
+         // sub_8208AB80: B or BACK, or Y when opened from the mode select,
+         // goes back (sound 0x17).
+         if ((in.pressed & kBack) || (y_closes && (in.pressed & kY))) {
+           sound(audio::Event::kUiDelete);
            if (const auto b = screen_.back) b(in);
            return;
-         }
-         // X steps the filter (sub_82089D58, sound 0x18); My score opens on
-         // the page holding the player's row (sub_8208B178).
-         if ((in.pressed & kX) && online_ && online_->paired()) {
-           board_filter_ = (board_filter_ + 1) % 3;
-           board_first_ = 0;
-           if (board_filter_ == 1) {
-             int own = -1;
-             group_board(board_mode_, own);
-             if (own >= 0) board_first_ = (own / 10) * 10;
-           }
-           sound(audio::Event::kUiConfirm);
          }
          int own_unused = -1;
          const int count = board_filter_ < 2 ? int(group_board(board_mode_, own_unused).size())
                                              : int(boards_[size_t(board_mode_)].rows.size());
-         const int max_first = std::max(count - 10, 0);
-         if (in.pressed & kUp) board_first_ = std::clamp(board_first_ - 1, 0, max_first);
-         if (in.pressed & kDown) board_first_ = std::clamp(board_first_ + 1, 0, max_first);
-         // sub_82089650: the right stick fills an accumulator (signed RY²
-         // times 0.333 a frame), LB/LT and RB/RT add a page of 8; at most
-         // one row each way a frame, sound 0x16 when that moves the row; the
-         // remainder settles 4 frames after the last such input.
-         const float ry = in.analog[1];
-         if (std::fabs(ry) > 0.1f) {  // dat_82000714
-           board_hold_ = 4;
-           const float sq = ry * ry;
-           board_scroll_ = fmadds(ry >= 0.0f ? sq : -sq, 0.333f, board_scroll_);  // fsel; dat_82005E44
-         }
-         if (in.pressed & (kLb | kLt)) {
-           board_scroll_ = board_scroll_ - 8.0f;  // dat_82000D18
-           board_hold_ = 4;
-         }
-         if (in.pressed & (kRb | kRt)) {
-           board_scroll_ = board_scroll_ + 8.0f;
-           board_hold_ = 4;
-         }
-         auto step = [&](int d) {
-           const int row = std::clamp(board_first_ + d, 0, max_first);
-           if (row != board_first_ && board_hold_ == 4) sound(audio::Event::kUiChange);
-           board_first_ = row;
+         const int rows = std::clamp(count - board_first_, 0, 10);
+         // sub_82089EF8: the page moves by `d`, kept within [0, ((total - 1)
+         // / 10) · 10]; true when it moved (sound 0x18 then).
+         auto page = [&](int d) {
+           const int last = std::max(((count - 1) / 10) * 10, 0);
+           const int to = board_first_ + d < 0 ? 0 : std::min(board_first_ + d, last);
+           if (to == board_first_) return false;
+           board_first_ = to;
+           return true;
          };
-         if (board_scroll_ <= -1.0f) {
-           board_scroll_ = board_scroll_ + 1.0f;
-           step(-1);
+         // Up and down move the cursor through the page's rows (sound 0x16),
+         // past either end the page (±10). (A, View Gamer Card, has no
+         // counterpart here.)
+         if (rows > 0) {
+           board_cursor_ = std::clamp(board_cursor_, 0, rows - 1);
+           if (in.pressed & kUp) {
+             if (board_cursor_ >= 1) {
+               sound(audio::Event::kUiChange);
+               --board_cursor_;
+             } else if (page(-10)) {
+               sound(audio::Event::kUiConfirm);
+             }
+           }
+           if (in.pressed & kDown) {
+             if (board_cursor_ < rows - 1) {
+               sound(audio::Event::kUiChange);
+               ++board_cursor_;
+             } else if (page(10)) {
+               sound(audio::Event::kUiConfirm);
+             }
+           }
          }
-         if (board_scroll_ >= 1.0f) {
-           board_scroll_ = board_scroll_ - 1.0f;
-           step(1);
+         // X with a shoulder or trigger held jumps by the total (to the last
+         // page); X alone steps the filter (sub_82089D58: Friends, My score,
+         // Overall, with a score server); LB/LT or the right stick up, RB/RT
+         // or the right stick down, a page of ten.
+         if ((in.held & (kLb | kRb | kLt | kRt)) && (in.pressed & kX)) {
+           if (page(count)) sound(audio::Event::kUiConfirm);
+         } else if (in.pressed & kX) {
+           if (online_ && online_->paired()) {
+             sound(audio::Event::kUiConfirm);
+             board_filter_ = (board_filter_ + 1) % 3;
+             board_first_ = 0;
+             board_cursor_ = 0;
+             // My score opens on the page with the player's row, the cursor
+             // on it (sub_8208B178; Live returns the page around the player,
+             // here the page of ten that holds the row).
+             if (board_filter_ == 1) {
+               int own = -1;
+               group_board(board_mode_, own);
+               if (own >= 0) {
+                 board_first_ = (own / 10) * 10;
+                 board_cursor_ = own - board_first_;
+               }
+             }
+           }
+         } else if (in.pressed & (kLb | kLt | 0x2000)) {
+           if (page(-10)) sound(audio::Event::kUiConfirm);
+         } else if (in.pressed & (kRb | kRt | 0x4000)) {
+           if (page(10)) sound(audio::Event::kUiConfirm);
          }
-         if ((board_hold_ < 1 || --board_hold_ == 0) && std::fabs(board_scroll_) < 1.0f) board_scroll_ = 0.0f;
        },
        0);
   screen_.tips = [this](TextLayout& l) {

@@ -9,6 +9,11 @@
   pairing link that can't be shown as a QR code no longer crashes the
   game), and the file holding the device's token is private on Linux and
   macOS.
+- Leaderboards as in the original: a cursor that up and down move through
+  pages of ten, shoulders and triggers (or the right stick) turning
+  pages, the rows' shading and positions; Y closes them when opened from
+  Single Player. On the game over screen the friends board scrolls with
+  the right stick.
 - Online scores: the score at the top right in a game follows Help and
   options, Score display, as on Xbox Live: Next Friend shows the score of
   the next person in your group to beat, Personal Best your own best.

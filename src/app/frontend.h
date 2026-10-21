@@ -211,7 +211,8 @@ class Frontend {
   void how_to_play(bool reset);            // sub_8207C178
   void results();                          // sub_82089878
   void leaderboards(bool reset);           // local boards (Xbox LIVE's in the original)
-  void board_view(int mode, std::function<void(const MenuInput&)> back);
+  // sub_8208AAB8(board, back, yCloses).
+  void board_view(int mode, std::function<void(const MenuInput&)> back, bool y_closes = false);
   void after_game();                       // sub_8208EF90
   void achievements_screen();              // stands in for XamShowAchievementsUI
   void online_screen(bool reset);          // the port's online scores (no original)
@@ -289,8 +290,12 @@ class Frontend {
   float credits_scroll_ = 0.0f, credits_length_ = 0.0f;
   int last_row_ = -1;     // the last game's row on its local board
   int board_mode_ = 0;
-  int board_first_ = 0;
+  int board_first_ = 0;   // dat_821EB5BC: the page's first row
+  int board_cursor_ = 0;  // dat_821EB5C0: the cursor's row in the page
   int board_filter_ = 2;  // dat_821EB5AC: 0 Friends, 1 My score, 2 Overall (the local board)
+  // The results' friends board (sub_82089650): its first row shown, and the
+  // right stick's accumulator and settle timer.
+  int results_first_ = 0;      // dat_821EA098
   float board_scroll_ = 0.0f;  // dat_821EA114
   int board_hold_ = 0;         // dat_821EA118
   // The mode select tiles' group boards: each mode's first row shown (the

@@ -82,10 +82,14 @@ Format for each entry:
     - the leaderboard screens start on Friends (0x29) and X steps
       Friends, My score (0x2A, opening on the page with the player's row)
       and Overall (0x2B), as `sub_8208AAB8` does. Friends and My score show
-      the group's board with the player's row boxed (the original boxes the
-      cursor row, which starts on the player's in My score); Overall is
-      the local board. The tips gain X Change Filter (0x31). An empty
+      the group's board, Overall the local board, with the original's
+      cursor and paging (`sub_8208AB80`); My score opens on the page of
+      ten that holds the player's row, the cursor on it (Live returned the
+      page around the player). A, View Gamer Card, has no counterpart and
+      its tip is left out; the tips gain X Change Filter (0x31). An empty
       group board shows 0x7E.
+    - the results screen's friends board scrolls with the right stick and
+      the shoulders and triggers (`sub_82089650`).
     - the results screen's Friends Leaderboard column shows the group's
       board, eight rows from the player's row less four, the player's row
       highlighted, names and scores without ranks (`sub_82088AE0`).
