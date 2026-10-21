@@ -85,6 +85,12 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.2.1" date="2026-10-21">
+      <description>
+        <p>Setup accepts a data folder made on another computer: it checks the files again and copies the sound, so
+        FFmpeg is not needed.</p>
+      </description>
+    </release>
     <release version="1.2.0" date="2026-10-21">
       <description>
         <p>Smooth motion on displays faster than 60 Hz (the Steam Deck OLED at 90 Hz, 120 and 144 Hz monitors):

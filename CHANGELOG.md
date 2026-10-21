@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.1
 
 - Setup accepts a data folder made on another computer (or the folder
   around it): it checks the files again and copies the sound, so FFmpeg
