@@ -31,7 +31,8 @@
 // item) at the start, and saves the final frame; --audio-out also (or
 // instead) saves its sound, 5.1 float, with the options at full, and
 // --audio-rng starts the audio's own generator (its Random and Selector
-// draws, which run through the menus) from a recorded game's value.
+// draws, which run through the menus) from a recorded game's value, and
+// --audio-steps renders each step with a recording's audio clock.
 // --player joins a pad to a multiplayer game (team 0-3, role 0 alone,
 // 1 pilot, 2 copilot;
 // --versus for teams against each other), every pad holding the --stick
@@ -716,7 +717,8 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
                  const StepInputs& inputs, int bomb_step, const std::vector<DevSpawn>& spawns, const fs::path& out, uint32_t w, uint32_t h,
                  bool exact_720p, const fs::path& trace_path, const fs::path& rng_path, int rng_step,
                  const fs::path& dump_path, int dump_step, const fs::path& positions_path, const fs::path& data_dir,
-                 const fs::path& audio_path, const fs::path& record_path, int record_from, int64_t audio_rng) {
+                 const fs::path& audio_path, const fs::path& record_path, int record_from, int64_t audio_rng,
+                 const fs::path& audio_steps_path) {
   // --trace: after each step, the clock and slot 0's object (x, y, vx,
   // vy) at full precision, as memory reads of the original in an emulator give them.
   std::ofstream trace;
@@ -740,13 +742,42 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
   audio::GameAudio glue(sound);
   std::vector<float> samples;
   int step_now = 0;
+  // --audio-steps: a recorded game's audio clock (tools/scripts/mprec.py's
+  // <tag>-audio-steps.csv: per step the wall time and the emulator's audio
+  // file size), so each step renders as many samples as the recording had
+  // and the event gates see its milliseconds. An emulator running slower
+  // than 60 steps a second otherwise puts the music's bars, which run on
+  // the audio clock, at other steps than the port's 800 samples a step.
+  std::vector<int64_t> clock_bytes;
+  std::vector<double> clock_t;
+  if (!audio_steps_path.empty()) {
+    std::ifstream f(audio_steps_path);
+    std::string line;
+    std::getline(f, line);
+    while (std::getline(f, line)) {
+      int s = 0;
+      double t = 0;
+      long long b = 0;
+      if (std::sscanf(line.c_str(), "%d,%lf,%lld", &s, &t, &b) != 3 || s < 0) continue;
+      if (size_t(s) >= clock_bytes.size()) {
+        clock_bytes.resize(size_t(s) + 1, -1);
+        clock_t.resize(size_t(s) + 1, 0.0);
+      }
+      clock_bytes[size_t(s)] = b;
+      clock_t[size_t(s)] = t;
+    }
+  }
+  int64_t rendered = 0;
   if (!audio_path.empty()) {
     std::string error;
     if (sound.init(data_dir, &error)) {
       glue.start();
       // --audio-rng: the audio generator as a recorded game began.
       if (audio_rng >= 0) sound.set_random(uint32_t(audio_rng));
-      attach_sound(g, glue, [&step_now]() { return uint32_t(uint64_t(step_now) * 50 / 3); });
+      attach_sound(g, glue, [&step_now, &clock_t]() {
+        if (size_t(step_now) < clock_t.size()) return uint32_t(600000.0 + clock_t[size_t(step_now)] * 1000.0);
+        return uint32_t(uint64_t(step_now) * 50 / 3);
+      });
       glue.select_music(true, g.rules.mode, frozen(g));  // the game's start, before the hooks existed
     } else {
       SDL_Log("no sound: %s", error.c_str());
@@ -813,9 +844,14 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
     if (sound.loaded()) {
       step_now = i + 1;
       sound_step(g, glue, sound, 1.0f, 1.0f);
+      int64_t n = 800;
+      const size_t next = size_t(i) + 2;
+      if (next < clock_bytes.size() && clock_bytes[next] >= 0 && clock_bytes[1] >= 0)
+        n = std::max<int64_t>(0, (clock_bytes[next] - clock_bytes[1]) / 24 - rendered);  // 6 floats a frame
+      rendered += n;
       const size_t at = samples.size();
-      samples.resize(at + 800 * 6);
-      sound.render(samples.data() + at, 800);
+      samples.resize(at + size_t(n) * 6);
+      sound.render(samples.data() + at, size_t(n));
     }
     if (record.is_open() && i + 1 >= record_from) {
       UiCanvas ui;
@@ -1516,7 +1552,7 @@ int main(int argc, char** argv) {
   std::array<LobbyPad, 4> lobby{};
   bool versus = false, multiplayer = false;
   fs::path screenshot;
-  fs::path trace_path, rng_path, dump_path, inputs_path, positions_path, audio_path, record_path;
+  fs::path trace_path, rng_path, dump_path, inputs_path, positions_path, audio_path, record_path, audio_steps_path;
   int record_from = 1;
   SetupDev setup_dev;
   fs::path merge_from;
@@ -1556,6 +1592,7 @@ int main(int argc, char** argv) {
     else if (a == "--positions" && i + 1 < argc) positions_path = argv[++i];
     else if (a == "--audio-out" && i + 1 < argc) audio_path = argv[++i];
     else if (a == "--audio-rng" && i + 1 < argc) audio_rng = int64_t(std::strtoul(argv[++i], nullptr, 16));
+    else if (a == "--audio-steps" && i + 1 < argc) audio_steps_path = argv[++i];
     else if (a == "--merge-profile" && i + 1 < argc) merge_from = argv[++i];
     else if (a == "--online-pair" && i + 1 < argc) online_pair = argv[++i];
     else if (a == "--online-sync") online_sync = true;
@@ -1766,7 +1803,7 @@ int main(int argc, char** argv) {
     if (crt_state >= 0) game.world->crt.set_state(uint32_t(crt_state));
     rc = run_headless(dev, renderer, game, frames, per_pad, inputs, bomb_step, spawns, screenshot, shot_w, shot_h,
                       exact_720p == 1, trace_path, rng_path, rng_step, dump_path, dump_step, positions_path, data_dir,
-                      audio_path, record_path, record_from, audio_rng);
+                      audio_path, record_path, record_from, audio_rng, audio_steps_path);
     SDL_Log("crt state %08x", game.world->crt.state());
   } else {
     Display d = load_display(profile_dir);
