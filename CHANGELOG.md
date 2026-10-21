@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.3
 
 - Online scores: a long history of games goes to the server in parts, so
   none is lost, and games that came from the server aren't sent back.
@@ -17,6 +17,8 @@
 - Online scores: the score at the top right in a game follows Help and
   options, Score display, as on Xbox Live: Next Friend shows the score of
   the next person in your group to beat, Personal Best your own best.
+- A damaged sound file in the data folder is refused instead of ending
+  the game.
 
 ## 1.1.2
 

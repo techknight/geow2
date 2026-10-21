@@ -85,6 +85,12 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.1.3" date="2026-10-21">
+      <description>
+        <p>Leaderboards with the original's cursor and paging; Next Friend and Personal Best at the top right with
+        a score server; online scores sturdier and a long history synced in parts.</p>
+      </description>
+    </release>
     <release version="1.1.2" date="2026-10-20">
       <description>
         <p>Online scores: the Single Player tiles show the group's best six for each mode, and the server's address
