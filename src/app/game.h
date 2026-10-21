@@ -167,6 +167,14 @@ struct Game {
   float power_up_timer = 5.0f;
   CameraState camera;
   float camera_idle = 0.0f;  // dat_8219D3CC: time out of a game
+  // The debug free camera (sub_82068CF8): Cheat.DebugCamera's value
+  // (0x821B3F84), the BACK + RB chord's latch (0x821B3F60), its basis
+  // (0x82182618) and, for the step after it is turned off, the basis the
+  // last view used (0x82182658), which orients the sticks.
+  bool debug_camera = false;
+  bool debug_camera_latch = false;
+  Mat4 view_basis{};
+  std::optional<Mat4> stick_basis;
   std::vector<Bullet> bullets;
   BulletShape bullet_shape;
   // The HUD: the font, its strings and the UI transform.
@@ -274,7 +282,13 @@ void delete_objects(Game& g);
 // sub_82033610 / sub_82033638 / sub_82034588.
 inline bool in_game(const Game& g) { return g.flow == 2 || g.flow == 3; }
 inline bool ending(const Game& g) { return g.flow == 4 || 0.0f < g.end_timer; }
-inline bool frozen(const Game& g) { return g.flow == 3; }
+// Paused, or the debug camera on (Cheat.Pause and Cheat.DebugCameraRealTime
+// are 0 and nothing sets them).
+inline bool frozen(const Game& g) { return g.flow == 3 || g.debug_camera; }
+// sub_82068CF8, once a frame after the pads are read: BACK + RB on pad 0
+// toggles the debug camera (once per press of the pair), which then flies
+// with that pad (camera.h).
+void debug_camera_frame(Game& g, const float* pad0_axis);
 // sub_82034CA0(0, bit, flags): an achievement earned this game; unless
 // flags & 2 it is unlocked at once (else at the game's end); unless
 // flags & 1 sound event 0x24.

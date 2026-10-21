@@ -58,8 +58,9 @@
 // (for a video encoder: 60 frames a second).
 //
 // The third runs the front end instead, pressing a button (a, b, x, y,
-// start, back, up, down, left, right; pad 0, or another with :<pad>) on
-// the given frames; it never saves. --online-preview shows the Online
+// start, back, lb, rb, lt, rt, up, down, left, right, or a full stick:
+// ls-left, ls-right, ls-up, ls-down, rs-...; pad 0, or another with :<pad>)
+// on the given frames; it never saves. --online-preview shows the Online
 // scores item and screens in a fixed state, with no server.
 //
 // The fourth shows the setup window (src/app/setup.h), which otherwise
@@ -123,6 +124,7 @@ struct Press {
   int frame;
   int axis;
   int pad = 0;
+  float value = 1.0f;
 };
 
 int16_t clamp16(int v) { return int16_t(std::clamp(v, -32768, 32767)); }
@@ -1042,9 +1044,10 @@ int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, 
         case -2: ps.axis[5] = 1.0f; break;
         case -3: ps.axis[4] = -1.0f; break;
         case -4: ps.axis[4] = 1.0f; break;
-        default: ps.axis[size_t(p.axis)] = 1.0f; break;
+        default: ps.axis[size_t(p.axis)] = p.value; break;
       }
     }
+    debug_camera_frame(g, pads[0].axis.data());
     fe.frame(pads);
     // The Online scores screens once the intro is over.
     if (!online_preview.empty() && i == frames / 2) fe.preview_online(online_preview);
@@ -1390,6 +1393,9 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
           state[i].connected = false;
           pulled[i] = false;
         }
+      // The debug free camera after the pad poll, before the menus
+      // (0x82037E3C).
+      debug_camera_frame(g, state[0].axis.data());
       fe.frame(state);
       // Each joined index's pad (one profile's stick settings for all).
       std::array<Sticks, 4> s{};
@@ -1460,18 +1466,32 @@ int language_code(const std::string& code) {
   return 0;
 }
 
-int button_axis(const std::string& b) {
-  if (b == "a") return 0xC;
-  if (b == "b") return 0xD;
-  if (b == "x") return 0xE;
-  if (b == "y") return 0xF;
-  if (b == "start") return 0x10;
-  if (b == "back") return 0x11;
-  if (b == "up") return -1;
-  if (b == "down") return -2;
-  if (b == "left") return -3;
-  if (b == "right") return -4;
-  return 0xC;
+// --press names: the axis (negative: a D-pad direction) and its value.
+std::pair<int, float> button_axis(const std::string& b) {
+  if (b == "a") return {0xC, 1.0f};
+  if (b == "b") return {0xD, 1.0f};
+  if (b == "x") return {0xE, 1.0f};
+  if (b == "y") return {0xF, 1.0f};
+  if (b == "start") return {0x10, 1.0f};
+  if (b == "back") return {0x11, 1.0f};
+  if (b == "lb") return {0xA, 1.0f};
+  if (b == "rb") return {0xB, 1.0f};
+  if (b == "lt") return {8, 1.0f};
+  if (b == "rt") return {9, 1.0f};
+  // Full sticks; their y axes are negative up (sub_82037EA0).
+  if (b == "ls-left") return {0, -1.0f};
+  if (b == "ls-right") return {0, 1.0f};
+  if (b == "ls-up") return {1, -1.0f};
+  if (b == "ls-down") return {1, 1.0f};
+  if (b == "rs-left") return {2, -1.0f};
+  if (b == "rs-right") return {2, 1.0f};
+  if (b == "rs-up") return {3, -1.0f};
+  if (b == "rs-down") return {3, 1.0f};
+  if (b == "up") return {-1, 1.0f};
+  if (b == "down") return {-2, 1.0f};
+  if (b == "left") return {-3, 1.0f};
+  if (b == "right") return {-4, 1.0f};
+  return {0xC, 1.0f};
 }
 
 }  // namespace
@@ -1557,7 +1577,8 @@ int main(int argc, char** argv) {
       const std::string b = argv[++i];
       const size_t colon = b.find(':');
       const int pad = colon == std::string::npos ? 0 : std::clamp(std::atoi(b.c_str() + colon + 1), 0, 3);
-      presses.push_back({f, button_axis(b.substr(0, colon)), pad});
+      const auto [axis, value] = button_axis(b.substr(0, colon));
+      presses.push_back({f, axis, pad, value});
     } else if (a == "--size" && i + 2 < argc) {
       // Up to 8K (the capture's download buffer is w x h x 4 bytes).
       shot_w = uint32_t(std::clamp(std::atoi(argv[++i]), 1, 7680));

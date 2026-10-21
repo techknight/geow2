@@ -39,6 +39,19 @@ void camera_follow_multi(CameraState& c, CameraTrack* tracks, const float* xs, c
 // times zoom over Render.Zoom (1.0), aspect 16:9, near 1, far 10000.
 Mat4 camera_view_projection(const CameraState& c, const GameMath& gm);
 
+// The follow basis of that view (rows x, y, z, eye; 0x82182618 while the
+// debug camera is off).
+Mat4 camera_basis(const CameraState& c);
+
+// The view-projection from a basis and the follow zoom.
+Mat4 camera_view_projection(const Mat4& basis, float zoom, const GameMath& gm);
+
+// The debug free camera's flight (sub_82068CF8 from 0x82068DC4), one frame:
+// moves and turns `basis` by pad 0's axes as sub_82037EA0 reads them (0..3
+// sticks, 8/9 triggers, 10/11 bumpers), then rolls it toward world +z as
+// up and normalises its rows.
+void debug_camera_fly(Mat4& basis, const float* axis, const GameMath& gm);
+
 // The same frame step out of a game (sub_820366A0 with sub_82033610
 // false): the zoom eases to 1 and the centre decays toward the middle,
 // slowly at first (the factor is the time out of a game, dat_8219D3CC,

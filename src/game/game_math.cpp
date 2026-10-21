@@ -78,7 +78,45 @@ GameMath GameMath::from_image(std::span<const uint8_t> image) {
   c.tan_f = f64_at(image, 0x8201D398);
   c.tan_g = f64_at(image, 0x8201D3B0);
   c.tan_one = f64_at(image, 0x8201D388);
+  constexpr uint32_t kAcos = 0x82197ED0;
+  c.as_one = f32_at(image, kAcos + 0x04);
+  c.as_two = f32_at(image, kAcos + 0x08);
+  c.as_half = f32_at(image, kAcos + 0x0C);
+  for (int i = 0; i < 4; ++i) c.as_base[i] = f64_at(image, kAcos + 0x10 + uint32_t(i) * 8);
+  for (int i = 0; i < 5; ++i) {
+    c.as_p[i] = f64_at(image, kAcos + 0x30 + uint32_t(i) * 8);
+    c.as_q[i] = f64_at(image, kAcos + 0x58 + uint32_t(i) * 8);
+  }
   return GameMath(c);
+}
+
+double GameMath::acos(double x) const {
+  // sub_82130998 with r4 = 1 (0x82130998..0x82130A8C): r = asin of |x|
+  // by a rational in z, from z = |x|^2 up to 0.5, else from z = (1 - |x|)
+  // / 2 with t = -2 sqrt(z); the table's bases turn it into acos.
+  const double a = std::fabs(x);
+  double z, t;
+  int k;
+  if (a > double(k_.as_half)) {
+    z = (double(k_.as_one) - a) * double(k_.as_half);
+    t = -(std::sqrt(z) * double(k_.as_two));
+    k = 0;
+  } else {
+    z = a * a;
+    t = a;
+    k = 1;
+  }
+  double q = k_.as_q[4] + z;
+  double p = std::fma(k_.as_p[4], z, k_.as_p[3]);
+  q = std::fma(q, z, k_.as_q[3]);
+  p = std::fma(p, z, k_.as_p[2]);
+  q = std::fma(q, z, k_.as_q[2]);
+  p = std::fma(p, z, k_.as_p[1]);
+  q = std::fma(q, z, k_.as_q[1]);
+  p = std::fma(p, z, k_.as_p[0]);
+  q = std::fma(q, z, k_.as_q[0]);
+  const double r = ((p * z) * t) / q + t;
+  return x >= 0.0 ? k_.as_base[size_t(k)] - r : k_.as_base[size_t(2 + k)] + r;  // fsel
 }
 
 double GameMath::tan(double x) const {

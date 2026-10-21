@@ -126,6 +126,12 @@ int check_database(const fs::path& files) {
     }
     std::printf("game tan: max difference from the C library %.3g; sin(3e8) is %s\n", worst_tan,
                 std::isnan(gm.sin(3e8)) ? "NaN (as shipped)" : "not NaN");
+    double worst_acos = 0.0;
+    for (int i = -1000; i <= 1000; ++i) {
+      const double x = i * 0.001;
+      worst_acos = std::fmax(worst_acos, std::fabs(gm.acos(x) - std::acos(x)));
+    }
+    std::printf("game acos: max difference from the C library %.3g\n", worst_acos);
 
     // Build every model's line lists the way the game does at load.
     size_t models = 0, lines = 0, empty = 0;

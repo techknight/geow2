@@ -347,7 +347,18 @@ void update_player(Game& g, size_t k, std::span<const Sticks> pads) {
     const Sticks& mp = pad(pads, sh.pilot);
     const Sticks& fp = pad(pads, sh.copilot);
     Vec2 move = stick_vector(stick_axis(mp.move_x, false), stick_axis(mp.move_y, true));
-    const Vec2 fire = stick_vector(stick_axis(fp.fire_x, false), stick_axis(fp.fire_y, true));
+    Vec2 fire = stick_vector(stick_axis(fp.fire_x, false), stick_axis(fp.fire_y, true));
+    if (g.stick_basis) {
+      // The sticks turned by the frame sub_82047180 builds from the last
+      // view's row 1 (0x82050048..0x820500FC): -(s.x row 0 + s.y row 1).
+      // The follow view's row 1 gives the sticks as they are; only the
+      // free camera's differs (the step after it is turned off).
+      const float* up = &g.stick_basis->m[4];
+      const Mat4 o = look_at_basis({0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 0.0f}, {up[0], up[1], up[2], up[3]});
+      auto turn = [&o](Vec2 s) { return Vec2{-(o.m[0] * s.x + o.m[4] * s.y), -(o.m[1] * s.x + o.m[5] * s.y)}; };
+      move = turn(move);
+      fire = turn(fire);
+    }
     // The power-up timers in order speed, weapon, slow, magnet, freeze:
     // each counts down and at 0 sounds its end (one 35 ms gate for all).
     auto count_down = [&](float& t, audio::Event end) {
@@ -1810,17 +1821,44 @@ void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_
     foreground(g, front);
   }
   PROFILE("render build+record");
-  r.draw(cmd, target, format, w, h, camera_view_projection(g.camera, *g.gm), g.star_vertices,
+  // The view (sub_82067A20) from the debug camera's basis while it is on
+  // (0x82067B10), with the follow zoom.
+  const Mat4 view = g.debug_camera ? camera_view_projection(g.view_basis, g.camera.zoom, *g.gm)
+                                   : camera_view_projection(g.camera, *g.gm);
+  r.draw(cmd, target, format, w, h, view, g.star_vertices,
          g.grid_visible ? &g.grid_lines : nullptr, g.walls, g.particle_quads, g.linger_lines, front, ui, g.ui,
          camera_view_projection(CameraState{}, *g.gm));
 }
 
 // One simulation step and its light map update (one per step, as the
-// original renders one frame per step).
+// original renders one frame per step); frozen, the light map frame is
+// skipped too (sub_82065930 at 0x82065948).
 void tick(Game& g, std::span<const Sticks> pads, Renderer& r, SDL_GPUCommandBuffer* cmd) {
   step(g, pads);
+  g.stick_basis.reset();
+  if (frozen(g)) return;
   PROFILE("light map upload");
   r.update_light_map(cmd, g.warp_mesh, g.lights);
+}
+
+void debug_camera_frame(Game& g, const float* axis) {
+  // While it is off, the basis is the follow view's, as the previous
+  // frame's view stored it (sub_82067A20).
+  if (!g.debug_camera) g.view_basis = camera_basis(g.camera);
+  // BACK (0x11) and RB (0xB) past 0.5 (dat_82000724) toggle it once per
+  // press of the pair (0x82068D14..0x82068DB4).
+  const bool was_on = g.debug_camera;
+  if (axis[0x11] > 0.5f && axis[0xB] > 0.5f) {
+    if (!g.debug_camera_latch) g.debug_camera = !g.debug_camera;
+    g.debug_camera_latch = true;
+  } else {
+    g.debug_camera_latch = false;
+  }
+  // The step after it is turned off orients the sticks by the free
+  // camera's basis, which the last view used (0x82182668, read by
+  // sub_8204FF00); the next view stores the follow basis again.
+  if (was_on && !g.debug_camera) g.stick_basis = g.view_basis;
+  if (g.debug_camera) debug_camera_fly(g.view_basis, axis, *g.gm);
 }
 
 }  // namespace geow2

@@ -31,6 +31,11 @@ class GameMath {
     double tan_a, tan_b, tan_c, tan_d, tan_e, tan_f, tan_g, tan_one;
     // tan_a..g: 0x8201D3C8, 0x8201D378, 0x8201D3A8, 0x8201D3C0, 0x8201D3B8,
     // 0x8201D398, 0x8201D3B0; tan_one: 0x8201D388
+    // acos (sub_82130A90 → sub_82130998), table at 0x82197ED0:
+    float as_one, as_two, as_half;  // +0x04, +0x08, +0x0C (f32)
+    double as_base[4];              // +0x10 .. +0x28
+    double as_p[5];                 // +0x30 .. +0x50
+    double as_q[5];                 // +0x58 .. +0x78
   };
 
   explicit GameMath(const Constants& c) : k_(c) {}
@@ -41,6 +46,7 @@ class GameMath {
   double cos(double x) const;
   double atan2(double y, double x) const;  // sub_8212FE70(y, x)
   double tan(double x) const;              // sub_82130A98
+  double acos(double x) const;             // sub_82130A90
 
   // Single-precision helpers as the callers use them (result rounded with frsp).
   float sinf(float x) const { return float(sin(x)); }
