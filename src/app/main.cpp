@@ -1,7 +1,7 @@
 // geow2: the game.
 //
 //   geow2 [--data <data-dir>] [--profile <dir>] [--fullscreen | --windowed] [--720p | --native]
-//         [--vsync | --no-vsync] [--language en|de|fr|es|it]
+//         [--vsync | --no-vsync] [--smooth | --no-smooth] [--language en|de|fr|es|it]
 //   geow2 [--profile <dir>] --merge-profile <another device's profile folder>
 //   geow2 [--profile <dir>] --online-pair <score server> | --online-sync
 //   geow2 --data <data-dir> --frames <n> --screenshot <out.png> | --audio-out <out.wav> [--size <w> <h>]
@@ -10,14 +10,15 @@
 //         [--player <pad> <team> <role>]... [--versus] [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>]
 //         [--inputs <csv>] [--rng-state <file> <step>] [--crt-state <hex>] [--emulator-rounding]
 //         [--trace <csv>] [--positions <file>] [--dump <step> <file>] [--perf]
-//         [--record <raw-file> <first-step>]
+//         [--record <raw-file> <first-step> [--present-hz <rate>]]
 //   geow2 --data <data-dir> --frames <n> --screenshot <out.png> --frontend [--press <frame> <button>]...
 //         [--online-preview unpaired|editing|waiting|failed|paired|boards|modes|results]
 //   geow2 [--data <data-dir>] --setup-preview <out.png> | --setup-from <package>
 //
 // The first form opens the window at the front end; the profile, the
 // local score boards and the display settings (display.txt: fullscreen,
-// exact 720p render, vsync; F11 toggles fullscreen) are kept in --profile
+// exact 720p render, vsync, smooth motion between steps on displays faster
+// than 60 Hz; F11 toggles fullscreen) are kept in --profile
 // (default: the user's preferences folder). --merge-profile adds another
 // device's profile folder (its games, unlocks and achievements) to it and
 // quits. --online-pair pairs the profile with a group's score server
@@ -58,7 +59,8 @@
 // draws every step offscreen at --size and prints the time of each phase
 // (src/app/profile.h) every 600 steps. --record appends every frame from
 // that step to the last, with the HUD, to one file as raw RGBA at --size
-// (for a video encoder: 60 frames a second).
+// (for a video encoder: 60 frames a second); with --present-hz, the frames
+// a display at that rate would show, with smooth motion (app/smooth.h).
 //
 // The third runs the front end instead, pressing a button (a, b, x, y,
 // start, back, lb, rb, lt, rt, up, down, left, right, or a full stick:
@@ -105,6 +107,7 @@
 #include "app/renderer.h"
 #include "app/online.h"
 #include "app/setup.h"
+#include "app/smooth.h"
 #include "data/png_read.h"
 #include "extract/bytes.h"
 #include "game/gravity_well.h"
@@ -465,12 +468,17 @@ void submit_headless(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, int step) {
 
 // The frame into `target` (w x h): rendered at that size, or with
 // `exact_720p` at 1280 x 720 into `frame720` (made on first use) and scaled
-// (bilinear) into the 16:9 area of the target.
+// (bilinear) into the 16:9 area of the target. With `smooth`, the frame a
+// fraction `s` of the way from the last step to this one (app/smooth.h).
 void draw_frame(SDL_GPUDevice* dev, Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target,
                 SDL_GPUTextureFormat format, uint32_t w, uint32_t h, const Game& g, const UiCanvas& ui,
-                bool exact_720p, SDL_GPUTexture*& frame720) {
+                bool exact_720p, SDL_GPUTexture*& frame720, SmoothFrames* smooth = nullptr, float s = 1.0f) {
+  auto render = [&](SDL_GPUTexture* to, uint32_t tw, uint32_t th) {
+    if (smooth) smooth->render(r, cmd, to, format, tw, th, g, ui, s);
+    else geow2::render(r, cmd, to, format, tw, th, g, ui);
+  };
   if (!exact_720p) {
-    render(r, cmd, target, format, w, h, g, ui);
+    render(target, w, h);
     return;
   }
   if (!frame720) {
@@ -485,7 +493,7 @@ void draw_frame(SDL_GPUDevice* dev, Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_
     frame720 = SDL_CreateGPUTexture(dev, &tci);
     if (!frame720) return;
   }
-  render(r, cmd, frame720, format, 1280, 720, g, ui);
+  render(frame720, 1280, 720);
   uint32_t pw = w, ph = uint32_t(float(w) * 9.0f / 16.0f + 0.5f);
   if (ph > h) {
     ph = h;
@@ -508,7 +516,8 @@ void draw_frame(SDL_GPUDevice* dev, Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_
 
 // The frame as a PNG at `out`, or appended to `raw` as w x h RGBA bytes.
 int capture(SDL_GPUDevice* dev, Renderer& r, const Game& g, const UiCanvas& ui, const fs::path& out, uint32_t w,
-            uint32_t h, bool exact_720p = false, std::ofstream* raw = nullptr) {
+            uint32_t h, bool exact_720p = false, std::ofstream* raw = nullptr, SmoothFrames* smooth = nullptr,
+            float s = 1.0f) {
   SDL_GPUTextureCreateInfo tci{};
   tci.type = SDL_GPU_TEXTURETYPE_2D;
   tci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
@@ -526,7 +535,7 @@ int capture(SDL_GPUDevice* dev, Renderer& r, const Game& g, const UiCanvas& ui, 
   }
   SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
   SDL_GPUTexture* frame720 = nullptr;
-  draw_frame(dev, r, cmd, tex, tci.format, w, h, g, ui, exact_720p, frame720);
+  draw_frame(dev, r, cmd, tex, tci.format, w, h, g, ui, exact_720p, frame720, smooth, s);
   SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
   SDL_GPUTextureRegion src{};
   src.texture = tex;
@@ -718,7 +727,7 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
                  bool exact_720p, const fs::path& trace_path, const fs::path& rng_path, int rng_step,
                  const fs::path& dump_path, int dump_step, const fs::path& positions_path, const fs::path& data_dir,
                  const fs::path& audio_path, const fs::path& record_path, int record_from, int64_t audio_rng,
-                 const fs::path& audio_steps_path) {
+                 const fs::path& audio_steps_path, double present_hz) {
   // --trace: after each step, the clock and slot 0's object (x, y, vx,
   // vy) at full precision, as memory reads of the original in an emulator give them.
   std::ofstream trace;
@@ -806,6 +815,16 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
   // --record: every frame from that step on, as raw RGBA at --size.
   std::ofstream record;
   if (!record_path.empty()) record.open(record_path, std::ios::binary | std::ios::trunc);
+  // --present-hz: the frames a display at that rate shows, with smooth
+  // motion, as the window paces them (run_window): locked k frames a step
+  // at 60 Hz times k, else from the clock.
+  SmoothFrames smooth;
+  int present_k = 0;
+  if (present_hz > 0.0) {
+    const int k = int(std::lround(present_hz / 60.0));
+    if (k >= 1 && std::fabs(present_hz / k - 60.0) < 0.6) present_k = k;
+  }
+  double present_pending = kStep;
   for (int i = 0; i < frames; ++i) {
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
     // By joined index, from each joined pad.
@@ -823,7 +842,13 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
       {
         PROFILE("frame (cpu)");
         tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
-        render(r, cmd, prof_target, SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM, w, h, g, prof_ui);
+        // With --present-hz, drawn half way between steps (the blend's cost).
+        if (present_hz > 0.0) {
+          smooth.after_step(g);
+          smooth.render(r, cmd, prof_target, SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM, w, h, g, prof_ui, 0.5f);
+        } else {
+          render(r, cmd, prof_target, SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM, w, h, g, prof_ui);
+        }
       }
       SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
       {
@@ -853,10 +878,25 @@ int run_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, const std
       samples.resize(at + size_t(n) * 6);
       sound.render(samples.data() + at, size_t(n));
     }
+    if (present_hz > 0.0 && !prof_target) smooth.after_step(g);
     if (record.is_open() && i + 1 >= record_from) {
       UiCanvas ui;
       fe.draw(ui);
-      if (capture(dev, r, g, ui, {}, w, h, exact_720p, &record)) return 1;
+      if (present_hz <= 0.0) {
+        if (capture(dev, r, g, ui, {}, w, h, exact_720p, &record)) return 1;
+      } else if (present_k > 0) {
+        for (int j = 0; j < present_k; ++j)
+          if (capture(dev, r, g, ui, {}, w, h, exact_720p, &record, &smooth, float(j + 1) / float(present_k)))
+            return 1;
+      } else {
+        // The frame that took this step, then those until the next.
+        present_pending -= kStep;
+        do {
+          if (capture(dev, r, g, ui, {}, w, h, exact_720p, &record, &smooth, float(present_pending / kStep)))
+            return 1;
+          present_pending += 1.0 / present_hz;
+        } while (present_pending < kStep);
+      }
     }
     // --rng-state: the generator's state read from the original in an
     // emulator (the index, then 624 words, in hex), loaded after that step.
@@ -1067,7 +1107,12 @@ int run_frontend_headless(SDL_GPUDevice* dev, Renderer& r, Game& g, int frames, 
     g.tables[0].insert(1276745, 8, "Ace");
   }
   std::array<LocalBoard, 6> boards;
-  Frontend fe(g, g.text, profile, boards, {});
+  // Smooth motion's Settings item, on and never saved.
+  bool smooth = true;
+  Frontend::Hooks hooks;
+  hooks.smooth = [&]() { return smooth; };
+  hooks.set_smooth = [&](bool on) { smooth = on; };
+  Frontend fe(g, g.text, profile, boards, hooks);
   PreviewOnline preview(online_preview);
   if (!online_preview.empty()) fe.set_online(&preview);
   fe.boot();
@@ -1111,6 +1156,7 @@ struct Display {
   bool fullscreen = false;
   bool exact_720p = false;  // render at 1280 x 720 and scale to the window
   bool vsync = true;
+  bool smooth = true;  // smooth motion above 60 Hz (app/smooth.h)
 };
 
 Display load_display(const fs::path& dir) {
@@ -1122,13 +1168,15 @@ Display load_display(const fs::path& dir) {
     if (name == "fullscreen") d.fullscreen = value != 0;
     else if (name == "exact720p") d.exact_720p = value != 0;
     else if (name == "vsync") d.vsync = value != 0;
+    else if (name == "smooth") d.smooth = value != 0;
   }
   return d;
 }
 
 void save_display(const fs::path& dir, const Display& d) {
   std::ostringstream f;
-  f << "fullscreen " << int(d.fullscreen) << "\nexact720p " << int(d.exact_720p) << "\nvsync " << int(d.vsync) << '\n';
+  f << "fullscreen " << int(d.fullscreen) << "\nexact720p " << int(d.exact_720p) << "\nvsync " << int(d.vsync)
+    << "\nsmooth " << int(d.smooth) << '\n';
   save_text(dir / "display.txt", f.str());
 }
 
@@ -1179,6 +1227,11 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
   Frontend::Hooks hooks;
   hooks.save_profile = [&]() { save_profile(profile_dir, profile); };
   hooks.save_boards = [&]() { save_boards(profile_dir, boards); };
+  hooks.smooth = [&]() { return display.smooth; };
+  hooks.set_smooth = [&](bool on) {
+    display.smooth = on;
+    save_display(profile_dir, display);
+  };
   // The online scores: a sync after each game (once the game's unlock
   // progress is in the profile, later in the same frame), when the game
   // starts, and every five minutes in the menus.
@@ -1291,6 +1344,10 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
     }
   };
   read_refresh();
+  // Smooth motion (app/smooth.h): on unless turned off or the display takes
+  // one step per refresh (60 Hz), where it would change nothing.
+  SmoothFrames smooth;
+  bool smoothing = false;
   // The last frame reached the swapchain. A minimised or hidden window can
   // hand back no image without waiting for a vblank, so the refresh lock
   // only counts presented frames; the others step from real time.
@@ -1393,6 +1450,14 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
     double dt = double(now - last) / 1e9;
     last = now;
     int steps = 0;
+    // Smooth motion: how far from the last step to this one the frame is
+    // drawn (1: this step as it is).
+    const bool smooth_now = display.smooth && frames_per_step != 1;
+    if (smooth_now != smoothing) {
+      smoothing = smooth_now;
+      smooth.reset();
+    }
+    float between = 1.0f;
     if (frames_per_step > 0 && presented) {
       // Locked to the refresh (a frame that misses a vblank slows the
       // game, as on the console).
@@ -1400,6 +1465,9 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
         frame_in_step = 0;
         steps = 1;
       }
+      // The step's frame shows 1/k of the way, the last before the next
+      // step this step.
+      between = float(frame_in_step + 1) / float(frames_per_step);
     } else {
       if (refresh > 0.0) {
         // Snap to whole refresh periods when close.
@@ -1413,6 +1481,8 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
         ++steps;
       }
       if (pending > kStep) pending = 0.0;
+      // The time since the last step, in steps.
+      between = float(std::clamp(pending / kStep, 0.0, 1.0));
     }
     for (int n = 0; n < steps; ++n) {
       PROFILE("step+audio");
@@ -1443,6 +1513,7 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
         for (int j = 0; j < g.joined_count && j < 4; ++j)
           s[size_t(j)] = sticks_from(state[size_t(g.joined_pad[size_t(j)] & 3)], profile);
       tick(g, std::span<const Sticks>(s.data(), size_t(std::max(g.joined_count, 1))), r, cmd);
+      if (smoothing) smooth.after_step(g);
       if (has_sound) sound_step(g, glue, sound, profile.sound_volume, profile.music_volume);
     }
     // The online scores, between frames.
@@ -1474,7 +1545,9 @@ int run_window(SDL_GPUDevice* dev, Renderer& r, Game& g, const fs::path& data_di
       acquired = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window, &swap, &w, &h);
     }
     presented = acquired && swap;
-    if (presented) draw_frame(dev, r, cmd, swap, format, w, h, g, ui, display.exact_720p, frame720);
+    if (presented)
+      draw_frame(dev, r, cmd, swap, format, w, h, g, ui, display.exact_720p, frame720, smoothing ? &smooth : nullptr,
+                 between);
     SDL_SubmitGPUCommandBuffer(cmd);
     if (!presented) SDL_Delay(4);  // nothing waited for a vblank: do not spin
     if (g_profile.on) {
@@ -1554,6 +1627,7 @@ int main(int argc, char** argv) {
   fs::path screenshot;
   fs::path trace_path, rng_path, dump_path, inputs_path, positions_path, audio_path, record_path, audio_steps_path;
   int record_from = 1;
+  double present_hz = 0.0;
   SetupDev setup_dev;
   fs::path merge_from;
   std::string online_pair;
@@ -1568,7 +1642,7 @@ int main(int argc, char** argv) {
   int mode = 0;
   int start_level = -1;
   bool frontend = false;
-  int fullscreen = -1, exact_720p = -1, vsync = -1;  // -1: as saved
+  int fullscreen = -1, exact_720p = -1, vsync = -1, smooth = -1;  // -1: as saved
   int language = 0;  // 0: the system's (windowed) or English (headless)
   std::vector<DevSpawn> spawns;
   std::vector<Press> presses;
@@ -1603,6 +1677,7 @@ int main(int argc, char** argv) {
       record_path = argv[++i];
       record_from = std::atoi(argv[++i]);
     }
+    else if (a == "--present-hz" && i + 1 < argc) present_hz = std::atof(argv[++i]);
     else if (a == "--rng-state" && i + 2 < argc) {
       rng_path = argv[++i];
       rng_step = std::atoi(argv[++i]);
@@ -1614,6 +1689,7 @@ int main(int argc, char** argv) {
     else if (a == "--fullscreen" || a == "--windowed") fullscreen = a == "--fullscreen";
     else if (a == "--720p" || a == "--native") exact_720p = a == "--720p";
     else if (a == "--vsync" || a == "--no-vsync") vsync = a == "--vsync";
+    else if (a == "--smooth" || a == "--no-smooth") smooth = a == "--smooth";
     else if (a == "--press" && i + 2 < argc) {
       // <button>[:<pad>]
       const int f = std::atoi(argv[++i]);
@@ -1672,8 +1748,8 @@ int main(int argc, char** argv) {
       std::fprintf(out,
                    "geow2 %s\n"
                    "usage: geow2 [--data <data-dir>] [--profile <dir>] [--fullscreen | --windowed]\n"
-                   "             [--720p | --native] [--vsync | --no-vsync] [--language en|de|fr|es|it]\n"
-                   "             [--version] [--help-dev]\n"
+                   "             [--720p | --native] [--vsync | --no-vsync] [--smooth | --no-smooth]\n"
+                   "             [--language en|de|fr|es|it] [--version] [--help-dev]\n"
                    "       geow2 [--profile <dir>] --merge-profile <another device's profile folder>\n"
                    "       geow2 [--profile <dir>] --online-pair <score server> | --online-sync\n",
                    GEOW2_VERSION);
@@ -1686,7 +1762,7 @@ int main(int argc, char** argv) {
                      "        [--pad-stick <pad> <x> <y>] [--pad-fire <pad> <x> <y>] [--inputs <csv>]\n"
                      "        [--rng-state <file> <step>] [--crt-state <hex>] [--emulator-rounding]\n"
                      "        [--trace <csv>] [--positions <file>] [--dump <step> <file>] [--perf]\n"
-                     "        [--record <raw-file> <first-step>]\n"
+                     "        [--record <raw-file> <first-step> [--present-hz <rate>]]\n"
                      "  geow2 --frames <n> --screenshot <png> --frontend [--press <frame> <button>]...\n"
                      "        [--online-preview unpaired|editing|waiting|failed|paired|boards|modes|results]\n"
                      "  geow2 [--data <dir>] --setup-preview <png> | --setup-from <package>\n");
@@ -1803,14 +1879,15 @@ int main(int argc, char** argv) {
     if (crt_state >= 0) game.world->crt.set_state(uint32_t(crt_state));
     rc = run_headless(dev, renderer, game, frames, per_pad, inputs, bomb_step, spawns, screenshot, shot_w, shot_h,
                       exact_720p == 1, trace_path, rng_path, rng_step, dump_path, dump_step, positions_path, data_dir,
-                      audio_path, record_path, record_from, audio_rng, audio_steps_path);
+                      audio_path, record_path, record_from, audio_rng, audio_steps_path, present_hz);
     SDL_Log("crt state %08x", game.world->crt.state());
   } else {
     Display d = load_display(profile_dir);
     if (fullscreen >= 0) d.fullscreen = fullscreen != 0;
     if (exact_720p >= 0) d.exact_720p = exact_720p != 0;
     if (vsync >= 0) d.vsync = vsync != 0;
-    if (fullscreen >= 0 || exact_720p >= 0 || vsync >= 0) save_display(profile_dir, d);
+    if (smooth >= 0) d.smooth = smooth != 0;
+    if (fullscreen >= 0 || exact_720p >= 0 || vsync >= 0 || smooth >= 0) save_display(profile_dir, d);
     rc = run_window(dev, renderer, game, data_dir, profile_dir, d);
   }
   renderer.release();

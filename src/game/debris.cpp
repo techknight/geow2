@@ -49,6 +49,8 @@ void Debris::add(const Vec4& p0, const Vec4& v0, const Vec4& p1, const Vec4& v1,
   d.v0 = v0;
   d.p1 = p1;
   d.v1 = v1;
+  d.q0 = p0;
+  d.q1 = p1;
   const float dx = p1.x - p0.x, dw = p1.w - p0.w, dz = p1.z - p0.z, dy = p1.y - p0.y;
   d.length = std::sqrt(((dx * dx + dw * dw) + dz * dz) + dy * dy);
   // Life: 0.75 to 1.25 seconds (dat_82000724, dat_82000718).
@@ -99,6 +101,10 @@ void Debris::smash(Effects& fx, GameRng& rng, float speed, const std::vector<Mod
 }
 
 void Debris::step(const SmashTuning& t, float dt, float hx, float hy) {
+  for (DebrisPiece& d : pieces_) {
+    d.q0 = d.p0;
+    d.q1 = d.p1;
+  }
   size_t end = pieces_.size();
   for (size_t i = 0; i < end; ++i) {
     DebrisPiece& d = pieces_[i];
@@ -140,30 +146,48 @@ void Debris::step(const SmashTuning& t, float dt, float hx, float hy) {
   pieces_.resize(end);
 }
 
+// A piece's fade and its ends' colours (sub_82074600): k = clamp(life, 0,
+// 1) / 2, and the end nearer the camera (higher z) brighter, 3 +/- 0.075
+// min(|dz|, 10) (dat_820006F8, dat_82000D54, dat_8200070C).
+static float piece_colours(const DebrisPiece& d, float c0[4], float c1[4]) {
+  float life = d.life <= 0.0f ? 0.0f : d.life;
+  if (life - 1.0f >= 0.0f) life = 1.0f;
+  const float k = life * 0.5f;
+  const float dz = d.p1.z - d.p0.z;
+  float m = std::fabs(dz);
+  if (10.0f - m < 0.0f) m = 10.0f;
+  m = m * 0.075f;
+  const float hi = m + 3.0f, lo = 3.0f - m;
+  const float k1 = (dz >= 0.0f ? hi : lo) * k;  // end 1
+  const float k0 = (dz >= 0.0f ? lo : hi) * k;  // end 0
+  const float* c = d.colour;
+  c0[0] = c[0] * k0, c0[1] = c[1] * k0, c0[2] = c[2] * k0, c0[3] = k0 * c[3];
+  c1[0] = c[0] * k1, c1[1] = c[1] * k1, c1[2] = c[2] * k1, c1[3] = k1 * c[3];
+  return k;
+}
+
 void Debris::draw(LineBatch& out, std::vector<LightVertex>& lights) const {
   for (const DebrisPiece& d : pieces_) {
-    // Fades over its last second: k = clamp(life, 0, 1) / 2. The end
-    // nearer the camera (higher z) is brighter: 3 +/- 0.075 min(|dz|, 10)
-    // (dat_820006F8, dat_82000D54, dat_8200070C).
-    float life = d.life <= 0.0f ? 0.0f : d.life;
-    if (life - 1.0f >= 0.0f) life = 1.0f;
-    const float k = life * 0.5f;
-    const float dz = d.p1.z - d.p0.z;
-    float m = std::fabs(dz);
-    if (10.0f - m < 0.0f) m = 10.0f;
-    m = m * 0.075f;
-    const float hi = m + 3.0f, lo = 3.0f - m;
-    const float k1 = (dz >= 0.0f ? hi : lo) * k;  // end 1
-    const float k0 = (dz >= 0.0f ? lo : hi) * k;  // end 0
-    const float* c = d.colour;
-    const float c0[4] = {c[0] * k0, c[1] * k0, c[2] * k0, k0 * c[3]};
-    const float c1[4] = {c[0] * k1, c[1] * k1, c[2] * k1, k1 * c[3]};
+    float c0[4], c1[4];
+    const float k = piece_colours(d, c0, c1);
     emit_line2(out, kLineWidthUnit, d.p0, d.p1, c0, c1);
     // A light at the middle, size twice the length, colour * k * 18
     // (dat_82002728).
     const float g = k * 18.0f;
+    const float* c = d.colour;
     const float lc[3] = {c[0] * g, c[1] * g, c[2] * g};
     emit_light(lights, d.length * 2.0f, (d.p1.x + d.p0.x) * 0.5f, (d.p1.y + d.p0.y) * 0.5f, lc);
+  }
+}
+
+void Debris::draw_between(LineBatch& out, float s) const {
+  auto lerp = [s](const Vec4& a, const Vec4& b) {
+    return Vec4{a.x + (b.x - a.x) * s, a.y + (b.y - a.y) * s, a.z + (b.z - a.z) * s, a.w + (b.w - a.w) * s};
+  };
+  for (const DebrisPiece& d : pieces_) {
+    float c0[4], c1[4];
+    piece_colours(d, c0, c1);
+    emit_line2(out, kLineWidthUnit, lerp(d.q0, d.p0), lerp(d.q1, d.p1), c0, c1);
   }
 }
 

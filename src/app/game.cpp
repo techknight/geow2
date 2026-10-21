@@ -201,6 +201,7 @@ void spawn_player(Game& g, size_t k) {
   s.weapon = PlayerWeapon{};
   s.shield_time = s.magnet_time = s.freeze_time = 0.0f;
   s.label = s.label_time = 0.0f;
+  s.serial = ++g.spawns;
   player_spawned(s.life);
   PlayerTarget& t = g.world->players[k];
   const int chain = t.gate_chain;
@@ -488,26 +489,38 @@ void draw_player(const Game& g, const Ship& sh, LineBatch& out) {
   }
 }
 
+}  // namespace
+
 // The foreground lines: the enemies' models, the shots' shapes
 // (sub_82061908) in their colour and the players, each line coloured as
 // sub_82061DA0 does (line colour times the draw colour) with the model's
 // cap size.
-void foreground(const Game& g, LineBatch& out) {
+void foreground(const Game& g, LineBatch& out, bool debris) {
   out.clear();
   // The pre-render pass's list order: enemies, shots, then the players.
+  // Each object's lines are marked with its key (LineBatch::mark).
   g.world->draw_entities(out);
   // The glow sprite of the shots is not drawn yet.
-  for (const Bullet& b : g.bullets)
+  for (const Bullet& b : g.bullets) {
+    out.mark(b.order);
     for (const Segment& s : bullet_segments(b, g.bullet_shape, *g.gm))
       emit_line(out, kLineWidthUnit, kShapeCapSize, s.a, s.b, b.colour);
-  for (size_t k : g.player_list) draw_player(g, g.ships[k], out);
+  }
+  for (size_t k : g.player_list) {
+    out.mark(kShipKey + g.ships[k].serial);
+    draw_player(g, g.ships[k], out);
+  }
   draw_labels(g, out);
   // Pacifism's edge marks (sub_8204FBA8, after the player's list).
+  out.mark(kNoBlend);
   draw_edges(g, out);
+  if (!debris) return;
   // The debris batches (drawn with the same presets, before the objects).
   out.body.insert(out.body.end(), g.debris_lines.body.begin(), g.debris_lines.body.end());
   out.caps.insert(out.caps.end(), g.debris_lines.caps.begin(), g.debris_lines.caps.end());
 }
+
+namespace {
 
 // sub_82034408(reason): the end countdown, 1.5 seconds (dat_82000C90), a
 // second more when an achievement hint is on screen (single player: King
@@ -933,6 +946,7 @@ void draw_labels(const Game& g, LineBatch& out) {
       const float d = 10.0f - g.elapsed;
       const float a = std::clamp(d, 0.0f, 1.0f);
       const float c[4] = {e->colour[0] * a, e->colour[1] * a, e->colour[2] * a, e->colour[3] * a};
+      out.mark(kLabelKey | e->order);
       g.font.world_left(out, e->x + 16.0f, e->y - 3.0f, 6.0f, 6.0f, c, g.text(0x8D));  // dat_82001104, dat_820006F8, dat_82001414
     }
   }
@@ -946,6 +960,7 @@ void draw_labels(const Game& g, LineBatch& out) {
       const float a = sh.label;
       const float c[4] = {tint[0] * a, tint[1] * a, tint[2] * a, tint[3] * a};
       const float dx = 0.0f < sh.life.shield ? 14.0f : 11.0f;  // dat_82001E8C, dat_820011F4
+      out.mark(kLabelKey | (kShipKey + sh.serial));
       g.font.world_left(out, sh.motion.x + dx, sh.motion.y - 3.0f, 6.0f, 6.0f, c, text);
     }
   }
@@ -1217,6 +1232,7 @@ void start_multiplayer(Game& g, int mode, bool versus) { begin_game(g, mode, tru
 
 static void begin_game(Game& g, int mode, bool multiplayer, bool versus) {
   World& w = *g.world;
+  ++g.scene;
   // The game block's reset (sub_820348E8) and the mode's setup.
   g.rules = mode_rules(mode);
   g.leader = -1;
@@ -1347,6 +1363,7 @@ void award_achievement(Game& g, uint32_t bit, int flags) {
 }
 
 void delete_objects(Game& g) {
+  ++g.scene;
   g.world->delete_objects();
   g.bullets.clear();
   for (Ship& s : g.ships) {

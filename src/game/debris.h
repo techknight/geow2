@@ -25,6 +25,8 @@ struct DebrisPiece {
   float length = 0.0f;
   float life = 0.0f, life_total = 0.0f;
   float colour[4] = {0, 0, 0, 0};
+  // The port's, for drawing between steps: both ends before the last step.
+  Vec4 q0, q1;
 };
 
 // The line debris of a destroyed model (Render.Layer.Smash): a pool of 1024
@@ -47,6 +49,9 @@ class Debris {
   // sub_82074600: each piece as a line brighter at its nearer end, fading
   // over its last second, and a light sprite at its middle.
   void draw(LineBatch& out, std::vector<LightVertex>& lights) const;
+  // The same lines (no lights) a fraction `s` of the way from the ends
+  // before the last step to the ends now (the port's smooth motion).
+  void draw_between(LineBatch& out, float s) const;
 
   size_t size() const { return pieces_.size(); }
 

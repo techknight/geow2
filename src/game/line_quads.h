@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include "game/math.h"
@@ -15,15 +16,31 @@ struct LineVertex {
   float r, g, b, a;
 };
 
+// Where one object's lines start in a batch, for drawing between steps
+// (the port's smooth motion): `key` names the object from step to step
+// (kNoBlend: lines drawn as they are).
+struct LineRange {
+  uint64_t key;
+  uint32_t body, caps;
+};
+inline constexpr uint64_t kNoBlend = 0;
+// Keys besides the object list's creation order (Entity::order).
+inline constexpr uint64_t kShipKey = uint64_t(1) << 62;   // plus Ship::serial
+inline constexpr uint64_t kLabelKey = uint64_t(1) << 63;  // plus the labelled object's key
+
 // The two batches every line goes into: the body quads (batch 0x821A3088)
 // and the end caps (batch 0x821A38C8), four vertices per quad.
 struct LineBatch {
   std::vector<LineVertex> body;
   std::vector<LineVertex> caps;
+  std::vector<LineRange> ranges;  // in order; the lines before the first are kNoBlend
   void clear() {
     body.clear();
     caps.clear();
+    ranges.clear();
   }
+  // The lines from here on, to the next mark, are the object `key`'s.
+  void mark(uint64_t key) { ranges.push_back({key, uint32_t(body.size()), uint32_t(caps.size())}); }
 };
 
 // Render.LineWidth.Unit (variable 0x821A1D94, value at 0x821A1DB4, default

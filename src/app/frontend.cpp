@@ -425,7 +425,12 @@ void Frontend::tips_continue(TextLayout& l) const {
 }
 
 void Frontend::adjust_label(TextLayout& l, int name, const std::string& value, bool left, bool right) const {
-  if (auto* f = l.add(palette_[kUiNormal], format("%s: ", text_(name).c_str()))) f->align = 3;
+  adjust_label(l, text_(name), value, left, right);
+}
+
+void Frontend::adjust_label(TextLayout& l, const std::string& name, const std::string& value, bool left,
+                            bool right) const {
+  if (auto* f = l.add(palette_[kUiNormal], format("%s: ", name.c_str()))) f->align = 3;
   if (left)
     if (auto* f = l.add(palette_[kUiHighlight], "\x09")) f->pad_after = 4.0f;
   l.add(palette_[kUiNormal], value);
@@ -1362,6 +1367,24 @@ void Frontend::settings() {
         if (d == 1) adjust_label(l, 0x1A, text_(0x27), true, false);
       },
       {}, true);
+  // The port's smooth motion above 60 Hz (no original: DIFFERENCES.md,
+  // Frame timing), in English like the Online scores item.
+  if (hooks_.smooth && hooks_.set_smooth)
+    add_item(
+        0,
+        [this](const MenuInput& in, int, int) {
+          const bool on = hooks_.smooth();
+          if (((in.pressed & kLeft) && on) || ((in.pressed & kRight) && !on)) {
+            hooks_.set_smooth(!on);
+            reset_pulse();
+            sound(audio::Event::kUiConfirm);
+          }
+        },
+        [this](TextLayout& l) {
+          const bool on = hooks_.smooth();
+          adjust_label(l, std::string("Smooth motion"), on ? "On" : "Off", on, !on);
+        },
+        {}, true);
 }
 
 void Frontend::credits() {

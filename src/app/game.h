@@ -132,6 +132,9 @@ struct Ship {
   // (+0xF0): "player" (0) in single player, player1..4 (1..4) else.
   int model_look = 0;
   int colour_look = 0;
+  // The port's: a number for each spawn (Game::spawns), so that drawing
+  // between steps never blends a new ship with the one before.
+  uint64_t serial = 0;
 };
 
 // Everything the game keeps: the user's data, the playfield and its
@@ -197,6 +200,11 @@ struct Game {
   std::vector<LineVertex> particle_quads;  // this step's particle streaks
   LineBatch debris_lines;                  // this step's line debris
   LineBatch linger_lines;                  // this step's lingering numbers
+  // The port's, for drawing between steps: ships spawned so far, and the
+  // scene's number (a new game or the objects deleted start a new one,
+  // which is never blended with the last).
+  uint64_t spawns = 0;
+  uint32_t scene = 0;
   // Enemies: the units of Data.bin, the playfield and Deadline's spawner.
   std::unique_ptr<Units> units;
   std::unique_ptr<World> world;
@@ -319,6 +327,9 @@ void draw_game_hud(const Game& g, LineBatch& out, const HudFriends* friends = nu
 // One simulation step (sub_820366A0) with this step's input, by joined
 // index (dat_8219CE90).
 void step(Game& g, std::span<const Sticks> pads);
+// The foreground lines of the frame (its objects marked), with the line
+// debris unless `debris` is false.
+void foreground(const Game& g, LineBatch& out, bool debris = true);
 // The frame's picture into `target` (w x h).
 void render(Renderer& r, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTextureFormat format,
             uint32_t w, uint32_t h, const Game& g, const UiCanvas& ui);

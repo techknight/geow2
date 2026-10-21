@@ -102,6 +102,10 @@ class Frontend {
     // score log behind the boards and the online scores).
     std::function<void(int mode, int64_t score, int multiplier, const std::string& name)> scored;
     std::function<void()> quit;          // the main menu's Quit (the original's "Return to arcade")
+    // The port's smooth motion setting (display.txt), shown in Settings
+    // when set.
+    std::function<bool()> smooth;
+    std::function<void(bool)> set_smooth;
   };
   Frontend(Game& g, const UiText& text, Profile& profile, std::array<LocalBoard, 6>& boards, Hooks hooks);
 
@@ -267,6 +271,7 @@ class Frontend {
   void tips_adjust(TextLayout& l) const;    // sub_82086740
   void tips_continue(TextLayout& l) const;  // sub_8208F6B8
   void adjust_label(TextLayout& l, int name, const std::string& value, bool left, bool right) const;  // sub_82090A98
+  void adjust_label(TextLayout& l, const std::string& name, const std::string& value, bool left, bool right) const;
 
   Game& g_;
   const UiText& text_;

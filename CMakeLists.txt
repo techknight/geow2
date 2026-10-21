@@ -77,6 +77,7 @@ target_link_libraries(geow2_data PUBLIC geow2_extract)
 # Game logic and content built from the original data (no rendering, no platform code).
 add_library(geow2_game STATIC
   src/game/amoeba.cpp
+  src/game/blend.cpp
   src/game/bloom_weights.cpp
   src/game/bullets.cpp
   src/game/camera.cpp
@@ -188,7 +189,7 @@ if(GEOW2_BUILD_GAME)
   # A window program on Windows (no console), an app bundle on macOS.
   add_executable(geow2 WIN32 MACOSX_BUNDLE
     src/app/console.cpp src/app/frontend.cpp src/app/game.cpp src/app/main.cpp src/app/png.cpp src/app/renderer.cpp
-    src/app/online.cpp src/app/setup.cpp)
+    src/app/online.cpp src/app/setup.cpp src/app/smooth.cpp)
   target_link_libraries(geow2 PRIVATE geow2_game geow2_audio geow2_net SDL3::SDL3-static)
   add_dependencies(geow2 geow2_shaders)
   geow2_windows_resources(geow2 "geow2")

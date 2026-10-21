@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 
+#include "game/blend.h"
 #include "game/bloom_weights.h"
 #include "game/bullets.h"
 #include "game/camera.h"
@@ -398,6 +399,64 @@ static void test_bloom_weights() {
   expect(near(k2[0], 0.25f) && near(k2[4], 1.0f / 1024.0f), "level weights: precision powers");
 }
 
+static void test_blend() {
+  // Two steps of a batch: object 7 moved by (10, 0) with one line both
+  // times, object 9 new, object 8 with a line more, and unmarked lines.
+  auto vertex = [](float x, float y) { return LineVertex{x, y, 0.0f, 1.0f, 0.5f, 0.5f, 0.5f, 1.0f}; };
+  LineBatch prev, cur;
+  prev.body = {vertex(-1, -1)};
+  prev.mark(7);
+  prev.body.insert(prev.body.end(), {vertex(0, 0), vertex(0, 4)});
+  prev.caps = {vertex(0, 0)};
+  prev.mark(8);
+  prev.body.push_back(vertex(50, 50));
+  cur.body = {vertex(-2, -2)};
+  cur.mark(7);
+  cur.body.insert(cur.body.end(), {vertex(10, 0), vertex(10, 4)});
+  cur.caps = {vertex(10, 0)};
+  cur.body.back().r = 0.25f;
+  cur.mark(9);
+  cur.body.push_back(vertex(30, 30));
+  cur.mark(8);
+  cur.body.insert(cur.body.end(), {vertex(60, 60), vertex(61, 61)});
+  LineBlend blend;
+  LineBatch out;
+  blend.blend(prev, cur, 0.25f, out);
+  expect(out.body.size() == cur.body.size() && out.caps.size() == 1, "blend keeps this step's lines");
+  expect(out.body[0].x == -2.0f, "unmarked lines as now");
+  expect(out.body[1].x == 2.5f && out.body[2].x == 2.5f && out.body[2].y == 4.0f && out.caps[0].x == 2.5f,
+         "an object's lines a quarter of the way");
+  expect(out.body[2].r == 0.25f, "colours as now");
+  expect(out.body[3].x == 30.0f, "a new object as now");
+  expect(out.body[4].x == 60.0f && out.body[5].x == 61.0f, "an object whose lines changed as now");
+  blend.blend(prev, cur, 1.0f, out);
+  expect(out.body[1].x == 10.0f && out.caps[0].x == 10.0f, "blend at 1 is this step");
+
+  std::vector<GridVertex> ga{{0, 0, 0, 0, 0, 1, 1}, {4, 0, 0, 0, 0, 1, 1}}, gb{{2, 2, 0, 0, 0, 0.5f, 1}, {4, 0, 0, 0, 0, 1, 1}};
+  std::vector<GridVertex> gout;
+  blend_grid(ga, gb, 0.5f, gout);
+  expect(gout[0].x == 1.0f && gout[0].y == 1.0f && gout[0].alpha == 0.5f && gout[1].x == 4.0f, "grid blend");
+  gb.pop_back();
+  blend_grid(ga, gb, 0.5f, gout);
+  expect(gout.size() == 1 && gout[0].x == 2.0f, "grid of another size as now");
+
+  // A streak from (0, 0) to (6, 8), its quad 0.5 beyond each end along it:
+  // at s = 0.5 drawn moved back by (3, 4).
+  const float lh = 0.5f, ux = 0.6f, uy = 0.8f;
+  std::vector<LineVertex> q{{-lh * ux, -lh * uy, 1.0f, -1, 1, 1, 1, -1}, {-lh * ux, -lh * uy, 1.0f, 1, 1, 1, 1, -1},
+                            {6 + lh * ux, 8 + lh * uy, 3.0f, 1, 1, 1, 1, 1}, {6 + lh * ux, 8 + lh * uy, 3.0f, -1, 1, 1, 1, 1}};
+  std::vector<LineVertex> qs;
+  shift_streaks(q, lh, 0.5f, qs);
+  expect(near(qs[3].x, 3.0f + lh * ux) && near(qs[3].y, 4.0f + lh * uy) && near(qs[0].x, -3.0f - lh * ux) &&
+             near(qs[3].z, 2.0f),
+         "streak moved back along its move");
+  shift_streaks(q, lh, 1.0f, qs);
+  expect(qs[2].x == q[2].x && qs[0].y == q[0].y, "streak at 1 as now");
+
+  const CameraState c = blend_camera({0, 10, 1}, {4, 20, 2}, 0.5f);
+  expect(c.x == 2.0f && c.y == 15.0f && c.zoom == 1.5f, "camera blend");
+}
+
 static void test_grid_lines() {
   // A grid at rest: interior lines only, 87 * 132 horizontal and 88 * 131
   // vertical quads; every 8th line uses alpha level 0.
@@ -786,6 +845,7 @@ int main() {
   test_world();
   test_walls();
   test_grid_lines();
+  test_blend();
   test_light_sprites();
   test_display_gamma();
   test_line_quads();

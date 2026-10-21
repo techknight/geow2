@@ -240,8 +240,10 @@ Format for each entry:
   differs slightly. `--720p` instead renders exactly the original's
   1280x720 frame and scales it (bilinear) into the window. Fullscreen
   (F11) and vsync are the player's choice. The simulation always runs at
-  the original's tick rate and is never interpolated.
-- **Decided**: 2026-10-14; bloom sizes, 720p mode 2026-10-15.
+  the original's tick rate and is never interpolated; on displays faster
+  than 60 Hz the pictures between steps can be (Frame timing).
+- **Decided**: 2026-10-14; bloom sizes, 720p mode 2026-10-15; smooth
+  motion 2026-10-21.
 
 ### Frame timing
 
@@ -259,7 +261,24 @@ Format for each entry:
   displays (144 Hz, say) or with vsync off, steps are taken from real time, 60 a second, with frame times
   snapped to the refresh period; after a slow frame the missed steps are
   run before the next picture (at most 8 at once). There is no 50 Hz mode.
-- **Decided**: 2026-10-15; locking to the refresh 2026-10-16.
+  Smooth motion (on unless turned off in Help and options, Settings, or
+  with `--no-smooth`): wherever the display shows more than one picture
+  per step, those pictures are drawn between the last step and this one,
+  a frame at a fraction s of the way showing step N-1+s (on a locked
+  display the step's own frame shows 1/k of the way and the last before
+  the next step this step; else s is the time since the step). Blended:
+  the camera, each object's lines (enemies, shots, ships, their labels;
+  matched by the object, so a new object or one whose lines changed is
+  drawn as it is, and a ship that respawns is a new object), the grid,
+  the particles (each streak moved back along its own move) and the line
+  debris. Held at the step: the stars, the lingering numbers, the light
+  map (its feedback stays one update per step), the HUD and the menus.
+  Nothing is blended while the game is frozen, across a new game, or on a
+  display at 60 Hz, whose pictures are the original's. The cost is up to
+  one step of extra lag on the frames between steps (about half a step on
+  average). The simulation never sees the blend.
+- **Decided**: 2026-10-15; locking to the refresh 2026-10-16; smooth
+  motion 2026-10-21.
 
 ### Reciprocal estimates
 

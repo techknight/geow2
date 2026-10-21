@@ -95,10 +95,14 @@ window (`--native` goes back to rendering at the window's size);
 `--no-vsync` and `--vsync` choose the presentation. These choices are
 remembered.
 
-With vsync on a 60 Hz display the game takes one simulation step per
-frame, as the original does (on 120 or 240 Hz, one every second or fourth
-frame). At other refresh rates, such as 90 or 144 Hz, it steps from the
-clock, which can judder slightly; 60 Hz gives the smoothest picture.
+The game always runs at the original's 60 steps a second. With vsync on a
+60 Hz display it takes one step per frame, exactly as the original does.
+On faster displays (90, 120, 144 Hz and up) smooth motion draws the
+frames in between, so motion is as fluid as the display allows; the game
+itself is untouched, and the picture runs a few milliseconds behind. To
+see only the original's 60 pictures a second, turn Smooth motion off in
+Help and options, Settings (or start once with `--no-smooth`; `--smooth`
+turns it back on).
 
 A game pauses when its window is minimised or loses the focus, as the
 original does when the console's guide opens.
@@ -149,8 +153,6 @@ which also works on other Linux systems:
 2. Start geow2 from the application menu and choose your copy of the game
    on a USB stick or microSD card. It makes its data folder once.
 3. Right-click geow2 in the application menu and choose "Add to Steam".
-4. On the OLED Deck, set the refresh rate to 60 Hz in the performance
-   menu (the "..." button).
 
 Updates then come through Discover (or `flatpak update`). A data folder
 made on a PC can instead go to
@@ -171,9 +173,6 @@ first; the Deck then needs neither FFmpeg nor your package.
    version in the game's Properties under Compatibility; the Linux build
    needs no compatibility tool. Optionally add the launch option
    `--profile profile` to keep your saves next to the game.
-4. The OLED Deck's screen runs at 90 Hz: set the game's refresh rate to
-   60 Hz in the performance menu (the "..." button) for the smoothest
-   picture.
 
 The Deck's 1280x800 screen shows the 16:9 picture with thin bars above
 and below. To update the game, copy the new release over the old one;

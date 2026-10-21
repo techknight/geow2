@@ -320,7 +320,10 @@ void World::draw_entities(LineBatch& out) {
   // Slot 2 for models; the others draw their shape table (sub_82061908),
   // which only the beam ghost uses so far.
   for (auto& p : entities)
-    if (!(p->flags & kEntityRemoved)) p->draw(*this, out);
+    if (!(p->flags & kEntityRemoved)) {
+      out.mark(p->order);
+      p->draw(*this, out);
+    }
 }
 
 const PlayerTarget* World::nearest_player(const Entity& e) const {
