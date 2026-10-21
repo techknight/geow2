@@ -14,6 +14,7 @@
 #include "game/gate.h"
 #include "game/gravity_well.h"
 #include "game/grid.h"
+#include "game/hud.h"
 #include "game/light_map.h"
 #include "game/line_quads.h"
 #include "game/model_geometry.h"
@@ -721,6 +722,28 @@ void test_sequence_parser() {
          "script lines, comments cut at ';'");
 }
 
+void test_board_high() {
+  // A friends board, best first; the player ("Me") fourth.
+  const std::vector<std::pair<std::string, int64_t>> rows = {
+      {"Kim", 9000}, {"Jo", 5000}, {"Bo", 3000}, {"Me", 1000}, {"Lee", 500}};
+  auto high = [&](int own, int64_t score, bool pb) { return board_high(rows, own, score, pb, "Me"); };
+  BoardHigh h = high(3, 0, false);
+  expect(h.score == 3000 && h.label == "Bo", "next friend: the row above the player's");
+  h = high(3, 3000, false);
+  expect(h.score == 3000 && h.label == "Bo", "next friend: an equal score is not passed");
+  h = high(3, 3001, false);
+  expect(h.score == 5000 && h.label == "Jo", "next friend: past one, the next up");
+  h = high(3, 20000, false);
+  expect(h.score == 9000 && h.label == "Kim", "next friend: past everyone, the top row");
+  h = high(0, 0, false);
+  expect(h.score == 9000 && h.label == "Kim", "next friend: the player at the top sees their own row");
+  h = high(-1, 0, false);
+  expect(h.score == 9000, "next friend: no row of the player's, the top row");
+  h = high(3, 20000, true);
+  expect(h.score == 1000 && h.label == "Me", "personal best: the player's row, under their name, not raised");
+  expect(board_high({{"Me", 0}}, 0, 50, true, "Me").score == 0, "personal best: no score on the board");
+}
+
 void test_profile() {
   Profile p;
   expect(p.mode_unlocked(0) && !p.mode_unlocked(5) && p.index_new(1), "fresh profile: Deadline only, new");
@@ -752,6 +775,7 @@ void test_profile() {
 }
 
 int main() {
+  test_board_high();
   test_profile();
   test_score_log();
   test_sequence_parser();

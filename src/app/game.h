@@ -290,8 +290,18 @@ struct GameAudioState {
   double score = 0.0;
 };
 GameAudioState audio_state(const Game& g);
-// sub_8207CA48: the single-player HUD into `out`.
-void draw_game_hud(const Game& g, LineBatch& out);
+// The friends board of the HUD's Live branch (sub_8208BBF8 true): with a
+// score server, the group's board for the mode, best first, holding the
+// player's row (`own`); names ready for the font.
+struct HudFriends {
+  std::vector<std::pair<std::string, int64_t>> rows;  // name, best score
+  int own = -1;
+  std::string player;          // the signed-in player's name (the profile's gamertag, q + 0xC)
+  bool personal_best = false;  // the profile's score display (+0xC): 1 Personal Best, 0 Next Friend
+};
+// sub_8207CA48: the single-player HUD into `out`; `friends` when there is a
+// group board.
+void draw_game_hud(const Game& g, LineBatch& out, const HudFriends* friends = nullptr);
 // One simulation step (sub_820366A0) with this step's input, by joined
 // index (dat_8219CE90).
 void step(Game& g, std::span<const Sticks> pads);

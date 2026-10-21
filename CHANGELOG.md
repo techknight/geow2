@@ -9,6 +9,9 @@
   pairing link that can't be shown as a QR code no longer crashes the
   game), and the file holding the device's token is private on Linux and
   macOS.
+- Online scores: the score at the top right in a game follows Help and
+  options, Score display, as on Xbox Live: Next Friend shows the score of
+  the next person in your group to beat, Personal Best your own best.
 
 ## 1.1.2
 

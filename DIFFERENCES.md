@@ -94,6 +94,12 @@ Format for each entry:
       player's row highlighted (with "-" when they have no score in the
       mode, as a friend without a score shows on Live), scrolled with the
       right stick and LB/LT, RB/RT (`sub_8208D918`).
+    - the HUD's top-right score follows the options' Score display as on
+      Live (`sub_8207CA48`): Next Friend shows the nearest group member
+      above whose score this game hasn't passed, under their name;
+      Personal Best the player's best on the group's board, under their
+      name. Unpaired, it is the session's best labelled Highscore, as the
+      original offline.
 
   Nothing is sent before a device is paired, and an unpaired game never
   connects; unpaired, the screens are as in "Xbox Live leaderboards and

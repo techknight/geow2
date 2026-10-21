@@ -287,7 +287,7 @@ void Frontend::request_game(int mode) {
   // sub_8208D410: only an unlocked mode; the HUD becomes the screen, then
   // sub_820334F8 (state 1 with that pad) and sub_82033148 at once.
   if (!profile_.mode_unlocked(mode)) return;
-  open(0, {}, [this](UiCanvas& c) { draw_game_hud(g_, c.lines); }, false, {}, 0);
+  open(0, {}, [this](UiCanvas& c) { game_hud(c); }, false, {}, 0);
   game_pad_ = menu_pad_ >= 0 ? menu_pad_ : 0;
   start_game(g_, mode);  // (and the game music, sub_82078A50(1))
   g_.joined_pad[0] = game_pad_;
@@ -933,6 +933,25 @@ void Frontend::mode_select_update(const MenuInput& in) {
   default_handler(rest);
 }
 
+// The HUD (sub_8207CA48) with the group's board as its friends board when
+// there is a score server.
+HudFriends Frontend::hud_friends() const {
+  HudFriends f;
+  if (!online_ || !online_->paired() || g_.multiplayer) return f;
+  int own = -1;
+  for (const GroupRow& r : tile_board(std::clamp(g_.rules.mode, 0, 5), own))
+    f.rows.emplace_back(display_name(r.name), r.score);
+  f.own = own;
+  f.player = display_name(player_name());
+  f.personal_best = profile_.score_display == 1;
+  return f;
+}
+
+void Frontend::game_hud(UiCanvas& c) const {
+  const HudFriends f = hud_friends();
+  draw_game_hud(g_, c.lines, &f);
+}
+
 // The group's board for a mode select tile: the Friends board's stand-in,
 // which on Live always holds the player (a row without a score when they
 // have none).
@@ -1147,7 +1166,7 @@ void Frontend::how_to_play(bool reset) {
   open(9, [this](const MenuInput&) { help(false); },
        [this, in](UiCanvas& c) {
          if (in)
-           draw_game_hud(g_, c.lines);
+           game_hud(c);
          else
            draw_title_block(c);
        },
@@ -1168,7 +1187,7 @@ void Frontend::how_to_play(bool reset) {
 // Pause
 
 void Frontend::hud_screen() {
-  open(0, {}, [this](UiCanvas& c) { draw_game_hud(g_, c.lines); }, false, {}, 0);
+  open(0, {}, [this](UiCanvas& c) { game_hud(c); }, false, {}, 0);
 }
 
 void Frontend::pause(bool reset) {
@@ -1177,7 +1196,7 @@ void Frontend::pause(bool reset) {
     if (g_.flow == 3) g_.flow = 2;
     hud_screen();
   };
-  open(2, resume, [this](UiCanvas& c) { draw_game_hud(g_, c.lines); }, reset, {}, 0x44);
+  open(2, resume, [this](UiCanvas& c) { game_hud(c); }, reset, {}, 0x44);
   screen_.tips = [this](TextLayout& l) { tips_menu(l); };
   add_item(0x08, [resume](const MenuInput& in, int, int) { resume(in); });
   screen_.items.back().goes_back = true;
@@ -1188,7 +1207,7 @@ void Frontend::pause(bool reset) {
 }
 
 void Frontend::exit_confirm() {
-  open(0, [this](const MenuInput&) { pause(false); }, [this](UiCanvas& c) { draw_game_hud(g_, c.lines); }, false,
+  open(0, [this](const MenuInput&) { pause(false); }, [this](UiCanvas& c) { game_hud(c); }, false,
        {}, 0x72);
   screen_.tips = [this](TextLayout& l) { tips_menu(l); };
   add_item(0x17, [this](const MenuInput&, int, int) { pause(false); });
@@ -1213,7 +1232,7 @@ void Frontend::help(bool reset) {
   open(4, back,
        [this, in](UiCanvas& c) {
          if (in)
-           draw_game_hud(g_, c.lines);
+           game_hud(c);
          else
            draw_title_block(c);
        },
@@ -1281,7 +1300,7 @@ void Frontend::settings() {
   open(0, [this](const MenuInput&) { help(false); },
        [this, in](UiCanvas& c) {
          if (in)
-           draw_game_hud(g_, c.lines);
+           game_hud(c);
          else
            draw_title_block(c);
        },
@@ -1611,7 +1630,7 @@ void Frontend::lobby(bool reset) {
           const bool versus = index % 6 < 3;
           lobby_roles();
           if (joined() < 2) return;
-          open(0, {}, [this](UiCanvas& c) { draw_game_hud(g_, c.lines); }, false, {}, 0);
+          open(0, {}, [this](UiCanvas& c) { game_hud(c); }, false, {}, 0);
           game_pad_ = in.pad >= 0 ? in.pad : (menu_pad_ >= 0 ? menu_pad_ : 0);
           start_multiplayer(g_, mode, versus);
         },
@@ -2182,7 +2201,7 @@ void Frontend::leaderboards(bool reset) {
        },
        [this, in](UiCanvas& c) {
          if (in)
-           draw_game_hud(g_, c.lines);
+           game_hud(c);
          else
            draw_title_block(c);
        },

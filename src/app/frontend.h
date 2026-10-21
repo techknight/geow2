@@ -223,6 +223,8 @@ class Frontend {
   // without one. Empty when not paired.
   std::vector<GroupRow> group_board(int mode, int& own) const;
   std::vector<GroupRow> tile_board(int mode, int& own) const;
+  HudFriends hud_friends() const;
+  void game_hud(UiCanvas& c) const;
 
   // The multiplayer setup (menu 6, sub_820863B0) and its parts.
   void lobby(bool reset);

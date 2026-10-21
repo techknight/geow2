@@ -13,6 +13,8 @@ namespace geow2 {
 struct HudState {
   int64_t score = 0;            // +0x28
   int64_t high_score = 0;       // the mode's best (local table)
+  bool high_board = false;      // the value is a friends board's, shown as it is (not raised to the score)
+  std::string high_label;       // its label instead of ID_X_HIGH_SCORE (a name), when not empty
   int multiplier = 1;           // +0x40
   int bombs = 0;                // +0x34
   int lives = 0;                // +0x30
@@ -41,6 +43,19 @@ struct HudText {
 // (640 x 360) as UI lines. Sequence shows its level's seconds and
 // hundredths left, with lives and bombs either side.
 void draw_hud(const Font& font, const HudText& text, const HudState& s, LineBatch& out);
+
+// sub_8207CA48's high score from a friends board (signed in, the board
+// read): `rows` best first (name, score), `own` the player's row.
+// Personal Best: the player's own best on the board, under their name.
+// Next Friend: from the row above the player's (j = min(max(own - 1, 0),
+// max(count - 1, 0))) up, the first with a score this game's `score` has
+// not passed, else the top row. `rows` must not be empty.
+struct BoardHigh {
+  int64_t score = 0;
+  std::string label;
+};
+BoardHigh board_high(const std::vector<std::pair<std::string, int64_t>>& rows, int own, int64_t score,
+                     bool personal_best, const std::string& player);
 
 // What the multiplayer HUD shows of a score record: the colour id of its
 // first ship (0 none), its ships' player numbers, lives, multiplier and

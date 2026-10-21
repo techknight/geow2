@@ -1716,7 +1716,7 @@ void draw_multiplayer_hud(const Game& g, LineBatch& out) {
   draw_multiplayer_hud(g.font, s, out);
 }
 
-void draw_game_hud(const Game& g, LineBatch& ui) {
+void draw_game_hud(const Game& g, LineBatch& ui, const HudFriends* friends) {
   if (g.record_count > 1) {
     draw_multiplayer_hud(g, ui);
     return;
@@ -1741,6 +1741,14 @@ void draw_game_hud(const Game& g, LineBatch& ui) {
   hud.clock = g.elapsed;
   hud.length = g.rules.length;
   hud.lives_mode = g.rules.lives_mode;
+  // The Live branch (signed in, the friends board read; not co-op): the
+  // value and its label from the board instead (board_high).
+  if (friends && !g.multiplayer && !friends->rows.empty()) {
+    const BoardHigh b = board_high(friends->rows, friends->own, hud.score, friends->personal_best, friends->player);
+    hud.high_board = true;
+    hud.high_score = b.score;
+    hud.high_label = b.label;
+  }
   draw_hud(g.font, g.hud_text, hud, ui);
   // The achievement hints under the field (single player, not paused):
   // King's zones while nothing fired and no shield kill (from 10, text 0xA3 / 0xA4)

@@ -178,9 +178,19 @@ void draw_hud(const Font& font, const HudText& text, const HudState& s, LineBatc
   // Score and high score (the label is the format string).
   font.left(out, 36.0f, 22.0f, 11.0f, 7.5f, kNormal, text.score);
   font.left(out, 36.0f, 34.0f, 11.0f, 12.0f, kNormal, format_number(s.score));
-  const int64_t high = s.score > s.high_score ? s.score : s.high_score;
-  font.right_fit(out, 604.0f, 22.0f, 11.0f, 7.5f, 160.0f, kNormal, text.high_score);
+  const int64_t high = s.high_board || s.score <= s.high_score ? s.high_score : s.score;
+  font.right_fit(out, 604.0f, 22.0f, 11.0f, 7.5f, 160.0f, kNormal, s.high_label.empty() ? text.high_score : s.high_label);
   font.right(out, 604.0f, 34.0f, 11.0f, 12.0f, kNormal, format_number(high));
+}
+
+BoardHigh board_high(const std::vector<std::pair<std::string, int64_t>>& rows, int own, int64_t score,
+                     bool personal_best, const std::string& player) {
+  const int count = int(rows.size());
+  if (personal_best) return {own >= 0 && own < count ? rows[size_t(own)].second : 0, player};
+  for (int j = std::min(std::max(own - 1, 0), std::max(count - 1, 0));; --j) {
+    const auto& row = rows[size_t(j)];
+    if (j == 0 || (row.second > 0 && score <= row.second)) return {row.second, row.first};
+  }
 }
 
 }  // namespace geow2
