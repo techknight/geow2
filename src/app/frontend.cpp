@@ -6,6 +6,7 @@
 #include "audio/events.h"
 #include "game/rotation.h"
 #include "game/fused.h"
+#include "version.h"
 
 namespace geow2 {
 namespace {
@@ -2510,6 +2511,8 @@ void Frontend::online_screen(bool reset) {
          ui_bar(c, P, 18.0f, 40.0f);
          font.centre_fit(c.lines, 320.0f, 24.0f, 15.0f, 10.0f, 540.0f, P[kUiNormal].data(), "Online scores");
          ui_panel(c, 28.0f, 46.0f, 612.0f, cursor_, P[kUiBackground], 0);
+         // This copy's version, for a group comparing clients.
+         font.right(c.lines, 600.0f, cursor_ - 14.0f, 6.0f, 6.0f, P[kUiNormal].data(), "geow2 " GEOW2_VERSION);
          float y = 54.0f;
          auto line = [&](const std::string& s, const Rgba& col, float size = 8.0f) {
            font.left_fit(c.lines, 40.0f, y, size, size, 560.0f, col.data(), s);
