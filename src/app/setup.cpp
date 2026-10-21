@@ -281,7 +281,7 @@ bool run_setup(const fs::path& data_dir, const SetupDev& dev) {
 
   auto intro_buttons = [] {
     return std::vector<Button>{{"Choose the package file", Action::ChooseFile},
-                               {"Choose an extracted folder", Action::ChooseFolder},
+                               {"Choose a folder", Action::ChooseFolder},
                                {"Quit", Action::Quit}};
   };
   std::vector<Button> buttons = intro_buttons();
@@ -439,12 +439,14 @@ bool run_setup(const fs::path& data_dir, const SetupDev& dev) {
                     "geow2 needs the data from your own copy of Geometry Wars: Retro Evolved 2 for Xbox 360 "
                     "(Xbox Live Arcade, title ID 584108FF).", kInk) + 16.0f;
         y = ui.text(kMargin, y, 2.0f,
-                    "Choose the package file (the file in 584108FF/000D0000/) or a folder holding the files "
-                    "extracted from it. geow2 checks every file and makes its data folder from it, once.", kInk) + 16.0f;
+                    "Choose the package file (the file in 584108FF/000D0000/), a folder holding the files "
+                    "extracted from it, or a geow2 data folder from another computer. geow2 checks every file "
+                    "and makes its data folder from it, once.", kInk) + 16.0f;
         if (!ffmpeg)
           y = ui.text(kMargin, y, 2.0f,
-                      "FFmpeg was not found: without it the music and most sounds will be missing. Install FFmpeg "
-                      "(ffmpeg.org) and start geow2 again, or continue without them.", kWarn) + 16.0f;
+                      "FFmpeg was not found: without it the music and most sounds will be missing, unless you "
+                      "choose a geow2 data folder that has them. Install FFmpeg (ffmpeg.org) and start geow2 "
+                      "again, or continue without them.", kWarn) + 16.0f;
         y = ui.text(kMargin, y, 1.5f, "The data folder will be " + data_dir.string(), kDim);
         ui.buttons(buttons, focus, std::max(y + 24.0f, 440.0f));
         break;

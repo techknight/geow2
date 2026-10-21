@@ -117,9 +117,11 @@ Format for each entry:
 - **Port**: when no data folder is found, the game opens a setup window
   of its own (not the game's UI: SDL's 2D renderer and debug font, since
   the game's font is in the data it is about to make). The player chooses
-  the package or an extracted folder with the system's file chooser, and
-  the extractor's code makes the data folder in the user folder, with a
-  progress bar. `geow2-extract` does the same from a terminal.
+  the package, an extracted folder or a data folder made on another
+  computer with the system's file chooser, and the extractor's code makes
+  the data folder in the user folder, with a progress bar (from a data
+  folder it checks the files again and copies the decoded sound, so no
+  FFmpeg is needed). `geow2-extract` does the same from a terminal.
 - **Decided**: 2026-10-19.
 
 ### Profiles, sign-in and player names

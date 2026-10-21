@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Setup accepts a data folder made on another computer (or the folder
+  around it): it checks the files again and copies the sound, so FFmpeg
+  is not needed. Before, it reported the data folder as "not the
+  supported release".
+
 ## 1.2.0
 
 - Smooth motion on displays faster than 60 Hz: on a 90 Hz OLED Steam

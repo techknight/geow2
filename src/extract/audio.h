@@ -49,4 +49,12 @@ bool ffmpeg_available(const ExtractHooks& hooks = {});
 size_t extract_audio(const std::filesystem::path& audio_dir, const std::filesystem::path& out,
                      const ExtractHooks& hooks = {}, double from = 0.0, double to = 1.0);
 
+// Copies the sound that extract_audio made elsewhere (`from`, the `audio`
+// folder of a data folder made on another computer) to `out`, when it has
+// every wave of every bank in `audio_dir` with the index these banks give.
+// Returns false, copying nothing, when it does not.
+bool copy_audio(const std::filesystem::path& audio_dir, const std::filesystem::path& from,
+                const std::filesystem::path& out, const ExtractHooks& hooks = {}, double progress_from = 0.0,
+                double progress_to = 1.0);
+
 }  // namespace geow2

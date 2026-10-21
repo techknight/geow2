@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 
 namespace geow2 {
 namespace {
@@ -146,6 +147,79 @@ Bytes xma1_riff(const BankWave& w) {
   return riff(fmt, w.data);
 }
 
+namespace {
+
+// A bank file with its parsed waves (which point into `file`).
+struct LoadedBank {
+  std::filesystem::path path;
+  Bytes file;
+  Bank bank;
+};
+
+// Every `.baf` bank in `audio_dir`; `total` gets their waves.
+std::vector<LoadedBank> load_banks(const std::filesystem::path& audio_dir, size_t& total) {
+  std::vector<LoadedBank> banks;
+  total = 0;
+  for (const auto& entry : std::filesystem::directory_iterator(audio_dir)) {
+    if (entry.path().extension() != ".baf") continue;
+    LoadedBank& l = banks.emplace_back(LoadedBank{entry.path(), read_file(entry.path()), {}});
+    l.bank = parse_bank(l.file);
+    total += l.bank.waves.size();
+  }
+  return banks;
+}
+
+// A bank's index.txt line for wave `i`.
+std::string index_line(size_t i, const BankWave& w) {
+  char line[160];
+  std::snprintf(line, sizeof line, "%zu %s format %u rate %u channels %u gain %g flags 0x%X\n", i, w.name.c_str(),
+                w.format, w.sample_rate, w.channels, double(w.gain), w.flags);
+  return line;
+}
+
+// Whether `path` starts as a RIFF WAVE file.
+bool looks_like_wav(const std::filesystem::path& path) {
+  std::ifstream in(path, std::ios::binary);
+  char head[12] = {};
+  return in.read(head, sizeof head) && std::memcmp(head, "RIFF", 4) == 0 && std::memcmp(head + 8, "WAVE", 4) == 0;
+}
+
+}  // namespace
+
+bool copy_audio(const std::filesystem::path& audio_dir, const std::filesystem::path& from,
+                const std::filesystem::path& out, const ExtractHooks& hooks, double progress_from, double progress_to) {
+  namespace fs = std::filesystem;
+  size_t total = 0;
+  const std::vector<LoadedBank> banks = load_banks(audio_dir, total);
+  // Every bank's index as these banks give it, and every wave there.
+  for (const LoadedBank& l : banks) {
+    const fs::path dir = from / l.path.stem();
+    std::string index;
+    for (size_t i = 0; i < l.bank.waves.size(); ++i) {
+      index += index_line(i, l.bank.waves[i]);
+      if (!looks_like_wav(dir / (l.bank.waves[i].name + ".wav"))) return false;
+    }
+    std::error_code ec;
+    if (!fs::is_regular_file(dir / "index.txt", ec)) return false;
+    const Bytes have = read_file(dir / "index.txt");
+    if (std::string(have.begin(), have.end()) != index) return false;
+  }
+  size_t done = 0;
+  for (const LoadedBank& l : banks) {
+    const fs::path dir = out / l.path.stem();
+    fs::create_directories(dir);
+    for (const BankWave& w : l.bank.waves) {
+      hooks.step(progress_from + (progress_to - progress_from) * double(done++) / double(std::max<size_t>(total, 1)));
+      fs::copy_file(from / l.path.stem() / (w.name + ".wav"), dir / (w.name + ".wav"),
+                    fs::copy_options::overwrite_existing);
+    }
+    fs::copy_file(from / l.path.stem() / "index.txt", dir / "index.txt", fs::copy_options::overwrite_existing);
+  }
+  hooks.say("audio: " + std::to_string(total) + " waves copied from " + from.string());
+  hooks.step(progress_to);
+  return true;
+}
+
 size_t extract_audio(const std::filesystem::path& audio_dir, const std::filesystem::path& out,
                      const ExtractHooks& hooks, double from, double to) {
   namespace fs = std::filesystem;
@@ -155,21 +229,10 @@ size_t extract_audio(const std::filesystem::path& audio_dir, const std::filesyst
     hooks.say("audio: ffmpeg not found (put it on PATH or set GEOW2_FFMPEG): XMA waves skipped, the game will be "
               "partly silent");
   // The banks first, to count the waves for the progress.
-  struct Loaded {
-    fs::path path;
-    Bytes file;
-    Bank bank;
-  };
-  std::vector<Loaded> banks;
   size_t total = 0;
-  for (const auto& entry : fs::directory_iterator(audio_dir)) {
-    if (entry.path().extension() != ".baf") continue;
-    Loaded& l = banks.emplace_back(Loaded{entry.path(), read_file(entry.path()), {}});
-    l.bank = parse_bank(l.file);
-    total += l.bank.waves.size();
-  }
+  const std::vector<LoadedBank> banks = load_banks(audio_dir, total);
   size_t written = 0, skipped = 0, done = 0;
-  for (const Loaded& l : banks) {
+  for (const LoadedBank& l : banks) {
     const Bank& bank = l.bank;
     const fs::path dir = out / l.path.stem();
     fs::create_directories(dir);
@@ -177,10 +240,7 @@ size_t extract_audio(const std::filesystem::path& audio_dir, const std::filesyst
     for (size_t i = 0; i < bank.waves.size(); ++i) {
       hooks.step(from + (to - from) * double(done++) / double(std::max<size_t>(total, 1)));
       const BankWave& w = bank.waves[i];
-      char line[160];
-      std::snprintf(line, sizeof line, "%zu %s format %u rate %u channels %u gain %g flags 0x%X\n", i, w.name.c_str(),
-                    w.format, w.sample_rate, w.channels, double(w.gain), w.flags);
-      index += line;
+      index += index_line(i, w);
       const fs::path wav = dir / (w.name + ".wav");
       if (w.format == 3 && w.bits == 16) {
         // Big-endian 16-bit PCM: swapped to little-endian.

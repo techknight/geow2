@@ -1,7 +1,7 @@
 // geow2-extract: turns the user's Geometry Wars 2 XBLA package into the
 // data folder the port reads.
 //
-//   geow2-extract unpack <package-file | extracted-folder> <data-dir>
+//   geow2-extract unpack <package-file | extracted-folder | data-dir> <data-dir>
 //   geow2-extract verify <data-dir>
 //   geow2-extract audio <data-dir>       (redo the sound only: needs ffmpeg)
 //   geow2-extract dump-db <data-dir>     (developer aid: every Data.bin value)
@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
     const bool help = cmd == "--help" || cmd == "-h";
     std::fprintf(help ? stdout : stderr,
                  "geow2-extract %s\n"
-                 "usage:\n  geow2-extract unpack <package-file | extracted-folder> <data-dir>\n"
+                 "usage:\n  geow2-extract unpack <package-file | extracted-folder | data-dir> <data-dir>\n"
                  "  geow2-extract verify <data-dir>\n  geow2-extract audio <data-dir>\n"
                  "  geow2-extract --version\n",
                  GEOW2_VERSION);

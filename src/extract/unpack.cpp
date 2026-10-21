@@ -70,13 +70,23 @@ void write_xex(const Bytes& xex, const fs::path& dir, const ExtractHooks& hooks)
   hooks.say(line);
 }
 
+// The folder holding the package's files: `source` itself, or the `files`
+// folder of a data folder made by geow2 (`source`, or a `data` folder in
+// it, as when a data folder is copied with the folder around it).
+fs::path package_folder(const fs::path& source) {
+  for (const char* rel : {"default.xex", "files/default.xex", "data/files/default.xex"})
+    if (const auto p = find_nocase(source, rel); p && fs::is_regular_file(*p)) return p->parent_path();
+  return source;
+}
+
 }  // namespace
 
 std::map<std::string, Bytes> collect_package(const fs::path& source, const ExtractHooks& hooks) {
   std::map<std::string, Bytes> files;
   if (fs::is_directory(source)) {
+    const fs::path folder = package_folder(source);
     for (const auto& k : kKnownFiles)
-      if (const auto p = find_nocase(source, k.path); p && fs::is_regular_file(*p)) files[k.path] = read_file(*p);
+      if (const auto p = find_nocase(folder, k.path); p && fs::is_regular_file(*p)) files[k.path] = read_file(*p);
     return files;
   }
   Bytes pkg = read_file(source);
@@ -117,8 +127,15 @@ int unpack(const fs::path& source, const fs::path& data_dir, const ExtractHooks&
   write_xex(files.at("default.xex"), data_dir / "xex", hooks);
   hooks.say("unpacked " + std::to_string(std::size(kKnownFiles)) + " files to " + data_dir.string());
   hooks.step(0.2);
-  // The sound banks as PCM (XMA through ffmpeg).
-  extract_audio(data_dir / "files" / "audio", data_dir / "audio", hooks, 0.2, 1.0);
+  // The sound banks as PCM: copied from a data folder that has them all,
+  // else decoded (XMA through ffmpeg).
+  const fs::path banks = data_dir / "files" / "audio";
+  if (fs::is_directory(source)) {
+    const fs::path folder = package_folder(source);
+    if (folder != source && copy_audio(banks, folder.parent_path() / "audio", data_dir / "audio", hooks, 0.2, 1.0))
+      return 0;
+  }
+  extract_audio(banks, data_dir / "audio", hooks, 0.2, 1.0);
   return 0;
 }
 

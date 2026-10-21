@@ -71,8 +71,8 @@ static void be32_put(Bytes& b, uint32_t v) {
   for (int i = 3; i >= 0; --i) b.push_back(uint8_t(v >> (8 * i)));
 }
 
-static void test_bank() {
-  // A made-up bank: one 16-bit PCM wave of two samples.
+// A made-up bank: one 16-bit PCM wave of two samples.
+static Bytes made_up_bank() {
   Bytes f;
   for (char c : std::string("BANK")) f.push_back(uint8_t(c));
   be32_put(f, 0x34);
@@ -101,6 +101,11 @@ static void test_bank() {
   for (char c : std::string("DATA")) f.push_back(uint8_t(c));
   be32_put(f, 12);
   for (int v : {0x12, 0x34, 0x56, 0x78}) f.push_back(uint8_t(v));
+  return f;
+}
+
+static void test_bank() {
+  const Bytes f = made_up_bank();
   const Bank bank = parse_bank(f);
   expect(bank.name == "Test" && bank.waves.size() == 1 && bank.waves[0].name == "beep" && bank.waves[0].format == 3 &&
              bank.waves[0].sample_rate == 48000 && bank.waves[0].channels == 1 && bank.waves[0].gain == 1.0f &&
@@ -108,6 +113,28 @@ static void test_bank() {
          "bank parse");
   const Bytes x = xma1_riff(bank.waves[0]);
   expect(x.size() == 12 + 8 + 32 + 8 + 4 && x[20] == 0x65 && x[21] == 0x01 && x[49] == 1, "xma1 riff header");
+}
+
+// The sound of a data folder made elsewhere is copied only when complete.
+static void test_copy_audio() {
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() / "geow2_copy_audio_test";
+  fs::remove_all(dir);
+  write_file(dir / "banks" / "Test.baf", made_up_bank());
+  extract_audio(dir / "banks", dir / "made");  // PCM only: no ffmpeg needed
+  expect(copy_audio(dir / "banks", dir / "made", dir / "copy") &&
+             read_file(dir / "copy" / "Test" / "beep.wav") == read_file(dir / "made" / "Test" / "beep.wav") &&
+             read_file(dir / "copy" / "Test" / "index.txt") == read_file(dir / "made" / "Test" / "index.txt"),
+         "copy_audio copies a complete folder");
+  const Bytes index = read_file(dir / "made" / "Test" / "index.txt");
+  write_file(dir / "made" / "Test" / "index.txt", Bytes(index.begin(), index.end() - 2));
+  expect(!copy_audio(dir / "banks", dir / "made", dir / "other") && !fs::exists(dir / "other"),
+         "copy_audio refuses an index that is not the banks'");
+  write_file(dir / "made" / "Test" / "index.txt", index);
+  fs::remove(dir / "made" / "Test" / "beep.wav");
+  expect(!copy_audio(dir / "banks", dir / "made", dir / "other") && !fs::exists(dir / "other"),
+         "copy_audio refuses a missing wave");
+  fs::remove_all(dir);
 }
 
 static void test_replace_file() {
@@ -124,6 +151,7 @@ static void test_replace_file() {
 int main() {
   test_replace_file();
   test_bank();
+  test_copy_audio();
   test_sha1();
   test_aes();
   test_lzx_uncompressed();

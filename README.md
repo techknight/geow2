@@ -44,8 +44,9 @@ with the original icons, and local multiplayer for up to four players
    `GEOW2_FFMPEG`).
 3. Start `geow2` (`geow2.exe` on Windows, `geow2.app` on macOS). The
    first time, it asks for your copy of the game: choose the XBLA package
-   (the `LIVE` file in `584108FF/000D0000/`) or a folder holding the
-   files extracted from it. It accepts only the release the port was made
+   (the `LIVE` file in `584108FF/000D0000/`), a folder holding the
+   files extracted from it, or a data folder made on another computer
+   (which needs no FFmpeg). It accepts only the release the port was made
    from (version 0x102), checks every file's SHA-1 and makes the data
    folder in your user folder (below), once.
 
