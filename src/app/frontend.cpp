@@ -498,6 +498,9 @@ void Frontend::controller_diagram(UiCanvas& c, float x, float y, float size, boo
   const Vec2 LT = bumpers ? at(-0.57f, -0.57f) : at(-0.47f, -0.88f);
   const Vec2 RT = bumpers ? at(0.575f, -0.57f) : at(0.475f, -0.88f);
   const Rgba line_on = scaled(palette_[kUiSelection], 4.0f), &off = palette_[kUiDisabled];
+  // The leader lines' lengths are for the original's size of 200; a
+  // smaller diagram shortens them in proportion (the labels keep their size).
+  const float k = size / 200.0f;
   // Which stick moves and which fires (profile bits 0 and 1).
   std::vector<int> left, right;
   const bool move_right = move_right_override.value_or((profile_.controls & 1) != 0),
@@ -508,22 +511,22 @@ void Frontend::controller_diagram(UiCanvas& c, float x, float y, float size, boo
     const bool none = left.empty();
     const float d = left.size() == 2 ? 11.0f : 0.0f;
     const Rgba& lc = none ? off : line_on;
-    emit_ui_line(c.lines, L.x, L.y, L.x, (L.y + 54.0f) - d, lc.data());
+    emit_ui_line(c.lines, L.x, L.y, L.x, (L.y + 54.0f * k) - d, lc.data());
     if (none) left.push_back(0x26);
     for (size_t i = 0; i < left.size(); ++i)
-      font.centre(c.lines, L.x, (L.y + (i == 0 ? 57.0f : 68.0f)) - d, 8.0f, 8.0f,
+      font.centre(c.lines, L.x, (L.y + (54.0f * k + (i == 0 ? 3.0f : 14.0f))) - d, 8.0f, 8.0f,
                   (none ? off : palette_[kUiNormal]).data(), text_(left[i]));
   }
   {
     const bool none = right.empty();
     const Rgba& lc = none ? off : line_on;
-    emit_ui_line(c.lines, R.x, R.y, R.x, R.y + 15.0f, lc.data());
+    emit_ui_line(c.lines, R.x, R.y, R.x, R.y + 15.0f * k, lc.data());
     if (none) right.push_back(0x26);
     for (size_t i = 0; i < right.size(); ++i)
-      font.centre(c.lines, R.x, R.y + (i == 0 ? 18.0f : 29.0f), 8.0f, 8.0f, (none ? off : palette_[kUiNormal]).data(),
+      font.centre(c.lines, R.x, R.y + (15.0f * k + (i == 0 ? 3.0f : 14.0f)), 8.0f, 8.0f, (none ? off : palette_[kUiNormal]).data(),
                   text_(right[i]));
   }
-  const float yb = LT.y - 10.0f;
+  const float yb = LT.y - 10.0f * k;
   const float W = RT.x - LT.x;
   const std::string label = text_(bomb ? 0x0E : 0x26);
   const float m = font.measure(label) * 8.0f;
@@ -1273,7 +1276,14 @@ void Frontend::controls() {
          for (int i = 0; i < 40; ++i)
            emit_ui_body(c.lines, float(i) * 0.025f * 640.0f, cursor_, float(i + 1) * 0.025f * 640.0f, cursor_, q.data(),
                         q.data());
-         controller_diagram(c, 320.0f, fmadds(y1 + 46.0f, 0.5f, -5.0f), 200.0f, true, true, true);
+         // The original's diagram is 200 wide above its three rows; the
+         // port's fourth row takes 32 from the panel, so the diagram
+         // shrinks until its labels clear the panel's edges by 6. Above
+         // the centre it reaches 0.3316 · size + 4 (the bomb label), below
+         // it 0.3436 · size + 11 (the stick labels).
+         const float y = fmadds(y1 + 46.0f, 0.5f, -5.0f);
+         const float size = std::min({200.0f, (y - 56.0f) / 0.3316f, ((y1 - y) - 17.0f) / 0.3436f});
+         controller_diagram(c, 320.0f, y, size, true, true, true);
        },
        false, {}, 0);
   screen_.width = 300.0f;
@@ -1307,7 +1317,14 @@ void Frontend::controls() {
   // The port's movement stick in Pacifism, where firing is off (no
   // original: DIFFERENCES.md, Controls), in English like the Online scores
   // item; the sticks' names are the Movement item's.
-  if (hooks_.pacifism_right && hooks_.set_pacifism_right)
+  if (hooks_.pacifism_right && hooks_.set_pacifism_right) {
+    // Wider than the original's 300: the list takes the wider of its two
+    // settings, so it keeps its width when the setting changes.
+    for (const bool right : {false, true}) {
+      TextLayout l;
+      adjust_label(l, std::string("In Pacifism, move using"), text_(right ? 0x23 : 0x22), right, !right);
+      screen_.width = std::max(screen_.width, l.width(g_.font, 12.0f));
+    }
     add_item(
         0,
         [this](const MenuInput& in, int, int) {
@@ -1323,6 +1340,7 @@ void Frontend::controls() {
           adjust_label(l, std::string("In Pacifism, move using"), text_(right ? 0x23 : 0x22), right, !right);
         },
         {}, true);
+  }
 }
 
 void Frontend::settings() {

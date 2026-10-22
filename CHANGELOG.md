@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Controls: the controller picture is smaller so its labels clear the
+  panel above the fourth row, and the list no longer widens when the
+  Pacifism stick is set to Right stick.
+
 ## 1.2.2
 
 - Help and options, Controls: "In Pacifism, move using: Left stick /

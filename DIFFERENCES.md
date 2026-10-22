@@ -244,8 +244,13 @@ Format for each entry:
   profile block). In Pacifism it replaces the Movement and Firing
   choices: the ship moves with that stick and the other is the firing
   stick, which Pacifism ignores. Pacifism's rules screen shows the
-  movement on that stick.
-- **Decided**: 2026-10-21.
+  movement on that stick. The fourth row leaves less room above the
+  list, so the Controls screen draws the controller smaller than the
+  original's 200 (its leader lines in proportion, the labels at their
+  size) until the labels clear the panel's edges, and the list takes
+  the width of the item's wider setting so it doesn't change width as
+  the setting changes.
+- **Decided**: 2026-10-21; the layout 2026-10-22.
 
 ### Resolution
 
