@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.28)
 # macOS 11 is the oldest the game supports (before project(), which reads it).
 set(CMAKE_OSX_DEPLOYMENT_TARGET 11.0 CACHE STRING "Oldest macOS to run on")
-project(geow2 VERSION 1.2.2 LANGUAGES CXX)
+project(geow2 VERSION 1.2.4 LANGUAGES CXX)
 if(WIN32)
   enable_language(RC)
 endif()

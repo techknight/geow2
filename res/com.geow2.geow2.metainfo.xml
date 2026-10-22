@@ -85,6 +85,11 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.2.4" date="2026-10-22">
+      <description>
+        <p>Controls: the controller picture now fits above the four rows, and the list keeps its width when the Pacifism stick changes.</p>
+      </description>
+    </release>
     <release version="1.2.2" date="2026-10-21">
       <description>
         <p>Help and options, Controls: "In Pacifism, move using" puts Pacifism's movement on the left or right stick.

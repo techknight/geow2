@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.4
 
 - Controls: the controller picture is smaller so its labels clear the
   panel above the fourth row, and the list no longer widens when the
