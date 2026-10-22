@@ -60,7 +60,7 @@ jobs:
 
       - name: MSVC environment (Windows)
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        run: tools/msvc-env.ps1
 
       - name: Configure
         run: cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo

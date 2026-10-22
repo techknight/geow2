@@ -69,7 +69,7 @@ jobs:
           install_runtime: false
           cache: true
       - run: pip install ninja
-      - uses: ilammy/msvc-dev-cmd@v1
+      - run: tools/msvc-env.ps1
       - name: Build and test
         run: |
           cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release
