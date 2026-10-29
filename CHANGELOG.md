@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Keyboard: holding Escape a moment too long no longer closes the pause
+  menu it just opened (or pauses again right after resuming).
+- Flatpak: the FFmpeg source has a second download location, so a busy
+  ffmpeg.org no longer fails the build.
+
 ## 1.2.5
 
 - Online scores: the group's boards from the last sync are kept, so a

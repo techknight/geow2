@@ -442,7 +442,11 @@ PadState pad_state(SDL_Gamepad* pad) {
 // The keyboard as a pad (DIFFERENCES.md "Input devices"): WASD the left
 // stick, the arrows the right stick and the D-pad, Space the right
 // trigger, Enter A, Escape START while playing and B otherwise, X and Y.
+// Escape keeps the button it pressed until it is let go: held on, it
+// would otherwise press B on the pause menu it just opened (and resume),
+// or START in the game the pause menu's B just resumed.
 void keyboard_pad(PadState& p, bool playing) {
+  static size_t escape_button = 0;
   const bool* k = SDL_GetKeyboardState(nullptr);
   auto set = [&](size_t a, float v) {
     if (v != 0.0f) p.axis[a] = v;
@@ -457,7 +461,9 @@ void keyboard_pad(PadState& p, bool playing) {
   set(5, ry);
   if (k[SDL_SCANCODE_SPACE]) p.axis[9] = 1.0f;
   if (k[SDL_SCANCODE_RETURN]) p.axis[0xC] = 1.0f;
-  if (k[SDL_SCANCODE_ESCAPE]) p.axis[playing ? 0x10 : 0xD] = 1.0f;
+  if (!k[SDL_SCANCODE_ESCAPE]) escape_button = 0;
+  else if (!escape_button) escape_button = playing ? 0x10 : 0xD;
+  if (escape_button) p.axis[escape_button] = 1.0f;
   if (k[SDL_SCANCODE_X]) p.axis[0xE] = 1.0f;
   if (k[SDL_SCANCODE_Y]) p.axis[0xF] = 1.0f;
   p.connected = true;
