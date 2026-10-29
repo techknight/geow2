@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Online scores: the group's boards from the last sync are kept, so a
+  game started without a connection (a Steam Deck away from Wi-Fi, say)
+  still shows your friends' scores. They are only shown, never sent or
+  added to your games, and are deleted when the device is unpaired.
+  `--online-sync` lists them when the server can't be reached.
+
 ## 1.2.4
 
 - Controls: the controller picture is smaller so its labels clear the

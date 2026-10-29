@@ -126,11 +126,34 @@ static void test_score_log() {
          "score log: a device with tabs keeps the log's fields apart");
 }
 
+static void test_group_boards_file() {
+  std::array<std::vector<GroupRow>, 6> boards;
+  boards[0] = {GroupRow{"aa", "Ace", 900, 3, 1700000000}, GroupRow{"bb", "B\tob\n", 0, 1, 0}};
+  boards[5] = {GroupRow{"cc", "", 12, 1, 5}};
+  const std::string text = serialize_group_boards(boards, "https://s.example", "me");
+  const auto back = parse_group_boards(text, "https://s.example", "me");
+  expect(back[0].size() == 2 && back[0][0].name == "Ace" && back[0][0].score == 900 && back[0][0].multiplier == 3 &&
+             back[0][0].time == 1700000000 && back[0][0].player == "aa",
+         "group boards file: rows come back in order");
+  expect(back[0][1].name == "B ob " && back[0][1].score == 0, "group boards file: control bytes in names become spaces");
+  expect(back[5].size() == 1 && back[5][0].name.empty() && back[1].empty(), "group boards file: empty names and modes");
+  expect(parse_group_boards(text, "https://other.example", "me")[0].empty(), "group boards file: another server's are ignored");
+  expect(parse_group_boards(text, "https://s.example", "someone")[0].empty(), "group boards file: another player's are ignored");
+  expect(parse_group_boards(text, "", "")[0].empty(), "group boards file: ignored when not paired");
+  const auto bad = parse_group_boards(
+      "server https://s.example\r\nplayer me\r\n7\t5\t1\t0\tp\tx\n0\t-4\t1\t0\tp\tx\n0\tlots\t1\t0\tp\tx\n0\t5\t1\n"
+      "1\t50\t1\t0\tp\tGood\r\n",
+      "https://s.example", "me");
+  expect(bad[0].empty() && bad[1].size() == 1 && bad[1][0].name == "Good", "group boards file: bad rows are skipped");
+  expect(parse_group_boards("", "https://s.example", "me")[0].empty(), "group boards file: none yet");
+}
+
 int main() {
   test_json();
   test_server_base();
   test_messages();
   test_score_log();
+  test_group_boards_file();
   if (failures) std::printf("%d failure(s)\n", failures);
   else std::printf("net tests passed\n");
   return failures ? 1 : 0;

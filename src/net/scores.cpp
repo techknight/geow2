@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
+#include <sstream>
 
 #include "net/http.h"
 #include "net/json.h"
@@ -27,7 +29,55 @@ std::string failure(int status, const std::string& body, const std::string& tran
   return "the server answered " + std::to_string(status);
 }
 
+// A whole number field of group-boards.txt, or `fallback` when it isn't one.
+int64_t number(const std::string& s, int64_t fallback) {
+  int64_t n = 0;
+  const auto r = std::from_chars(s.data(), s.data() + s.size(), n);
+  return r.ec == std::errc() && r.ptr == s.data() + s.size() ? n : fallback;
+}
+
 }  // namespace
+
+std::string serialize_group_boards(const std::array<std::vector<GroupRow>, 6>& boards, const std::string& server,
+                                   const std::string& player) {
+  std::ostringstream out;
+  out << "server " << clean_name(server) << "\nplayer " << clean_name(player) << '\n';
+  for (int m = 0; m < 6; ++m)
+    for (const GroupRow& r : boards[size_t(m)])
+      out << m << '\t' << r.score << '\t' << r.multiplier << '\t' << r.time << '\t' << clean_name(r.player) << '\t'
+          << clean_name(r.name) << '\n';
+  return out.str();
+}
+
+std::array<std::vector<GroupRow>, 6> parse_group_boards(const std::string& text, const std::string& server,
+                                                        const std::string& player) {
+  std::array<std::vector<GroupRow>, 6> boards;
+  std::istringstream in(text);
+  std::string line;
+  auto header = [&](const std::string& key, const std::string& want) {
+    if (!std::getline(in, line)) return false;
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    return !want.empty() && line == key + ' ' + want;
+  };
+  if (!header("server", server) || !header("player", player)) return {};
+  while (std::getline(in, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    std::vector<std::string> f;
+    std::istringstream s(line);
+    for (std::string part; std::getline(s, part, '\t');) f.push_back(part);
+    if (f.size() < 5) continue;
+    const int64_t mode = number(f[0], -1);
+    GroupRow r;
+    r.score = number(f[1], -1);
+    r.multiplier = int(std::clamp<int64_t>(number(f[2], 1), 0, 1000000));
+    r.time = number(f[3], 0);
+    r.player = f[4];
+    r.name = f.size() > 5 ? f[5] : "";
+    if (mode < 0 || mode > 5 || r.score < 0) continue;
+    boards[size_t(mode)].push_back(std::move(r));
+  }
+  return boards;
+}
 
 std::string server_base(const std::string& typed) {
   std::string s = trim(typed);

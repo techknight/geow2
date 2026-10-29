@@ -360,8 +360,21 @@ int online_command(const fs::path& dir, const std::string& pair_server) {
     if (!online.syncing()) break;
     SDL_Delay(100);
   }
+  // Each mode's top three on the group's boards.
+  auto print_group = [&]() {
+    static const char* const kModes[6] = {"Deadline", "Evolved", "Sequence", "Waves", "Pacifism", "King"};
+    const auto group = online.group_boards();
+    for (int m = 0; m < 6; ++m)
+      for (size_t i = 0; i < group[size_t(m)].size() && i < 3; ++i)
+        std::printf("  %-9s %zu. %-20s %lld\n", kModes[m], i + 1, group[size_t(m)][i].name.c_str(),
+                    (long long)group[size_t(m)][i].score);
+  };
   if (const std::string error = online.error(); !error.empty()) {
     std::fprintf(stderr, "sync failed: %s\n", error.c_str());
+    if (online.paired()) {
+      std::printf("the group's boards from the last sync:\n");
+      print_group();
+    }
     return 1;
   }
   save_score_log(dir, log);
@@ -374,12 +387,7 @@ int online_command(const fs::path& dir, const std::string& pair_server) {
   std::printf("synced with %s (%s) as %s: %zu new game(s) from the server, %s, %d new achievement(s)\n",
               online.state().server.c_str(), online.state().group.c_str(), online.state().player_name.c_str(), games,
               changed ? "unlocks or progress added" : "no new unlocks or progress", std::popcount(new_achievements));
-  static const char* const kModes[6] = {"Deadline", "Evolved", "Sequence", "Waves", "Pacifism", "King"};
-  const auto group = online.group_boards();
-  for (int m = 0; m < 6; ++m)
-    for (size_t i = 0; i < group[size_t(m)].size() && i < 3; ++i)
-      std::printf("  %-9s %zu. %-20s %lld\n", kModes[m], i + 1, group[size_t(m)][i].name.c_str(),
-                  (long long)group[size_t(m)][i].score);
+  print_group();
   return 0;
 }
 

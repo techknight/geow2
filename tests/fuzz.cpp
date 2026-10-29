@@ -89,6 +89,7 @@ const std::map<std::string, Target>& targets() {
       {"sync", [](const Bytes& b) { (void)parse_sync(200, text(b)); }},
       {"scorelog", [](const Bytes& b) { (void)ScoreLog::parse(text(b)).serialize(); }},
       {"scoretxt", [](const Bytes& b) { (void)ScoreLog::import_board_file(text(b), "d"); }},
+      {"groupboards", [](const Bytes& b) { (void)parse_group_boards(text(b), "https://s.example", "me"); }},
       {"sequence", [](const Bytes& b) { (void)parse_sequence_script(text(b)); }},
   };
   return t;

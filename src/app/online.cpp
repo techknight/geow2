@@ -82,6 +82,13 @@ Online::Online(fs::path profile_dir) : dir_(std::move(profile_dir)), core_(std::
     else if (key == "sent") state_.sent = size_t(std::atoll(value.c_str()));
     else if (key == "last_sync") state_.last_sync = std::atoll(value.c_str());
   }
+  // The last sync's boards, when they are this pairing's.
+  if (paired()) {
+    std::ifstream b(dir_ / "group-boards.txt", std::ios::binary);
+    std::ostringstream text;
+    text << b.rdbuf();
+    core_->boards = parse_group_boards(text.str(), state_.server, state_.player_id);
+  }
   std::thread([core = core_] { Core::run(core); }).detach();
 }
 
@@ -102,6 +109,20 @@ void Online::save() const {
   const std::string text = s.str();
   // (It holds the device's token.)
   replace_file(dir_ / "online.txt", {reinterpret_cast<const uint8_t*>(text.data()), text.size()}, true);
+}
+
+void Online::save_boards(const std::array<std::vector<GroupRow>, 6>& boards) const {
+  const std::string text = serialize_group_boards(boards, state_.server, state_.player_id);
+  replace_file(dir_ / "group-boards.txt", {reinterpret_cast<const uint8_t*>(text.data()), text.size()});
+}
+
+void Online::forget_boards() {
+  {
+    std::lock_guard lock(core_->m);
+    core_->boards = {};
+  }
+  std::error_code ec;
+  fs::remove(dir_ / "group-boards.txt", ec);
 }
 
 namespace {
@@ -160,6 +181,7 @@ std::optional<Online::Applied> Online::update(ScoreLog& log, OnlineProgress& pro
   if (paired) {
     // A new pairing: a fresh start with this server (everything in the
     // log goes up on the first sync).
+    forget_boards();
     state_ = State{server, paired->token, paired->player_id, paired->player_name, {}, 0, 0};
     save();
     sync(log, progress);
@@ -171,6 +193,7 @@ std::optional<Online::Applied> Online::update(ScoreLog& log, OnlineProgress& pro
       // Unpaired on the server: the token is forgotten.
       state_.token.clear();
       save();
+      forget_boards();
     }
     return std::nullopt;
   }
@@ -197,6 +220,7 @@ std::optional<Online::Applied> Online::update(ScoreLog& log, OnlineProgress& pro
   if (!reply->group.empty()) state_.group = reply->group;
   if (!reply->player_name.empty()) state_.player_name = reply->player_name;
   save();
+  save_boards(reply->boards);
   // At once again while the server has more for us or games are left to
   // send (a bounded number of times, should a server always say "more").
   if ((reply->more || state_.sent < log.events().size()) && follow_ups_ < kMaxFollowUps) {
@@ -273,9 +297,9 @@ void Online::unpair() {
   state_ = State{state_.server, {}, {}, {}, {}, 0, 0};  // the address stays, for pairing again
   {
     std::lock_guard lock(core_->m);
-    core_->boards = {};
     core_->error.clear();
   }
+  forget_boards();
   save();
 }
 
@@ -284,6 +308,7 @@ void Online::set_server(const std::string& base) {
   // A different server: any pairing with the old one is forgotten.
   state_ = State{};
   state_.server = base;
+  forget_boards();
   save();
 }
 

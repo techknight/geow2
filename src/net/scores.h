@@ -68,6 +68,18 @@ SyncReply parse_sync(int status, const std::string& body);
 PairStart parse_pair_start(int status, const std::string& body, const std::string& base);
 PairPoll parse_pair_poll(int status, const std::string& body);
 
+// The group's boards from the last sync as the profile folder keeps them
+// (group-boards.txt), to show while the device is offline: "server" and
+// "player" lines naming the pairing they came from, then one row per line
+// (mode, score, multiplier, time, player, name; tab-separated), best
+// first. Only for display: nothing in it is sent or merged anywhere.
+// parse gives empty boards unless the file is for `server` and `player`,
+// and skips rows that don't parse.
+std::string serialize_group_boards(const std::array<std::vector<GroupRow>, 6>& boards, const std::string& server,
+                                   const std::string& player);
+std::array<std::vector<GroupRow>, 6> parse_group_boards(const std::string& text, const std::string& server,
+                                                        const std::string& player);
+
 PairStart pair_start(const std::string& base, const std::string& device_name);
 PairPoll pair_poll(const std::string& base, const std::string& poll);
 SyncReply sync(const std::string& base, const std::string& token, const std::vector<ScoreEvent>& events,

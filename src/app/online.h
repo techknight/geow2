@@ -76,6 +76,8 @@ class Online {
   // Why the last sync failed, or "" when it succeeded.
   std::string error() const;
   // The group's boards from the last sync: per mode, each player's best.
+  // Kept in group-boards.txt, so a game started offline shows the last
+  // ones until a sync brings new ones.
   std::array<std::vector<GroupRow>, 6> group_boards() const;
 
   // This machine's name for the server's device list.
@@ -84,6 +86,9 @@ class Online {
  private:
   struct Core;  // shared with the network thread
   void save() const;
+  void save_boards(const std::array<std::vector<GroupRow>, 6>& boards) const;
+  // The boards of a pairing that ended or changed: gone from memory and disk.
+  void forget_boards();
 
   std::filesystem::path dir_;
   State state_;

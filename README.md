@@ -123,7 +123,8 @@ Optional. With a score server for your group of friends, your high
 scores, unlocked modes and achievements follow you between your devices
 (a PC and a Steam Deck, say), and the leaderboards show the group's
 boards: X switches between Friends, My score and your own Overall board,
-as on the console. One person in the group sets up a server, free on
+as on the console. Without a connection the game shows the group's boards
+from its last sync. One person in the group sets up a server, free on
 Cloudflare: see [geow2-scores](https://github.com/techknight/geow2-scores)
 and [geow2.com/scores](https://geow2.com/scores/).
 

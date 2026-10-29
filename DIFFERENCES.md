@@ -104,11 +104,19 @@ Format for each entry:
       Personal Best the player's best on the group's board, under their
       name. Unpaired, it is the session's best labelled Highscore, as the
       original offline.
+  - the group's board from the last sync is kept in `group-boards.txt` in
+    the profile folder, so a game started without a connection shows it
+    until a sync brings a new one. It is
+    for display only: never sent or merged into `scores.log`, used only
+    while the pairing it came from lasts, and deleted when the device is
+    unpaired, paired anew, moved to another server, or unpaired on the
+    server.
 
   Nothing is sent before a device is paired, and an unpaired game never
   connects; unpaired, the screens are as in "Xbox Live leaderboards and
   achievements".
-- **Decided**: 2026-10-19.
+- **Decided**: 2026-10-19; the offline copy of the group's board
+  2026-10-29.
 
 ### Setup
 
