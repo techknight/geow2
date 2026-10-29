@@ -53,6 +53,10 @@ modules:
     sources:
       - type: archive
         url: https://ffmpeg.org/releases/ffmpeg-7.1.tar.xz
+        # The same file (the checksum holds it to that), for when
+        # ffmpeg.org doesn't answer.
+        mirror-urls:
+          - https://ftp.osuosl.org/pub/blfs/conglomeration/ffmpeg/ffmpeg-7.1.tar.xz
         sha256: 40973d44970dbc83ef302b0609f2e74982be2d85916dd2ee7472d30678a7abe6
 
   - name: geow2
