@@ -85,6 +85,11 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.2.6" date="2026-10-29">
+      <description>
+        <p>Keyboard: holding Escape no longer closes the pause menu it just opened, and holding Enter or Escape in the setup window no longer carries on to the next screen.</p>
+      </description>
+    </release>
     <release version="1.2.5" date="2026-10-29">
       <description>
         <p>Online scores: the group's boards from the last sync are kept, so a game started without a connection still shows your friends' scores.</p>

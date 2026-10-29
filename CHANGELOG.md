@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.6
 
 - Keyboard: holding Escape a moment too long no longer closes the pause
   menu it just opened (or pauses again right after resuming). In the
