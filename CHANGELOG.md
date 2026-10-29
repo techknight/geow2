@@ -3,7 +3,9 @@
 ## Unreleased
 
 - Keyboard: holding Escape a moment too long no longer closes the pause
-  menu it just opened (or pauses again right after resuming).
+  menu it just opened (or pauses again right after resuming). In the
+  setup window, holding Enter or Escape no longer carries on to the next
+  screen's button (opening the file chooser, or quitting).
 - Flatpak: the FFmpeg source has a second download location, so a busy
   ffmpeg.org no longer fails the build.
 

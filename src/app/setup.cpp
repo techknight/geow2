@@ -348,8 +348,12 @@ bool run_setup(const fs::path& data_dir, const SetupDev& dev) {
             if (SDL_Gamepad* g = SDL_OpenGamepad(e.gdevice.which)) pads.push_back(g);
             break;
           case SDL_EVENT_KEY_DOWN:
+            // A held key repeats moving the focus, but not a button's action
+            // or Escape: their repeats would act on the screen they lead to
+            // ("Choose again" then the first button, or back then quit).
             if (e.key.key == SDLK_UP || (e.key.key == SDLK_TAB && (e.key.mod & SDL_KMOD_SHIFT))) move(-1);
             else if (e.key.key == SDLK_DOWN || e.key.key == SDLK_TAB) move(1);
+            else if (e.key.repeat) break;
             else if (e.key.key == SDLK_RETURN || e.key.key == SDLK_KP_ENTER || e.key.key == SDLK_SPACE) activate();
             else if (e.key.key == SDLK_ESCAPE && stage == Stage::Failed) act(Action::Back);
             else if (e.key.key == SDLK_ESCAPE) quit_requested();
