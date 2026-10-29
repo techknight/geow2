@@ -85,6 +85,11 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.2.5" date="2026-10-29">
+      <description>
+        <p>Online scores: the group's boards from the last sync are kept, so a game started without a connection still shows your friends' scores.</p>
+      </description>
+    </release>
     <release version="1.2.4" date="2026-10-22">
       <description>
         <p>Controls: the controller picture now fits above the four rows, and the list keeps its width when the Pacifism stick changes.</p>

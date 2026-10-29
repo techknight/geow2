@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.5
 
 - Online scores: the group's boards from the last sync are kept, so a
   game started without a connection (a Steam Deck away from Wi-Fi, say)
